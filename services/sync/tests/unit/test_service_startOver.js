@@ -9,10 +9,10 @@ BlaEngine.prototype = {
   __proto__: SyncEngine.prototype,
 
   removed: false,
-  removeClientData: function() {
+  removeClientData: function(callback) {
     this.removed = true;
+    callback();
   }
-
 };
 Engines.register(BlaEngine);
 

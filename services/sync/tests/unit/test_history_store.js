@@ -2,6 +2,7 @@ Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://services-sync/engines/history.js");
 Cu.import("resource://services-sync/async.js");
 Cu.import("resource://services-sync/util.js");
+Cu.import("resource://services-sync/async.js");
 
 const TIMESTAMP1 = (Date.now() - 103406528) * 1000;
 const TIMESTAMP2 = (Date.now() - 6592903) * 1000;

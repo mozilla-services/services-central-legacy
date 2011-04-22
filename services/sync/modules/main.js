@@ -40,6 +40,7 @@ const EXPORTED_SYMBOLS = ['Weave'];
 let Weave = {};
 Components.utils.import("resource://services-sync/constants.js", Weave);
 let lazies = {
+  "async.js":             ["Async"],
   "record.js":            ["CollectionKeys", "BulkKeyBundle", "SyncKeyBundle"],
   "engines.js":           ['Engines', 'Engine', 'SyncEngine', 'Store'],
   "engines/bookmarks.js": ['BookmarksEngine', 'BookmarksSharingManager'],

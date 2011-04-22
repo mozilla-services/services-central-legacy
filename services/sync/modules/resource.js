@@ -52,6 +52,7 @@ Cu.import("resource://services-sync/ext/Observers.js");
 Cu.import("resource://services-sync/ext/Preferences.js");
 Cu.import("resource://services-sync/log4moz.js");
 Cu.import("resource://services-sync/util.js");
+Cu.import("resource://services-sync/async.js");
 
 XPCOMUtils.defineLazyGetter(this, "Auth", function () {
   return new AuthMgr();

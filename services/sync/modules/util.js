@@ -1462,6 +1462,25 @@ let Utils = {
 
     // Return the value passed to the callback
     return callback.value;
+  },
+
+  // Return the two things you need to make an asynchronous call synchronous.
+  synchronously: function synchronously() {
+    let cb = Utils.makeSyncCallback();
+    function callback(error, ret) {
+      if (error)
+        cb.throw(error);
+      cb(ret);
+    }
+    callback.wait = function() Utils.waitForSyncCallback(cb);
+    return callback;
+  },
+
+  // Synchronously invoke a method that takes only a `callback` argument.
+  callSynchronously: function callSynchronously(self, method) {
+    let callback = this.synchronously();
+    method.call(self, callback);
+    return callback.wait();
   }
 };
 

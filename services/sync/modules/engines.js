@@ -1047,14 +1047,33 @@ SyncEngine.prototype = {
     return canDecrypt;
   },
 
+  _resetClientCb: function _resetClientCb(callback) {
+    try {
+      this.resetLastSync();
+      this.toFetch = [];
+      callback();
+    } catch (ex) {
+      callback(ex);
+    }
+  },
+
+  wipeServerCb: function wipeServerCb(callback) {
+    let self = this;
+    let cb = function(err) {
+      if (!err)
+        self._resetClientCb(callback);
+      else
+        callback(err);
+    };
+    new AsyncResource(this.engineURL).delete(cb);
+  },
+
   _resetClient: function SyncEngine__resetClient() {
-    this.resetLastSync();
-    this.toFetch = [];
+    Utils.callSynchronously(this, this._resetClientCb);
   },
 
   wipeServer: function wipeServer() {
-    new Resource(this.engineURL).delete();
-    this._resetClient();
+    return Utils.callSynchronously(this, this.wipeServerCb);
   },
 
   removeClientData: function removeClientData() {

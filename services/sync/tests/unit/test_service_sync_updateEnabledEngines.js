@@ -25,9 +25,9 @@ SteamEngine.prototype = {
   __proto__: SyncEngine.prototype,
   // We're not interested in engine sync but what the service does.
   _storeObj: QuietStore,
-  
+
   _sync: function _sync() {
-    this._syncStartup();
+    Async.callSpinningly(this, this._syncStartupCb);
   }
 };
 Engines.register(SteamEngine);

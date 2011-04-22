@@ -53,6 +53,7 @@ Cu.import("resource://services-sync/identity.js");
 Cu.import("resource://services-sync/log4moz.js");
 Cu.import("resource://services-sync/resource.js");
 Cu.import("resource://services-sync/util.js");
+Cu.import("resource://services-sync/async.js");
 
 Cu.import("resource://services-sync/main.js");    // So we can get to Service for callbacks.
 
@@ -200,10 +201,10 @@ function Store(name) {
 Store.prototype = {
 
   _sleep: function _sleep(delay) {
-    let cb = Utils.makeSyncCallback();
+    let cb = Async.makeSyncCallback();
     this._timer.initWithCallback({notify: cb}, delay,
                                  Ci.nsITimer.TYPE_ONE_SHOT);
-    Utils.waitForSyncCallback(cb);
+    Async.waitForSyncCallback(cb);
   },
 
   applyIncomingBatch: function applyIncomingBatch(records) {
@@ -1049,19 +1050,39 @@ SyncEngine.prototype = {
     return canDecrypt;
   },
 
+  _resetClientCb: function _resetClientCb(callback) {
+    try {
+      this.resetLastSync();
+      this.toFetch = [];
+      callback();
+    } catch (ex) {
+      callback(ex);
+    }
+  },
+
+  wipeServerCb: function wipeServerCb(callback) {
+    let self = this;
+    let cb = function(err) {
+      if (!err)
+        self._resetClientCb(callback);
+      else
+        callback(err);
+    };
+    new AsyncResource(this.engineURL).delete(cb);
+  },
+
   _resetClient: function SyncEngine__resetClient() {
-    this.resetLastSync();
-    this.toFetch = [];
+    Async.callSpinningly(this, this._resetClientCb);
   },
 
   wipeServer: function wipeServer() {
-    new Resource(this.engineURL).delete();
-    this._resetClient();
+    return Async.callSpinningly(this, this.wipeServerCb);
   },
 
-  removeClientData: function removeClientData() {
+  removeClientData: function removeClientData(callback) {
     // Implement this method in engines that store client specific data
     // on the server.
+    callback();
   },
 
   /*

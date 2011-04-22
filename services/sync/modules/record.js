@@ -55,6 +55,7 @@ Cu.import("resource://services-sync/identity.js");
 Cu.import("resource://services-sync/log4moz.js");
 Cu.import("resource://services-sync/resource.js");
 Cu.import("resource://services-sync/util.js");
+Cu.import("resource://services-sync/async.js");
 
 function WBORecord(collection, id) {
   this.data = {};
@@ -73,17 +74,46 @@ WBORecord.prototype = {
 
   // Get thyself from your URI, then deserialize.
   // Set thine 'response' field.
-  fetch: function fetch(uri) {
-    let r = new Resource(uri).get();
-    if (r.success) {
-      this.deserialize(r);   // Warning! Muffles exceptions!
+  // Invoke the callback.
+  fetchCb: function fetchCb(uri, callback) {
+    let res  = new AsyncResource(uri);
+    let self = this;
+
+    function cb(error, result) {
+      if (!error) {
+        if (result.success) {
+          try {
+            self.deserialize(result);
+          } catch (ex) {
+            // JSON parse exception, most likely.
+            callback(ex);
+            return;
+          }
+        }
+        self.response = result;
+      }
+      callback(error, self);
     }
-    this.response = r;
-    return this;
+
+    res.get(cb);
+  },
+
+  uploadCb: function uploadCb(uri, callback) {
+    new AsyncResource(uri).put(this, callback);
+  },
+
+  // Get thyself from your URI, then deserialize.
+  // Set thine 'response' field.
+  fetch: function fetch(uri) {
+    let callback = Async.spinningly();
+    this.fetchCb(uri, callback);
+    return callback.wait();
   },
 
   upload: function upload(uri) {
-    return new Resource(uri).put(this);
+    let callback = Async.spinningly();
+    this.uploadCb(uri, callback);
+    return callback.wait();
   },
 
   // Take a base URI string, with trailing slash, and return the URI of this

@@ -71,6 +71,7 @@ Cu.import("resource://services-sync/log4moz.js");
 Cu.import("resource://services-sync/resource.js");
 Cu.import("resource://services-sync/status.js");
 Cu.import("resource://services-sync/util.js");
+Cu.import("resource://services-sync/async.js");
 Cu.import("resource://services-sync/main.js");
 
 /*
@@ -1049,44 +1050,77 @@ WeaveSvc.prototype = {
       return true;
     }))(),
 
-  startOver: function() {
+  startOverCb: function(callback) {
     // Deletion doesn't make sense if we aren't set up yet!
-    if (this.clusterURL != "") {
-      // Clear client-specific data from the server, including disabled engines.
-      for each (let engine in [Clients].concat(Engines.getAll())) {
-        try {
-          engine.removeClientData();
-        } catch(ex) {
-          this._log.warn("Deleting client data for " + engine.name + " failed:"
-                         + Utils.exceptionStr(ex));
-        }
-      }
-    } else {
-      this._log.debug("Skipping client data removal: no cluster URL.");
+    let self = this;
+
+    function completeStartOver() {
+      // Set a username error so the status message shows "set up..."
+      Status.login = LOGIN_FAILED_NO_USERNAME;
+      this.logout();
+
+      // Reset all engines and clear keys.
+      this.resetClient();
+      CollectionKeys.clear();
+
+      // Reset Weave prefs.
+      this._ignorePrefObserver = true;
+      Svc.Prefs.resetBranch("");
+      this._ignorePrefObserver = false;
+
+      Svc.Prefs.set("lastversion", WEAVE_VERSION);
+      // Find weave logins and remove them.
+      this.password = "";
+      this.passphrase = "";
+      Svc.Login.findLogins({}, PWDMGR_HOST, "", "").map(function(login) {
+        Svc.Login.removeLogin(login);
+      });
+      Svc.Obs.notify("weave:service:start-over");
+      Svc.Obs.notify("weave:engine:stop-tracking");
+      callback();
     }
 
-    // Set a username error so the status message shows "set up..."
-    Status.login = LOGIN_FAILED_NO_USERNAME;
-    this.logout();
+    if (!this.clusterURL) {
+      this._log.debug("Skipping client data removal: no cluster URL.");
+      completeStartOver.call(this);
+    } else {
 
-    // Reset all engines and clear keys.
-    this.resetClient();
-    CollectionKeys.clear();
+      // Clear client-specific data from the server, including disabled engines.
+      // This is all done asynchronously, so we invoke the rest of startOver
+      // (by way of completeStartOver()) once all the callbacks have been
+      // invoked.
+      function makeEngineCallback(engine) {
+        let name = engine.name;
+        function cb(error, result) {
+          if (error)
+            self._log.warn("Deleting client data for " + engine.name +
+                           " failed:" + Utils.exceptionStr(error));
 
-    // Reset Weave prefs.
-    this._ignorePrefObserver = true;
-    Svc.Prefs.resetBranch("");
-    this._ignorePrefObserver = false;
+          // We don't care if one of these fails; proceed regardless.
+          return null;
+        };
+        cb.data = engine;
+        return cb;
+      }
 
-    Svc.Prefs.set("lastversion", WEAVE_VERSION);
-    // Find weave logins and remove them.
-    this.password = "";
-    this.passphrase = "";
-    Services.logins.findLogins({}, PWDMGR_HOST, "", "").map(function(login) {
-      Services.logins.removeLogin(login);
-    });
-    Svc.Obs.notify("weave:service:start-over");
-    Svc.Obs.notify("weave:engine:stop-tracking");
+      function exitBarrier(error) {
+        // `error` will always be false, so no check needed.
+        completeStartOver();
+      }
+
+      let engines   = [Clients].concat(Engines.getAll());
+      let callbacks = engines.map(makeEngineCallback);
+      let barriered = Async.barrieredCallbacks(callbacks, exitBarrier);
+
+      for each (let callback in barriered) {
+        let engine = callback.data;       // Our own backchannel data.
+        engine.removeClientData(callback);
+      }
+    }
+  },
+
+  startOver: function startOver() {
+    Async.callSpinningly(this, this.startOverCb);
   },
 
   delayedAutoConnect: function delayedAutoConnect(delay) {

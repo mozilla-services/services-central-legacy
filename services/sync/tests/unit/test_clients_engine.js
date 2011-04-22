@@ -153,44 +153,57 @@ add_test(function test_properties() {
   }
 });
 
-add_test(function test_sync() {
-  _("Ensure that Clients engine uploads a new client record once a week.");
+let global;
+let coll;
+let clientwbo;
+let server;
+
+add_test(function doSetup() {
   Svc.Prefs.set("clusterURL", "http://localhost:8080/");
   Svc.Prefs.set("username", "foo");
 
   generateNewKeys();
 
-  let global = new ServerWBO('global',
-                             {engines: {clients: {version: Clients.version,
-                                                  syncID: Clients.syncID}}});
-  let coll = new ServerCollection();
-  let clientwbo = coll.wbos[Clients.localID] = new ServerWBO(Clients.localID);
-  let server = httpd_setup({
+  global = new ServerWBO('global',
+                         {engines: {clients: {version: Clients.version,
+                                              syncID: Clients.syncID}}});
+  coll = new ServerCollection();
+  clientwbo = coll.wbos[Clients.localID] = new ServerWBO(Clients.localID);
+  server = httpd_setup({
       "/1.1/foo/storage/meta/global": global.handler(),
       "/1.1/foo/storage/clients": coll.handler()
   });
   server.registerPathHandler(
     "/1.1/foo/storage/clients/" + Clients.localID, clientwbo.handler());
 
-  try {
+  run_next_test();
+});
 
-    _("First sync, client record is uploaded");
-    do_check_eq(clientwbo.payload, undefined);
-    do_check_eq(Clients.lastRecordUpload, 0);
-    Clients.sync();
-    do_check_true(!!clientwbo.payload);
-    do_check_true(Clients.lastRecordUpload > 0);
+add_test(function test_sync() {
+  _("Ensure that Clients engine uploads a new client record once a week.");
 
-    _("Let's time travel more than a week back, new record should've been uploaded.");
-    Clients.lastRecordUpload -= MORE_THAN_CLIENTS_TTL_REFRESH;
-    let lastweek = Clients.lastRecordUpload;
-    clientwbo.payload = undefined;
-    Clients.sync();
-    do_check_true(!!clientwbo.payload);
-    do_check_true(Clients.lastRecordUpload > lastweek);
+  _("First sync, client record is uploaded");
+  do_check_eq(clientwbo.payload, undefined);
+  do_check_eq(Clients.lastRecordUpload, 0);
+  Clients.sync();
+  do_check_true(!!clientwbo.payload);
+  do_check_true(Clients.lastRecordUpload > 0);
 
-    _("Remove client record.");
-    Clients.removeClientData();
+  _("Let's time travel more than a week back, new record should've been uploaded.");
+  Clients.lastRecordUpload -= MORE_THAN_CLIENTS_TTL_REFRESH;
+  let lastweek = Clients.lastRecordUpload;
+  clientwbo.payload = undefined;
+  Clients.sync();
+  do_check_true(!!clientwbo.payload);
+  do_check_true(Clients.lastRecordUpload > lastweek);
+
+  run_next_test();
+});
+
+add_test(function remove_client_data() {
+  _("Remove client record.");
+  Clients.removeClientData(function (err) {
+    do_check_false(!!err);
     do_check_eq(clientwbo.payload, undefined);
 
     _("Time travel one day back, no record uploaded.");
@@ -200,11 +213,14 @@ add_test(function test_sync() {
     do_check_eq(clientwbo.payload, undefined);
     do_check_eq(Clients.lastRecordUpload, yesterday);
 
-  } finally {
-    Svc.Prefs.resetBranch("");
-    Records.clearCache();
-    server.stop(run_next_test);
-  }
+    run_next_test();
+  });
+});
+
+add_test(function doCleanup() {
+  Svc.Prefs.resetBranch("");
+  Records.clearCache();
+  server.stop(run_next_test);
 });
 
 function run_test() {

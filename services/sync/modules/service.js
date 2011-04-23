@@ -1054,44 +1054,63 @@ WeaveSvc.prototype = {
       return true;
     }))(),
 
-  startOver: function() {
+  startOverCb: function(callback) {
     // Deletion doesn't make sense if we aren't set up yet!
-    if (this.clusterURL != "") {
-      // Clear client-specific data from the server, including disabled engines.
-      for each (let engine in [Clients].concat(Engines.getAll())) {
-        try {
-          engine.removeClientData();
-        } catch(ex) {
-          this._log.warn("Deleting client data for " + engine.name + " failed:"
-                         + Utils.exceptionStr(ex));
-        }
-      }
-    } else {
-      this._log.debug("Skipping client data removal: no cluster URL.");
+    let self = this;
+
+    function completeStartOver() {
+      // Set a username error so the status message shows "set up..."
+      Status.login = LOGIN_FAILED_NO_USERNAME;
+      self.logout();
+
+      // Reset all engines and clear keys.
+      self.resetClient();
+      CollectionKeys.clear();
+
+      // Reset Weave prefs.
+      self._ignorePrefObserver = true;
+      Svc.Prefs.resetBranch("");
+      self._ignorePrefObserver = false;
+
+      Svc.Prefs.set("lastversion", WEAVE_VERSION);
+      // Find weave logins and remove them.
+      self.password = "";
+      self.passphrase = "";
+      Svc.Login.findLogins({}, PWDMGR_HOST, "", "").map(function(login) {
+        Svc.Login.removeLogin(login);
+      });
+      Svc.Obs.notify("weave:service:start-over");
+      Svc.Obs.notify("weave:engine:stop-tracking");
+      callback();
     }
 
-    // Set a username error so the status message shows "set up..."
-    Status.login = LOGIN_FAILED_NO_USERNAME;
-    this.logout();
+    if (!this.clusterURL) {
+      this._log.debug("Skipping client data removal: no cluster URL.");
+      completeStartOver();
+    } else {
+      // Clear client-specific data from the server, including disabled engines.
+      // This is all done asynchronously, so we invoke the rest of startOver
+      // (by way of completeStartOver()) once all the callbacks have been
+      // invoked.
+      let engines = [Clients].concat(Engines.getAll());
+      let counter = engines.length;
+      for each (let engine in [Clients].concat(Engines.getAll())) {
+        function cb(error) {
+          if (error)
+            self._log.warn("Deleting client data for " + engine.name + " failed:"
+                           + Utils.exceptionStr(error));
+          if (0 == --counter) {
+            self._log.info("Counter is " + counter);
+            completeStartOver();
+          }
+        }
+        engine.removeClientData(cb);
+      }
+    }
+  },
 
-    // Reset all engines and clear keys.
-    this.resetClient();
-    CollectionKeys.clear();
-
-    // Reset Weave prefs.
-    this._ignorePrefObserver = true;
-    Svc.Prefs.resetBranch("");
-    this._ignorePrefObserver = false;
-
-    Svc.Prefs.set("lastversion", WEAVE_VERSION);
-    // Find weave logins and remove them.
-    this.password = "";
-    this.passphrase = "";
-    Svc.Login.findLogins({}, PWDMGR_HOST, "", "").map(function(login) {
-      Svc.Login.removeLogin(login);
-    });
-    Svc.Obs.notify("weave:service:start-over");
-    Svc.Obs.notify("weave:engine:stop-tracking");
+  startOver: function startOver() {
+    Utils.callSynchronously(this, this.startOverCb);
   },
 
   delayedAutoConnect: function delayedAutoConnect(delay) {

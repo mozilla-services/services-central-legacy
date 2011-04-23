@@ -195,9 +195,12 @@ ClientEngine.prototype = {
     this._store.wipe();
   },
 
-  removeClientData: function removeClientData() {
-    let res = new Resource(this.engineURL + "/" + this.localID);
-    res.delete();
+  removeClientData: function removeClientData(callback) {
+    try {
+      new AsyncResource(this.engineURL + "/" + this.localID).delete(callback);
+    } catch (ex) {
+      callback(ex);
+    }
   },
 
   // Override the default behavior to delete bad records from the server.

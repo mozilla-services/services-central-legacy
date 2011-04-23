@@ -1076,9 +1076,10 @@ SyncEngine.prototype = {
     return Utils.callSynchronously(this, this.wipeServerCb);
   },
 
-  removeClientData: function removeClientData() {
+  removeClientData: function removeClientData(callback) {
     // Implement this method in engines that store client specific data
     // on the server.
+    callback();
   },
 
   /*

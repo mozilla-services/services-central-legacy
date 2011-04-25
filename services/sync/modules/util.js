@@ -1464,6 +1464,42 @@ let Utils = {
     return callback.value;
   },
 
+  /*
+   * Produce a sequence of callbacks which -- when all have been executed
+   * successfully *or* any have failed -- invoke the output callback.
+   *
+   * Each input callback should have the signature (error, result), and should
+   * return a truthy value if the computation should be considered to have
+   * failed.
+   *
+   * The contents of ".data" on each input callback are copied to the
+   * resultant callback items. This can save some effort on the caller's side.
+   *
+   * These callbacks are assumed to be single-valued, which covers the common
+   * cases without the expense of `arguments`.
+   */
+  barrieredCallbacks: function (callbacks, output) {
+    let counter = 0;
+    function makeCb(input) {
+      let cb = function(error, result) {
+        if (!output)
+          return;
+
+        let err = input(error, result);
+        if ((0 == --counter) || err) {
+          output(err);
+          output = undefined;
+        }
+      };
+      cb.data = input.data;
+      return cb;
+    }
+    return callbacks.map(function (input) {
+                           counter++;
+                           return makeCb(input);
+                         });
+  },
+
   // Return the two things you need to make an asynchronous call synchronous.
   synchronously: function synchronously() {
     let cb = Utils.makeSyncCallback();

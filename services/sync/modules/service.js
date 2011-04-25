@@ -1088,23 +1088,37 @@ WeaveSvc.prototype = {
       this._log.debug("Skipping client data removal: no cluster URL.");
       completeStartOver();
     } else {
+
       // Clear client-specific data from the server, including disabled engines.
       // This is all done asynchronously, so we invoke the rest of startOver
       // (by way of completeStartOver()) once all the callbacks have been
       // invoked.
-      let engines = [Clients].concat(Engines.getAll());
-      let counter = engines.length;
-      for each (let engine in [Clients].concat(Engines.getAll())) {
-        function cb(error) {
+      function makeEngineCallback(engine) {
+        let name = engine.name;
+        function cb(error, result) {
           if (error)
-            self._log.warn("Deleting client data for " + engine.name + " failed:"
-                           + Utils.exceptionStr(error));
-          if (0 == --counter) {
-            self._log.info("Counter is " + counter);
-            completeStartOver();
-          }
-        }
-        engine.removeClientData(cb);
+            self._log.warn("Deleting client data for " + engine.name +
+                           " failed:" + Utils.exceptionStr(error));
+
+          // We don't care if one of these fails; proceed regardless.
+          return null;
+        };
+        cb.data = engine;
+        return cb;
+      }
+
+      function exitBarrier(error) {
+        // `error` will always be false, so no check needed.
+        completeStartOver();
+      }
+
+      let engines   = [Clients].concat(Engines.getAll());
+      let callbacks = engines.map(makeEngineCallback);
+      let barriered = Utils.barrieredCallbacks(callbacks, exitBarrier);
+
+      for each (let callback in barriered) {
+        let engine = callback.data;       // Our own backchannel data.
+        engine.removeClientData(callback);
       }
     }
   },

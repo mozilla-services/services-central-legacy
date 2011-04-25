@@ -54,6 +54,7 @@ Cu.import("resource://services-sync/identity.js");
 Cu.import("resource://services-sync/log4moz.js");
 Cu.import("resource://services-sync/resource.js");
 Cu.import("resource://services-sync/util.js");
+Cu.import("resource://services-sync/async.js");
 
 function WBORecord(collection, id) {
   this.data = {};
@@ -103,13 +104,13 @@ WBORecord.prototype = {
   // Get thyself from your URI, then deserialize.
   // Set thine 'response' field.
   fetch: function fetch(uri) {
-    let callback = Utils.synchronously();
+    let callback = Async.synchronously();
     this.fetchCb(uri, callback);
     return callback.wait();
   },
 
   upload: function upload(uri) {
-    let callback = Utils.synchronously();
+    let callback = Async.synchronously();
     this.uploadCb(uri, callback);
     return callback.wait();
   },

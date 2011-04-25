@@ -53,6 +53,7 @@ Cu.import("resource://services-sync/identity.js");
 Cu.import("resource://services-sync/log4moz.js");
 Cu.import("resource://services-sync/resource.js");
 Cu.import("resource://services-sync/util.js");
+Cu.import("resource://services-sync/async.js");
 
 Cu.import("resource://services-sync/main.js");    // So we can get to Service for callbacks.
 
@@ -200,10 +201,10 @@ function Store(name) {
 Store.prototype = {
 
   _sleep: function _sleep(delay) {
-    let cb = Utils.makeSyncCallback();
+    let cb = Async.makeSyncCallback();
     this._timer.initWithCallback({notify: cb}, delay,
                                  Ci.nsITimer.TYPE_ONE_SHOT);
-    Utils.waitForSyncCallback(cb);
+    Async.waitForSyncCallback(cb);
   },
 
   applyIncomingBatch: function applyIncomingBatch(records) {
@@ -1069,11 +1070,11 @@ SyncEngine.prototype = {
   },
 
   _resetClient: function SyncEngine__resetClient() {
-    Utils.callSynchronously(this, this._resetClientCb);
+    Async.callSynchronously(this, this._resetClientCb);
   },
 
   wipeServer: function wipeServer() {
-    return Utils.callSynchronously(this, this.wipeServerCb);
+    return Async.callSynchronously(this, this.wipeServerCb);
   },
 
   removeClientData: function removeClientData(callback) {

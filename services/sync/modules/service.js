@@ -70,6 +70,7 @@ Cu.import("resource://services-sync/log4moz.js");
 Cu.import("resource://services-sync/resource.js");
 Cu.import("resource://services-sync/status.js");
 Cu.import("resource://services-sync/util.js");
+Cu.import("resource://services-sync/async.js");
 Cu.import("resource://services-sync/main.js");
 
 Utils.lazy(this, 'Service', WeaveSvc);
@@ -1114,7 +1115,7 @@ WeaveSvc.prototype = {
 
       let engines   = [Clients].concat(Engines.getAll());
       let callbacks = engines.map(makeEngineCallback);
-      let barriered = Utils.barrieredCallbacks(callbacks, exitBarrier);
+      let barriered = Async.barrieredCallbacks(callbacks, exitBarrier);
 
       for each (let callback in barriered) {
         let engine = callback.data;       // Our own backchannel data.
@@ -1124,7 +1125,7 @@ WeaveSvc.prototype = {
   },
 
   startOver: function startOver() {
-    Utils.callSynchronously(this, this.startOverCb);
+    Async.callSynchronously(this, this.startOverCb);
   },
 
   delayedAutoConnect: function delayedAutoConnect(delay) {

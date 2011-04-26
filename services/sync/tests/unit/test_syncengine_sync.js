@@ -76,6 +76,7 @@ SteamTracker.prototype = {
 
 function SteamEngine() {
   SyncEngine.call(this, "Steam");
+  this.toFetch = [];
 }
 SteamEngine.prototype = {
   __proto__: SyncEngine.prototype,
@@ -97,12 +98,18 @@ function makeSteamEngine() {
   return new SteamEngine();
 }
 
+function cleanAndGo(server) {
+  Svc.Prefs.resetBranch("");
+  Records.clearCache();
+  server.stop(run_next_test);
+}
+
 /*
  * Tests
  * 
  * SyncEngine._sync() is divided into four rather independent steps:
  *
- * - _syncStartup()
+ * - _syncStartupCb()
  * - _processIncoming()
  * - _uploadOutgoing()
  * - _syncFinish()
@@ -111,8 +118,8 @@ function makeSteamEngine() {
  * different scenarios below.
  */
 
-function test_syncStartup_emptyOrOutdatedGlobalsResetsSync() {
-  _("SyncEngine._syncStartup resets sync and wipes server data if there's no or an outdated global record");
+add_test(function test_syncStartup_emptyOrOutdatedGlobalsResetsSync() {
+  _("SyncEngine._syncStartupCb resets sync and wipes server data if there's no or an outdated global record");
 
   let syncTesting = new SyncTestingInfrastructure();
   Svc.Prefs.set("clusterURL", "http://localhost:8080/");
@@ -130,44 +137,43 @@ function test_syncStartup_emptyOrOutdatedGlobalsResetsSync() {
   let server = sync_httpd_setup({
       "/1.1/foo/storage/steam": collection.handler()
   });
-  do_test_pending();
 
   let engine = makeSteamEngine();
   engine._store.items = {rekolok: "Rekonstruktionslokomotive"};
-  try {
 
-    // Confirm initial environment
-    do_check_eq(engine._tracker.changedIDs["rekolok"], undefined);
-    let metaGlobal = Records.get(engine.metaURL);
-    do_check_eq(metaGlobal.payload.engines, undefined);
-    do_check_true(!!collection.wbos.flying.payload);
-    do_check_true(!!collection.wbos.scotsman.payload);
+  // Confirm initial environment
+  do_check_eq(engine._tracker.changedIDs["rekolok"], undefined);
+  let metaGlobal = Records.get(engine.metaURL);
+  do_check_eq(metaGlobal.payload.engines, undefined);
+  do_check_true(!!collection.wbos.flying.payload);
+  do_check_true(!!collection.wbos.scotsman.payload);
 
-    engine.lastSync = Date.now() / 1000;
-    engine.lastSyncLocal = Date.now();
-    
-    // Trying to prompt a wipe -- we no longer track CryptoMeta per engine,
-    // so it has nothing to check.
-    engine._syncStartup();
+  engine.lastSync = Date.now() / 1000;
+  engine.lastSyncLocal = Date.now();
 
-    // The meta/global WBO has been filled with data about the engine
-    let engineData = metaGlobal.payload.engines["steam"];
-    do_check_eq(engineData.version, engine.version);
-    do_check_eq(engineData.syncID, engine.syncID);
+  // Trying to prompt a wipe -- we no longer track CryptoMeta per engine,
+  // so it has nothing to check.
+  engine._syncStartupCb(function (err) {
+    try {
+      do_check_false(!!err);
 
-    // Sync was reset and server data was wiped
-    do_check_eq(engine.lastSync, 0);
-    do_check_eq(collection.wbos.flying.payload, undefined);
-    do_check_eq(collection.wbos.scotsman.payload, undefined);
+      // The meta/global WBO has been filled with data about the engine
+      let engineData = metaGlobal.payload.engines["steam"];
+      do_check_eq(engineData.version, engine.version);
+      do_check_eq(engineData.syncID, engine.syncID);
 
-  } finally {
-    server.stop(do_test_finished);
-    Svc.Prefs.resetBranch("");
-    Records.clearCache();
-  }
-}
+      // Sync was reset and server data was wiped
+      do_check_eq(engine.lastSync, 0);
+      do_check_eq(collection.wbos.flying.payload, undefined);
+      do_check_eq(collection.wbos.scotsman.payload, undefined);
 
-function test_syncStartup_serverHasNewerVersion() {
+    } finally {
+      cleanAndGo(server);
+    }
+  });
+});
+
+add_test(function test_syncStartup_serverHasNewerVersion() {
   _("SyncEngine._syncStartup ");
 
   let syncTesting = new SyncTestingInfrastructure();
@@ -177,37 +183,25 @@ function test_syncStartup_serverHasNewerVersion() {
   let server = httpd_setup({
       "/1.1/foo/storage/meta/global": global.handler()
   });
-  do_test_pending();
 
   let engine = makeSteamEngine();
-  try {
 
-    // The server has a newer version of the data and our engine can
-    // handle.  That should give us an exception.
-    let error;
-    try {
-      engine._syncStartup();
-    } catch (ex) {
-      error = ex;
-    }
+  // The server has a newer version of the data and our engine can
+  // handle.  That should give us an exception.
+  let error;
+  engine._syncStartupCb(function (error) {
     do_check_eq(error.failureCode, VERSION_OUT_OF_DATE);
+    cleanAndGo(server);
+  });
+});
 
-  } finally {
-    server.stop(do_test_finished);
-    Svc.Prefs.resetBranch("");
-    Records.clearCache();
-  }
-}
-
-
-function test_syncStartup_syncIDMismatchResetsClient() {
+add_test(function test_syncStartup_syncIDMismatchResetsClient() {
   _("SyncEngine._syncStartup resets sync if syncIDs don't match");
 
   let syncTesting = new SyncTestingInfrastructure();
   Svc.Prefs.set("clusterURL", "http://localhost:8080/");
   Svc.Prefs.set("username", "foo");
   let server = sync_httpd_setup({});
-  do_test_pending();
 
   // global record with a different syncID than our engine has
   let engine = makeSteamEngine();
@@ -216,31 +210,27 @@ function test_syncStartup_syncIDMismatchResetsClient() {
                                                 syncID: 'foobar'}}});
   server.registerPathHandler("/1.1/foo/storage/meta/global", global.handler());
 
-  try {
+  // Confirm initial environment
+  do_check_eq(engine.syncID, 'fake-guid-0');
+  do_check_eq(engine._tracker.changedIDs["rekolok"], undefined);
 
-    // Confirm initial environment
-    do_check_eq(engine.syncID, 'fake-guid-0');
-    do_check_eq(engine._tracker.changedIDs["rekolok"], undefined);
+  engine.lastSync = Date.now() / 1000;
+  engine.lastSyncLocal = Date.now();
+  engine._syncStartupCb(function (err) {
+    try {
+      // The engine has assumed the server's syncID
+      do_check_eq(engine.syncID, 'foobar');
 
-    engine.lastSync = Date.now() / 1000;
-    engine.lastSyncLocal = Date.now();
-    engine._syncStartup();
+      // Sync was reset
+      do_check_eq(engine.lastSync, 0);
 
-    // The engine has assumed the server's syncID 
-    do_check_eq(engine.syncID, 'foobar');
+    } finally {
+      cleanAndGo(server);
+    }
+  });
+});
 
-    // Sync was reset
-    do_check_eq(engine.lastSync, 0);
-
-  } finally {
-    server.stop(do_test_finished);
-    Svc.Prefs.resetBranch("");
-    Records.clearCache();
-  }
-}
-
-
-function test_processIncoming_emptyServer() {
+add_test(function test_processIncoming_emptyServer() {
   _("SyncEngine._processIncoming working with an empty server backend");
 
   let syncTesting = new SyncTestingInfrastructure();
@@ -251,7 +241,6 @@ function test_processIncoming_emptyServer() {
   let server = sync_httpd_setup({
       "/1.1/foo/storage/steam": collection.handler()
   });
-  do_test_pending();
 
   let engine = makeSteamEngine();
   try {
@@ -261,14 +250,11 @@ function test_processIncoming_emptyServer() {
     do_check_eq(engine.lastSync, 0);
 
   } finally {
-    server.stop(do_test_finished);
-    Svc.Prefs.resetBranch("");
-    Records.clearCache();
+    cleanAndGo(server);
   }
-}
+});
 
-
-function test_processIncoming_createFromServer() {
+add_test(function test_processIncoming_createFromServer() {
   _("SyncEngine._processIncoming creates new records from server data");
 
   let syncTesting = new SyncTestingInfrastructure();
@@ -296,43 +282,39 @@ function test_processIncoming_createFromServer() {
       "/1.1/foo/storage/steam/flying": collection.wbos.flying.handler(),
       "/1.1/foo/storage/steam/scotsman": collection.wbos.scotsman.handler()
   });
-  do_test_pending();
 
   let engine = makeSteamEngine();
   let meta_global = Records.set(engine.metaURL, new WBORecord(engine.metaURL));
   meta_global.payload.engines = {steam: {version: engine.version,
                                          syncID: engine.syncID}};
 
-  try {
+  // Confirm initial environment
+  do_check_eq(engine.lastSync, 0);
+  do_check_eq(engine.lastModified, null);
+  do_check_eq(engine._store.items.flying, undefined);
+  do_check_eq(engine._store.items.scotsman, undefined);
+  do_check_eq(engine._store.items['../pathological'], undefined);
 
-    // Confirm initial environment
-    do_check_eq(engine.lastSync, 0);
-    do_check_eq(engine.lastModified, null);
-    do_check_eq(engine._store.items.flying, undefined);
-    do_check_eq(engine._store.items.scotsman, undefined);
-    do_check_eq(engine._store.items['../pathological'], undefined);
+  engine._syncStartupCb(function (err) {
+    try {
+      engine._processIncoming();
 
-    engine._syncStartup();
-    engine._processIncoming();
+      // Timestamps of last sync and last server modification are set.
+      do_check_true(engine.lastSync > 0);
+      do_check_true(engine.lastModified > 0);
 
-    // Timestamps of last sync and last server modification are set.
-    do_check_true(engine.lastSync > 0);
-    do_check_true(engine.lastModified > 0);
+      // Local records have been created from the server data.
+      do_check_eq(engine._store.items.flying, "LNER Class A3 4472");
+      do_check_eq(engine._store.items.scotsman, "Flying Scotsman");
+      do_check_eq(engine._store.items['../pathological'], "Pathological Case");
 
-    // Local records have been created from the server data.
-    do_check_eq(engine._store.items.flying, "LNER Class A3 4472");
-    do_check_eq(engine._store.items.scotsman, "Flying Scotsman");
-    do_check_eq(engine._store.items['../pathological'], "Pathological Case");
+    } finally {
+      cleanAndGo(server);
+    }
+  });
+});
 
-  } finally {
-    server.stop(do_test_finished);
-    Svc.Prefs.resetBranch("");
-    Records.clearCache();
-  }
-}
-
-
-function test_processIncoming_reconcile() {
+add_test(function test_processIncoming_reconcile() {
   _("SyncEngine._processIncoming updates local records");
 
   let syncTesting = new SyncTestingInfrastructure();
@@ -388,7 +370,6 @@ function test_processIncoming_reconcile() {
   let server = sync_httpd_setup({
       "/1.1/foo/storage/steam": collection.handler()
   });
-  do_test_pending();
 
   let engine = makeSteamEngine();
   engine._store.items = {newerserver: "New data, but not as new as server!",
@@ -406,55 +387,52 @@ function test_processIncoming_reconcile() {
   meta_global.payload.engines = {steam: {version: engine.version,
                                          syncID: engine.syncID}};
 
-  try {
+  // Confirm initial environment
+  do_check_eq(engine._store.items.newrecord, undefined);
+  do_check_eq(engine._store.items.newerserver, "New data, but not as new as server!");
+  do_check_eq(engine._store.items.olderidentical, "Older but identical");
+  do_check_eq(engine._store.items.updateclient, "Got data?");
+  do_check_eq(engine._store.items.nukeme, "Nuke me!");
+  do_check_true(engine._tracker.changedIDs['olderidentical'] > 0);
 
-    // Confirm initial environment
-    do_check_eq(engine._store.items.newrecord, undefined);
-    do_check_eq(engine._store.items.newerserver, "New data, but not as new as server!");
-    do_check_eq(engine._store.items.olderidentical, "Older but identical");
-    do_check_eq(engine._store.items.updateclient, "Got data?");
-    do_check_eq(engine._store.items.nukeme, "Nuke me!");
-    do_check_true(engine._tracker.changedIDs['olderidentical'] > 0);
+  engine._syncStartupCb(function (err) {
+    try {
+      engine._processIncoming();
 
-    engine._syncStartup();
-    engine._processIncoming();
+      // Timestamps of last sync and last server modification are set.
+      do_check_true(engine.lastSync > 0);
+      do_check_true(engine.lastModified > 0);
 
-    // Timestamps of last sync and last server modification are set.
-    do_check_true(engine.lastSync > 0);
-    do_check_true(engine.lastModified > 0);
+      // The new record is created.
+      do_check_eq(engine._store.items.newrecord, "New stuff...");
 
-    // The new record is created.
-    do_check_eq(engine._store.items.newrecord, "New stuff...");
+      // The 'newerserver' record is updated since the server data is newer.
+      do_check_eq(engine._store.items.newerserver, "New data!");
 
-    // The 'newerserver' record is updated since the server data is newer.
-    do_check_eq(engine._store.items.newerserver, "New data!");
+      // The data for 'olderidentical' is identical on the server, so
+      // it's no longer marked as changed anymore.
+      do_check_eq(engine._store.items.olderidentical, "Older but identical");
+      do_check_eq(engine._tracker.changedIDs['olderidentical'], undefined);
 
-    // The data for 'olderidentical' is identical on the server, so
-    // it's no longer marked as changed anymore.
-    do_check_eq(engine._store.items.olderidentical, "Older but identical");
-    do_check_eq(engine._tracker.changedIDs['olderidentical'], undefined);
+      // Updated with server data.
+      do_check_eq(engine._store.items.updateclient, "Get this!");
 
-    // Updated with server data.
-    do_check_eq(engine._store.items.updateclient, "Get this!");
+      // The dupe with the shorter ID is kept, the longer one is slated
+      // for deletion.
+      do_check_eq(engine._store.items.long_original, undefined);
+      do_check_eq(engine._store.items.dupe, "Long Original Entry");
+      do_check_neq(engine._delete.ids.indexOf('duplication'), -1);
 
-    // The dupe with the shorter ID is kept, the longer one is slated
-    // for deletion.
-    do_check_eq(engine._store.items.long_original, undefined);
-    do_check_eq(engine._store.items.dupe, "Long Original Entry");
-    do_check_neq(engine._delete.ids.indexOf('duplication'), -1);
+      // The 'nukeme' record marked as deleted is removed.
+      do_check_eq(engine._store.items.nukeme, undefined);
 
-    // The 'nukeme' record marked as deleted is removed.
-    do_check_eq(engine._store.items.nukeme, undefined);
+    } finally {
+      cleanAndGo(server);
+    }
+  });
+});
 
-  } finally {
-    server.stop(do_test_finished);
-    Svc.Prefs.resetBranch("");
-    Records.clearCache();
-  }
-}
-
-
-function test_processIncoming_mobile_batchSize() {
+add_test(function test_processIncoming_mobile_batchSize() {
   _("SyncEngine._processIncoming doesn't fetch everything at once on mobile clients");
 
   let syncTesting = new SyncTestingInfrastructure();
@@ -484,50 +462,48 @@ function test_processIncoming_mobile_batchSize() {
   let server = sync_httpd_setup({
       "/1.1/foo/storage/steam": collection.handler()
   });
-  do_test_pending();
 
   let engine = makeSteamEngine();
   let meta_global = Records.set(engine.metaURL, new WBORecord(engine.metaURL));
   meta_global.payload.engines = {steam: {version: engine.version,
                                          syncID: engine.syncID}};
 
-  try {
 
-    _("On a mobile client, we get new records from the server in batches of 50.");
-    engine._syncStartup();
-    engine._processIncoming();
-    do_check_eq([id for (id in engine._store.items)].length, 234);
-    do_check_true('record-no-0' in engine._store.items);
-    do_check_true('record-no-49' in engine._store.items);
-    do_check_true('record-no-50' in engine._store.items);
-    do_check_true('record-no-233' in engine._store.items);
+  _("On a mobile client, we get new records from the server in batches of 50.");
+  engine._syncStartupCb(function (err) {
+    try {
+      engine._processIncoming();
+      do_check_eq([id for (id in engine._store.items)].length, 234);
+      do_check_true('record-no-0' in engine._store.items);
+      do_check_true('record-no-49' in engine._store.items);
+      do_check_true('record-no-50' in engine._store.items);
+      do_check_true('record-no-233' in engine._store.items);
 
-    // Verify that the right number of GET requests with the right
-    // kind of parameters were made.
-    do_check_eq(collection.get_log.length,
-                Math.ceil(234 / MOBILE_BATCH_SIZE) + 1);
-    do_check_eq(collection.get_log[0].full, 1);
-    do_check_eq(collection.get_log[0].limit, MOBILE_BATCH_SIZE);
-    do_check_eq(collection.get_log[1].full, undefined);
-    do_check_eq(collection.get_log[1].limit, undefined);
-    for (let i = 1; i <= Math.floor(234 / MOBILE_BATCH_SIZE); i++) {
-      do_check_eq(collection.get_log[i+1].full, 1);
-      do_check_eq(collection.get_log[i+1].limit, undefined);
-      if (i < Math.floor(234 / MOBILE_BATCH_SIZE))
-        do_check_eq(collection.get_log[i+1].ids.length, MOBILE_BATCH_SIZE);
-      else
-        do_check_eq(collection.get_log[i+1].ids.length, 234 % MOBILE_BATCH_SIZE);
+      // Verify that the right number of GET requests with the right
+      // kind of parameters were made.
+      do_check_eq(collection.get_log.length,
+                  Math.ceil(234 / MOBILE_BATCH_SIZE) + 1);
+      do_check_eq(collection.get_log[0].full, 1);
+      do_check_eq(collection.get_log[0].limit, MOBILE_BATCH_SIZE);
+      do_check_eq(collection.get_log[1].full, undefined);
+      do_check_eq(collection.get_log[1].limit, undefined);
+      for (let i = 1; i <= Math.floor(234 / MOBILE_BATCH_SIZE); i++) {
+        do_check_eq(collection.get_log[i+1].full, 1);
+        do_check_eq(collection.get_log[i+1].limit, undefined);
+        if (i < Math.floor(234 / MOBILE_BATCH_SIZE))
+          do_check_eq(collection.get_log[i+1].ids.length, MOBILE_BATCH_SIZE);
+        else
+          do_check_eq(collection.get_log[i+1].ids.length, 234 % MOBILE_BATCH_SIZE);
+      }
+
+    } finally {
+      cleanAndGo(server);
     }
+  });
+});
 
-  } finally {
-    server.stop(do_test_finished);
-    Svc.Prefs.resetBranch("");
-    Records.clearCache();
-  }
-}
-
-
-function test_processIncoming_store_toFetch() {
+// This tests assumes serial downloads. TODO: rewrite it to be happy with parallel!
+add_test(function test_processIncoming_store_toFetch() {
   _("If processIncoming fails in the middle of a batch on mobile, state is saved in toFetch and lastSync.");
   let syncTesting = new SyncTestingInfrastructure();
   Svc.Prefs.set("clusterURL", "http://localhost:8080/");
@@ -564,7 +540,6 @@ function test_processIncoming_store_toFetch() {
   let server = sync_httpd_setup({
       "/1.1/foo/storage/steam": collection.handler()
   });
-  do_test_pending();
 
   try {
 
@@ -590,14 +565,11 @@ function test_processIncoming_store_toFetch() {
     do_check_eq(engine.lastSync, collection.wbos["record-no-99"].modified);
 
   } finally {
-    server.stop(do_test_finished);
-    Svc.Prefs.resetBranch("");
-    Records.clearCache();
+    cleanAndGo(server);
   }
-}
+});
 
-
-function test_processIncoming_resume_toFetch() {
+add_test(function test_processIncoming_resume_toFetch() {
   _("toFetch items left over from previous syncs are fetched on the next sync, along with new items.");
   let syncTesting = new SyncTestingInfrastructure();
   Svc.Prefs.set("clusterURL", "http://localhost:8080/");
@@ -632,32 +604,28 @@ function test_processIncoming_resume_toFetch() {
   let server = sync_httpd_setup({
       "/1.1/foo/storage/steam": collection.handler()
   });
-  do_test_pending();
 
-  try {
+  // Confirm initial environment
+  do_check_eq(engine._store.items.flying, undefined);
+  do_check_eq(engine._store.items.scotsman, undefined);
+  do_check_eq(engine._store.items.rekolok, undefined);
 
-    // Confirm initial environment
-    do_check_eq(engine._store.items.flying, undefined);
-    do_check_eq(engine._store.items.scotsman, undefined);
-    do_check_eq(engine._store.items.rekolok, undefined);
+  engine._syncStartupCb(function (err) {
+    try {
+      engine._processIncoming();
 
-    engine._syncStartup();
-    engine._processIncoming();
+      // Local records have been created from the server data.
+      do_check_eq(engine._store.items.flying, "LNER Class A3 4472");
+      do_check_eq(engine._store.items.scotsman, "Flying Scotsman");
+      do_check_eq(engine._store.items.rekolok, "Rekonstruktionslokomotive");
 
-    // Local records have been created from the server data.
-    do_check_eq(engine._store.items.flying, "LNER Class A3 4472");
-    do_check_eq(engine._store.items.scotsman, "Flying Scotsman");
-    do_check_eq(engine._store.items.rekolok, "Rekonstruktionslokomotive");
+    } finally {
+      cleanAndGo(server);
+    }
+  });
+});
 
-  } finally {
-    server.stop(do_test_finished);
-    Svc.Prefs.resetBranch("");
-    Records.clearCache();
-  }
-}
-
-
-function test_processIncoming_applyIncomingBatchSize_smaller() {
+add_test(function test_processIncoming_applyIncomingBatchSize_smaller() {
   _("Ensure that a number of incoming items less than applyIncomingBatchSize is still applied.");
   let syncTesting = new SyncTestingInfrastructure();
   Svc.Prefs.set("clusterURL", "http://localhost:8080/");
@@ -689,32 +657,28 @@ function test_processIncoming_applyIncomingBatchSize_smaller() {
   let server = sync_httpd_setup({
       "/1.1/foo/storage/steam": collection.handler()
   });
-  do_test_pending();
 
-  try {
+  // Confirm initial environment
+  do_check_eq([id for (id in engine._store.items)].length, 0);
 
-    // Confirm initial environment
-    do_check_eq([id for (id in engine._store.items)].length, 0);
+  engine._syncStartupCb(function (err) {
+    try {
+      engine._processIncoming();
 
-    engine._syncStartup();
-    engine._processIncoming();
+      // Records have been applied.
+      do_check_eq([id for (id in engine._store.items)].length,
+                  APPLY_BATCH_SIZE - 1 - 2);
+      do_check_eq(engine.toFetch.length, 2);
+      do_check_eq(engine.toFetch[0], "record-no-0");
+      do_check_eq(engine.toFetch[1], "record-no-8");
 
-    // Records have been applied.
-    do_check_eq([id for (id in engine._store.items)].length,
-                APPLY_BATCH_SIZE - 1 - 2);
-    do_check_eq(engine.toFetch.length, 2);
-    do_check_eq(engine.toFetch[0], "record-no-0");
-    do_check_eq(engine.toFetch[1], "record-no-8");
+    } finally {
+      cleanAndGo(server);
+    }
+  });
+});
 
-  } finally {
-    server.stop(do_test_finished);
-    Svc.Prefs.resetBranch("");
-    Records.clearCache();
-  }
-}
-
-
-function test_processIncoming_applyIncomingBatchSize_multiple() {
+add_test(function test_processIncoming_applyIncomingBatchSize_multiple() {
   _("Ensure that incoming items are applied according to applyIncomingBatchSize.");
   let syncTesting = new SyncTestingInfrastructure();
   Svc.Prefs.set("clusterURL", "http://localhost:8080/");
@@ -747,30 +711,26 @@ function test_processIncoming_applyIncomingBatchSize_multiple() {
   let server = sync_httpd_setup({
       "/1.1/foo/storage/steam": collection.handler()
   });
-  do_test_pending();
 
-  try {
+  // Confirm initial environment
+  do_check_eq([id for (id in engine._store.items)].length, 0);
 
-    // Confirm initial environment
-    do_check_eq([id for (id in engine._store.items)].length, 0);
+  engine._syncStartupCb(function (err) {
+    try {
+      engine._processIncoming();
 
-    engine._syncStartup();
-    engine._processIncoming();
+      // Records have been applied in 3 batches.
+      do_check_eq(batchCalls, 3);
+      do_check_eq([id for (id in engine._store.items)].length,
+                  APPLY_BATCH_SIZE * 3);
 
-    // Records have been applied in 3 batches.
-    do_check_eq(batchCalls, 3);
-    do_check_eq([id for (id in engine._store.items)].length,
-                APPLY_BATCH_SIZE * 3);
+    } finally {
+      cleanAndGo(server);
+    }
+  });
+});
 
-  } finally {
-    server.stop(do_test_finished);
-    Svc.Prefs.resetBranch("");
-    Records.clearCache();
-  }
-}
-
-
-function test_processIncoming_failed_records() {
+add_test(function test_processIncoming_failed_records() {
   _("Ensure that failed records from _reconcile and applyIncomingBatch are refetched.");
   let syncTesting = new SyncTestingInfrastructure();
   Svc.Prefs.set("clusterURL", "http://localhost:8080/");
@@ -834,79 +794,76 @@ function test_processIncoming_failed_records() {
   let server = sync_httpd_setup({
       "/1.1/foo/storage/steam": recording_handler(collection)
   });
-  do_test_pending();
 
-  try {
+  // Confirm initial environment
+  do_check_eq(engine.lastSync, 0);
+  do_check_eq(engine.toFetch.length, 0);
+  do_check_eq([id for (id in engine._store.items)].length, 0);
 
-    // Confirm initial environment
-    do_check_eq(engine.lastSync, 0);
-    do_check_eq(engine.toFetch.length, 0);
-    do_check_eq([id for (id in engine._store.items)].length, 0);
+  let observerSubject;
+  let observerData;
+  Svc.Obs.add("weave:engine:sync:apply-failed",
+              function onApplyFailed(subject, data) {
+    Svc.Obs.remove("weave:engine:sync:apply-failed", onApplyFailed);
+    observerSubject = subject;
+    observerData = data;
+  });
 
-    let observerSubject;
-    let observerData;
-    Svc.Obs.add("weave:engine:sync:apply-failed",
-                function onApplyFailed(subject, data) {
-      Svc.Obs.remove("weave:engine:sync:apply-failed", onApplyFailed);
-      observerSubject = subject;
-      observerData = data;
-    });
-
-    engine._syncStartup();
-    engine._processIncoming();
-
-    // Ensure that all records but the bogus 4 have been applied.
-    do_check_eq([id for (id in engine._store.items)].length,
-                NUMBER_OF_RECORDS - BOGUS_RECORDS.length);
-
-    // Ensure that the bogus records will be fetched again on the next sync.
-    do_check_eq(engine.toFetch.length, BOGUS_RECORDS.length);
-    engine.toFetch.sort();
-    BOGUS_RECORDS.sort();
-    for (let i = 0; i < engine.toFetch.length; i++) {
-      do_check_eq(engine.toFetch[i], BOGUS_RECORDS[i]);
-    }
-
-    // Ensure the observer was notified
-    do_check_eq(observerData, engine.name);
-    do_check_eq(observerSubject.failed, BOGUS_RECORDS.length);
-
-    // Testing batching of failed item fetches.
-    // Try to sync again. Ensure that we split the request into chunks to avoid
-    // URI length limitations.
-    function batchDownload(batchSize) {
-      count = 0;
-      uris  = [];
-      engine.guidFetchBatchSize = batchSize;
+  engine._syncStartupCb(function (err) {
+    try {
       engine._processIncoming();
-      _("Tried again. Requests: " + count + "; URIs: " + JSON.stringify(uris));
-      return count;
+      _("_processIncoming done.");
+
+      // Ensure that all records but the bogus 4 have been applied.
+      do_check_eq([id for (id in engine._store.items)].length,
+                  NUMBER_OF_RECORDS - BOGUS_RECORDS.length);
+
+      // Ensure that the bogus records will be fetched again on the next sync.
+      do_check_eq(engine.toFetch.length, BOGUS_RECORDS.length);
+      engine.toFetch.sort();
+      BOGUS_RECORDS.sort();
+      for (let i = 0; i < engine.toFetch.length; i++) {
+        do_check_eq(engine.toFetch[i], BOGUS_RECORDS[i]);
+      }
+
+      // Ensure the observer was notified
+      do_check_eq(observerData, engine.name);
+      do_check_eq(observerSubject.failed, BOGUS_RECORDS.length);
+
+      // Testing batching of failed item fetches.
+      // Try to sync again. Ensure that we split the request into chunks to avoid
+      // URI length limitations.
+      function batchDownload(batchSize) {
+        count = 0;
+        uris  = [];
+        engine.guidFetchBatchSize = batchSize;
+        engine._processIncoming();
+        _("Tried again. Requests: " + count + "; URIs: " + JSON.stringify(uris));
+        return count;
+      }
+
+      // There are 8 bad records, so this needs 3 additional fetches.
+      // There's always one fetch for "records since".
+      _("Test batching with ID batch size 3, normal mobile batch size.");
+      do_check_eq(batchDownload(3), 4);
+
+      // Now see with a more realistic limit.
+      _("Test batching with sufficient ID batch size.");
+      do_check_eq(batchDownload(BOGUS_RECORDS.length), 2);
+
+      // If we're on mobile, that limit is used by default.
+      _("Test batching with tiny mobile batch size.");
+      Svc.Prefs.set("client.type", "mobile");
+      engine.mobileGUIDFetchBatchSize = 2;
+      do_check_eq(batchDownload(BOGUS_RECORDS.length), 5);
+
+    } finally {
+      cleanAndGo(server);
     }
-    
-    // There are 8 bad records, so this needs 3 fetches.
-    _("Test batching with ID batch size 3, normal mobile batch size.");
-    do_check_eq(batchDownload(3), 3);
+  });
+});
 
-    // Now see with a more realistic limit.
-    _("Test batching with sufficient ID batch size.");
-    do_check_eq(batchDownload(BOGUS_RECORDS.length), 1);
-
-    // If we're on mobile, that limit is used by default.
-    _("Test batching with tiny mobile batch size.");
-    Svc.Prefs.set("client.type", "mobile");
-    engine.mobileGUIDFetchBatchSize = 2;
-    do_check_eq(batchDownload(BOGUS_RECORDS.length), 4);
-
-  } finally {
-    server.stop(do_test_finished);
-    Svc.Prefs.resetBranch("");
-    Records.clearCache();
-    syncTesting = new SyncTestingInfrastructure(makeSteamEngine);
-  }
-}
-
-
-function test_processIncoming_decrypt_failed() {
+add_test(function test_processIncoming_decrypt_failed() {
   _("Ensure that records failing to decrypt are either replaced or refetched.");
   Svc.Prefs.set("clusterURL", "http://localhost:8080/");
   Svc.Prefs.set("username", "foo");
@@ -946,7 +903,6 @@ function test_processIncoming_decrypt_failed() {
   let server = sync_httpd_setup({
       "/1.1/foo/storage/steam": collection.handler()
   });
-  do_test_pending();
 
   try {
 
@@ -977,14 +933,12 @@ function test_processIncoming_decrypt_failed() {
     do_check_eq(observerSubject.failed, 4);
 
   } finally {
-    server.stop(do_test_finished);
-    Svc.Prefs.resetBranch("");
-    Records.clearCache();
+    cleanAndGo(server);
   }
-}
+});
 
 
-function test_uploadOutgoing_toEmptyServer() {
+add_test(function test_uploadOutgoing_toEmptyServer() {
   _("SyncEngine._uploadOutgoing uploads new records to server");
 
   let syncTesting = new SyncTestingInfrastructure();
@@ -999,7 +953,6 @@ function test_uploadOutgoing_toEmptyServer() {
       "/1.1/foo/storage/steam/flying": collection.wbos.flying.handler(),
       "/1.1/foo/storage/steam/scotsman": collection.wbos.scotsman.handler()
   });
-  do_test_pending();
   generateNewKeys();
 
   let engine = makeSteamEngine();
@@ -1013,39 +966,37 @@ function test_uploadOutgoing_toEmptyServer() {
   meta_global.payload.engines = {steam: {version: engine.version,
                                          syncID: engine.syncID}};
 
-  try {
+  // Confirm initial environment
+  do_check_eq(engine.lastSyncLocal, 0);
+  do_check_eq(collection.wbos.flying.payload, undefined);
+  do_check_eq(collection.wbos.scotsman.payload, undefined);
 
-    // Confirm initial environment
-    do_check_eq(engine.lastSyncLocal, 0);
-    do_check_eq(collection.wbos.flying.payload, undefined);
-    do_check_eq(collection.wbos.scotsman.payload, undefined);
+  engine._syncStartupCb(function (err) {
+    try {
+      engine._uploadOutgoing();
 
-    engine._syncStartup();
-    engine._uploadOutgoing();
+      // Local timestamp has been set.
+      do_check_true(engine.lastSyncLocal > 0);
 
-    // Local timestamp has been set.
-    do_check_true(engine.lastSyncLocal > 0);
+      // Ensure the marked record ('scotsman') has been uploaded and is
+      // no longer marked.
+      do_check_eq(collection.wbos.flying.payload, undefined);
+      do_check_true(!!collection.wbos.scotsman.payload);
+      do_check_eq(JSON.parse(collection.wbos.scotsman.data.ciphertext).id,
+                  'scotsman');
+      do_check_eq(engine._tracker.changedIDs['scotsman'], undefined);
 
-    // Ensure the marked record ('scotsman') has been uploaded and is
-    // no longer marked.
-    do_check_eq(collection.wbos.flying.payload, undefined);
-    do_check_true(!!collection.wbos.scotsman.payload);
-    do_check_eq(JSON.parse(collection.wbos.scotsman.data.ciphertext).id,
-                'scotsman');
-    do_check_eq(engine._tracker.changedIDs['scotsman'], undefined);
+      // The 'flying' record wasn't marked so it wasn't uploaded
+      do_check_eq(collection.wbos.flying.payload, undefined);
 
-    // The 'flying' record wasn't marked so it wasn't uploaded
-    do_check_eq(collection.wbos.flying.payload, undefined);
-
-  } finally {
-    server.stop(do_test_finished);
-    Svc.Prefs.resetBranch("");
-    Records.clearCache();
-  }
-}
+    } finally {
+      cleanAndGo(server);
+    }
+  });
+});
 
 
-function test_uploadOutgoing_failed() {
+add_test(function test_uploadOutgoing_failed() {
   _("SyncEngine._uploadOutgoing doesn't clear the tracker of objects that failed to upload.");
 
   let syncTesting = new SyncTestingInfrastructure();
@@ -1059,7 +1010,6 @@ function test_uploadOutgoing_failed() {
   let server = sync_httpd_setup({
       "/1.1/foo/storage/steam": collection.handler()
   });
-  do_test_pending();
 
   let engine = makeSteamEngine();
   engine.lastSync = 123; // needs to be non-zero so that tracker is queried
@@ -1103,15 +1053,12 @@ function test_uploadOutgoing_failed() {
     do_check_eq(engine._tracker.changedIDs['peppercorn'], PEPPERCORN_CHANGED);
 
   } finally {
-    server.stop(do_test_finished);
-    Svc.Prefs.resetBranch("");
-    Records.clearCache();
-    syncTesting = new SyncTestingInfrastructure(makeSteamEngine);
+    cleanAndGo(server);
   }
-}
+});
 
 
-function test_uploadOutgoing_MAX_UPLOAD_RECORDS() {
+add_test(function test_uploadOutgoing_MAX_UPLOAD_RECORDS() {
   _("SyncEngine._uploadOutgoing uploads in batches of MAX_UPLOAD_RECORDS");
 
   let syncTesting = new SyncTestingInfrastructure();
@@ -1144,34 +1091,30 @@ function test_uploadOutgoing_MAX_UPLOAD_RECORDS() {
   let server = sync_httpd_setup({
       "/1.1/foo/storage/steam": collection.handler()
   });
-  do_test_pending();
 
-  try {
+  // Confirm initial environment
+  do_check_eq(noOfUploads, 0);
 
-    // Confirm initial environment
-    do_check_eq(noOfUploads, 0);
+  engine._syncStartupCb(function (err) {
+    try {
+      engine._uploadOutgoing();
 
-    engine._syncStartup();
-    engine._uploadOutgoing();
+      // Ensure all records have been uploaded
+      for (i = 0; i < 234; i++) {
+        do_check_true(!!collection.wbos['record-no-'+i].payload);
+      }
 
-    // Ensure all records have been uploaded
-    for (i = 0; i < 234; i++) {
-      do_check_true(!!collection.wbos['record-no-'+i].payload);
+      // Ensure that the uploads were performed in batches of MAX_UPLOAD_RECORDS
+      do_check_eq(noOfUploads, Math.ceil(234/MAX_UPLOAD_RECORDS));
+
+    } finally {
+      cleanAndGo(server);
     }
-
-    // Ensure that the uploads were performed in batches of MAX_UPLOAD_RECORDS
-    do_check_eq(noOfUploads, Math.ceil(234/MAX_UPLOAD_RECORDS));
-
-  } finally {
-    server.stop(do_test_finished);
-    Svc.Prefs.resetBranch("");
-    Records.clearCache();
-    syncTesting = new SyncTestingInfrastructure(makeSteamEngine);
-  }
-}
+  });
+});
 
 
-function test_syncFinish_noDelete() {
+add_test(function test_syncFinish_noDelete() {
   _("SyncEngine._syncFinish resets tracker's score");
   let engine = makeSteamEngine();
   engine._delete = {}; // Nothing to delete
@@ -1180,10 +1123,11 @@ function test_syncFinish_noDelete() {
   // _syncFinish() will reset the engine's score.
   engine._syncFinish();
   do_check_eq(engine.score, 0);
-}
+  run_next_test();
+});
 
 
-function test_syncFinish_deleteByIds() {
+add_test(function test_syncFinish_deleteByIds() {
   _("SyncEngine._syncFinish deletes server records slated for deletion (list of record IDs).");
 
   let syncTesting = new SyncTestingInfrastructure();
@@ -1203,7 +1147,6 @@ function test_syncFinish_deleteByIds() {
   let server = httpd_setup({
       "/1.1/foo/storage/steam": collection.handler()
   });
-  do_test_pending();
 
   let engine = makeSteamEngine();
   try {
@@ -1220,14 +1163,12 @@ function test_syncFinish_deleteByIds() {
     do_check_eq(engine._delete.ids, undefined);
 
   } finally {
-    server.stop(do_test_finished);
-    Svc.Prefs.resetBranch("");
-    Records.clearCache();
+    cleanAndGo(server);
   }
-}
+});
 
 
-function test_syncFinish_deleteLotsInBatches() {
+add_test(function test_syncFinish_deleteLotsInBatches() {
   _("SyncEngine._syncFinish deletes server records in batches of 100 (list of record IDs).");
 
   let syncTesting = new SyncTestingInfrastructure();
@@ -1257,7 +1198,6 @@ function test_syncFinish_deleteLotsInBatches() {
   let server = httpd_setup({
       "/1.1/foo/storage/steam": collection.handler()
   });
-  do_test_pending();
 
   let engine = makeSteamEngine();
   try {
@@ -1294,14 +1234,12 @@ function test_syncFinish_deleteLotsInBatches() {
     do_check_eq(engine._delete.ids, undefined);
 
   } finally {
-    server.stop(do_test_finished);
-    Svc.Prefs.resetBranch("");
-    Records.clearCache();
+    cleanAndGo(server);
   }
-}
+});
 
 
-function test_sync_partialUpload() {
+add_test(function test_sync_partialUpload() {
   _("SyncEngine.sync() keeps changedIDs that couldn't be uploaded.");
 
   let syncTesting = new SyncTestingInfrastructure();
@@ -1312,7 +1250,6 @@ function test_sync_partialUpload() {
   let server = sync_httpd_setup({
       "/1.1/foo/storage/steam": collection.handler()
   });
-  do_test_pending();
   generateNewKeys();
 
   let engine = makeSteamEngine();
@@ -1371,13 +1308,11 @@ function test_sync_partialUpload() {
     }
 
   } finally {
-    server.stop(do_test_finished);
-    Svc.Prefs.resetBranch("");
-    Records.clearCache();
+    cleanAndGo(server);
   }
-}
+});
 
-function test_canDecrypt_noCryptoKeys() {
+add_test(function test_canDecrypt_noCryptoKeys() {
   _("SyncEngine.canDecrypt returns false if the engine fails to decrypt items on the server, e.g. due to a missing crypto key collection.");
   let syncTesting = new SyncTestingInfrastructure();
   Svc.Prefs.set("clusterURL", "http://localhost:8080/");
@@ -1394,7 +1329,6 @@ function test_canDecrypt_noCryptoKeys() {
   let server = sync_httpd_setup({
       "/1.1/foo/storage/steam": collection.handler()
   });
-  do_test_pending();
 
   let engine = makeSteamEngine();
   try {
@@ -1402,13 +1336,11 @@ function test_canDecrypt_noCryptoKeys() {
     do_check_false(engine.canDecrypt());
 
   } finally {
-    server.stop(do_test_finished);
-    Svc.Prefs.resetBranch("");
-    Records.clearCache();
+    cleanAndGo(server);
   }
-}
+});
 
-function test_canDecrypt_true() {
+add_test(function test_canDecrypt_true() {
   _("SyncEngine.canDecrypt returns true if the engine can decrypt the items on the server.");
   let syncTesting = new SyncTestingInfrastructure();
   Svc.Prefs.set("clusterURL", "http://localhost:8080/");
@@ -1425,20 +1357,14 @@ function test_canDecrypt_true() {
   let server = sync_httpd_setup({
       "/1.1/foo/storage/steam": collection.handler()
   });
-  do_test_pending();
 
   let engine = makeSteamEngine();
   try {
-
     do_check_true(engine.canDecrypt());
-
   } finally {
-    server.stop(do_test_finished);
-    Svc.Prefs.resetBranch("");
-    Records.clearCache();
+    cleanAndGo(server);
   }
-}
-
+});
 
 function run_test() {
   if (DISABLE_TESTS_BUG_604565)
@@ -1446,26 +1372,5 @@ function run_test() {
 
   generateNewKeys();
 
-  test_syncStartup_emptyOrOutdatedGlobalsResetsSync();
-  test_syncStartup_serverHasNewerVersion();
-  test_syncStartup_syncIDMismatchResetsClient();
-  test_processIncoming_emptyServer();
-  test_processIncoming_createFromServer();
-  test_processIncoming_reconcile();
-  test_processIncoming_mobile_batchSize();
-  test_processIncoming_store_toFetch();
-  test_processIncoming_resume_toFetch();
-  test_processIncoming_applyIncomingBatchSize_smaller();
-  test_processIncoming_applyIncomingBatchSize_multiple();
-  test_processIncoming_failed_records();
-  test_processIncoming_decrypt_failed();
-  test_uploadOutgoing_toEmptyServer();
-  test_uploadOutgoing_failed();
-  test_uploadOutgoing_MAX_UPLOAD_RECORDS();
-  test_syncFinish_noDelete();
-  test_syncFinish_deleteByIds();
-  test_syncFinish_deleteLotsInBatches();
-  test_sync_partialUpload();
-  test_canDecrypt_noCryptoKeys();
-  test_canDecrypt_true();
+  run_next_test();
 }

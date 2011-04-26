@@ -305,7 +305,7 @@ EngineManagerSvc.prototype = {
   getEnabled: function EngMgr_getEnabled() {
     return this.getAll().filter(function(engine) engine.enabled);
   },
-  
+
   /**
    * Register an Engine to the service. Alternatively, give an array of engine
    * objects to register.
@@ -392,7 +392,7 @@ Engine.prototype = {
   },
 
   /**
-   * Get rid of any local meta-data
+   * Get rid of any local metadata.
    */
   resetClient: function Engine_resetClient() {
     if (!this._resetClient)
@@ -432,16 +432,16 @@ SyncEngine.prototype = {
   __proto__: Engine.prototype,
   _recordObj: CryptoWrapper,
   version: 1,
-  
+
   // How many records to pull in a single sync. This is primarily to avoid very
   // long first syncs against profiles with many history records.
   downloadLimit: null,
-  
+
   // How many records to pull at one time when specifying IDs. This is to avoid
   // URI length limitations.
   guidFetchBatchSize: DEFAULT_GUID_FETCH_BATCH_SIZE,
   mobileGUIDFetchBatchSize: DEFAULT_MOBILE_GUID_FETCH_BATCH_SIZE,
-  
+
   // How many records to process in a single batch.
   applyIncomingBatchSize: DEFAULT_STORE_BATCH_SIZE,
 
@@ -529,14 +529,23 @@ SyncEngine.prototype = {
   },
 
   // Any setup that needs to happen at the beginning of each sync.
-  _syncStartup: function SyncEngine__syncStartup() {
+  _syncStartupCb: function _syncStartupCb(callback) {
+    try {
+      this._syncStartupUnsafe(callback);
+    } catch (ex) {
+      callback(ex);
+    }
+  },
 
+  // This is wrapped in a try block by _syncStartupCb.
+  _syncStartupUnsafe: function _syncStartupUnsafe(callback) {
     // Determine if we need to wipe on outdated versions
     let metaGlobal = Records.get(this.metaURL);
     let engines = metaGlobal.payload.engines || {};
     let engineData = engines[this.name] || {};
 
     let needsWipe = false;
+    let bouncer = function(f) f();
 
     // Assume missing versions are 0 and wipe the server
     if ((engineData.version || 0) < this.version) {
@@ -565,43 +574,50 @@ SyncEngine.prototype = {
     else if (engineData.syncID != this.syncID) {
       this._log.debug("Engine syncIDs: " + [engineData.syncID, this.syncID]);
       this.syncID = engineData.syncID;
-      this._resetClient();
-    };
-
-    // Delete any existing data and reupload on bad version or missing meta.
-    // No crypto component here...? We could regenerate per-collection keys...
-    if (needsWipe) {
-      this.wipeServer(true);
+      bouncer = this._resetClientCb;
     }
 
-    // Save objects that need to be uploaded in this._modified. We also save
-    // the timestamp of this fetch in this.lastSyncLocal. As we successfully
-    // upload objects we remove them from this._modified. If an error occurs
-    // or any objects fail to upload, they will remain in this._modified. At
-    // the end of a sync, or after an error, we add all objects remaining in
-    // this._modified to the tracker.
-    this.lastSyncLocal = Date.now();
-    if (this.lastSync) {
-      this._modified = this.getChangedIDs();
-    } else {
-      // Mark all items to be uploaded, but treat them as changed from long ago
-      this._log.debug("First sync, uploading all items");
-      this._modified = {};
-      for (let id in this._store.getAllIDs())
-        this._modified[id] = 0;
-    }
-    // Clear the tracker now. If the sync fails we'll add the ones we failed
-    // to upload back.
-    this._tracker.clearChangedIDs();
- 
-    // Array of just the IDs from this._modified. This is what we iterate over
-    // so we can modify this._modified during the iteration.
-    this._modifiedIDs = [id for (id in this._modified)];
-    this._log.info(this._modifiedIDs.length +
-                   " outgoing items pre-reconciliation");
+    bouncer.call(this, function (error) {
+      if (error) {
+        throw error;         // Will get caught by our wrapper.
+      }
 
-    // Keep track of what to delete at the end of sync
-    this._delete = {};
+      // Delete any existing data and reupload on bad version or missing meta.
+      // No crypto component here...? We could regenerate per-collection keys...
+      if (needsWipe) {
+        this.wipeServer(true);
+      }
+
+      // Save objects that need to be uploaded in this._modified. We also save
+      // the timestamp of this fetch in this.lastSyncLocal. As we successfully
+      // upload objects we remove them from this._modified. If an error occurs
+      // or any objects fail to upload, they will remain in this._modified. At
+      // the end of a sync, or after an error, we add all objects remaining in
+      // this._modified to the tracker.
+      this.lastSyncLocal = Date.now();
+      if (this.lastSync) {
+        this._modified = this.getChangedIDs();
+      } else {
+        // Mark all items to be uploaded, but treat them as changed from long ago
+        this._log.debug("First sync, uploading all items");
+        this._modified = {};
+        for (let id in this._store.getAllIDs())
+          this._modified[id] = 0;
+      }
+      // Clear the tracker now. If the sync fails we'll add the ones we failed
+      // to upload back.
+      this._tracker.clearChangedIDs();
+
+      // Array of just the IDs from this._modified. This is what we iterate over
+      // so we can modify this._modified during the iteration.
+      this._modifiedIDs = [id for (id in this._modified)];
+      this._log.info(this._modifiedIDs.length +
+                     " outgoing items pre-reconciliation");
+
+      // Keep track of what to delete at the end of sync
+      this._delete = {};
+      callback();
+    }.bind(this));
   },
 
   // Process incoming records
@@ -657,7 +673,7 @@ SyncEngine.prototype = {
 
       // Track the collection for the WBO.
       item.collection = self.name;
-      
+
       // Remember which records were processed
       handled.push(item.id);
 
@@ -677,7 +693,7 @@ SyncEngine.prototype = {
               strategy = self.handleHMACMismatch(item, false);
             }
           }
-          
+
           switch (strategy) {
             case null:
               // Retry succeeded! No further handling.
@@ -725,7 +741,7 @@ SyncEngine.prototype = {
       self._store._sleep(0);
     };
 
-    // Only bother getting data from the server if there's new things
+    // Only bother getting data from the server if there are new items.
     if (this.lastModified == null || this.lastModified > this.lastSync) {
       let resp = newitems.get();
       doApplyBatchAndPersistFailed.call(this);
@@ -738,7 +754,7 @@ SyncEngine.prototype = {
     // Mobile: check if we got the maximum that we requested; get the rest if so.
     if (handled.length == newitems.limit) {
       let guidColl = new Collection(this.engineURL);
-      
+
       // Sort and limit so that on mobile we only get the last X records.
       guidColl.limit = this.downloadLimit;
       guidColl.newer = this.lastSync;
@@ -1013,12 +1029,16 @@ SyncEngine.prototype = {
 
   _sync: function SyncEngine__sync() {
     try {
-      this._syncStartup();
-      Observers.notify("weave:engine:sync:status", "process-incoming");
-      this._processIncoming();
-      Observers.notify("weave:engine:sync:status", "upload-outgoing");
-      this._uploadOutgoing();
-      this._syncFinish();
+      this._syncStartupCb(function (err) {
+        if (err) {
+          throw err;
+        }
+        Observers.notify("weave:engine:sync:status", "process-incoming");
+        this._processIncoming();
+        Observers.notify("weave:engine:sync:status", "upload-outgoing");
+        this._uploadOutgoing();
+        this._syncFinish();
+      }.bind(this));
     } finally {
       this._syncCleanup();
     }
@@ -1061,13 +1081,12 @@ SyncEngine.prototype = {
   },
 
   wipeServerCb: function wipeServerCb(callback) {
-    let self = this;
     let cb = function(err) {
       if (!err)
-        self._resetClientCb(callback);
+        this._resetClientCb(callback);
       else
         callback(err);
-    };
+    }.bind(this);
     new AsyncResource(this.engineURL).delete(cb);
   },
 

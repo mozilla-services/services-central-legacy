@@ -267,127 +267,147 @@ BookmarksEngine.prototype = {
     }
   },
 
-  _syncStartup: function _syncStart() {
-    SyncEngine.prototype._syncStartup.call(this);
+  _syncStartupCb: function _syncStartupCb(callback) {
+    let self = this;
 
-    // For first-syncs, make a backup for the user to restore
-    if (this.lastSync == 0)
-      archiveBookmarks();
+    function archive() {
+      // For first-syncs, make a backup for the user to restore
+      if (self.lastSync == 0)
+        archiveBookmarks();
+    }
 
-    // Lazily create a mapping of folder titles and separator positions to GUID
-    this.__defineGetter__("_lazyMap", function() {
-      delete this._lazyMap;
+    function buildLazyMap() {
+      // Lazily create a mapping of folder titles and separator positions to GUID
+      self.__defineGetter__("_lazyMap", function() {
+        delete self._lazyMap;
 
-      let lazyMap = {};
-      for (let guid in this._store.getAllIDs()) {
-        // Figure out what key to store the mapping
-        let key;
-        let id = this._store.idForGUID(guid);
-        switch (PlacesUtils.bookmarks.getItemType(id)) {
-          case PlacesUtils.bookmarks.TYPE_BOOKMARK:
+        let lazyMap = {};
+        for (let guid in self._store.getAllIDs()) {
+          // Figure out what key to store the mapping
+          let key;
+          let id = self._store.idForGUID(guid);
+          switch (PlacesUtils.bookmarks.getItemType(id)) {
+            case PlacesUtils.bookmarks.TYPE_BOOKMARK:
 
-            // Smart bookmarks map to their annotation value.
-            let queryId;
-            try {
-              queryId = PlacesUtils.annotations.getItemAnnotation(
-                id, SMART_BOOKMARKS_ANNO);
-            } catch(ex) {}
-            
-            if (queryId)
-              key = "q" + queryId;
-            else
-              key = "b" + PlacesUtils.bookmarks.getBookmarkURI(id).spec + ":" +
-                    PlacesUtils.bookmarks.getItemTitle(id);
-            break;
-          case PlacesUtils.bookmarks.TYPE_FOLDER:
-            key = "f" + PlacesUtils.bookmarks.getItemTitle(id);
-            break;
-          case PlacesUtils.bookmarks.TYPE_SEPARATOR:
-            key = "s" + PlacesUtils.bookmarks.getItemIndex(id);
-            break;
-          default:
-            continue;
-        }
+              // Smart bookmarks map to their annotation value.
+              let queryId;
+              try {
+                queryId = PlacesUtils.annotations.getItemAnnotation(
+                  id, SMART_BOOKMARKS_ANNO);
+              } catch(ex) {}
 
-        // The mapping is on a per parent-folder-name basis
-        let parent = PlacesUtils.bookmarks.getFolderIdForItem(id);
-        if (parent <= 0)
-          continue;
-
-        let parentName = PlacesUtils.bookmarks.getItemTitle(parent);
-        if (lazyMap[parentName] == null)
-          lazyMap[parentName] = {};
-
-        // If the entry already exists, remember that there are explicit dupes
-        let entry = new String(guid);
-        entry.hasDupe = lazyMap[parentName][key] != null;
-
-        // Remember this item's guid for its parent-name/key pair
-        lazyMap[parentName][key] = entry;
-        this._log.trace("Mapped: " + [parentName, key, entry, entry.hasDupe]);
-      }
-
-      // Expose a helper function to get a dupe guid for an item
-      return this._lazyMap = function(item) {
-        // Figure out if we have something to key with
-        let key;
-        let altKey;
-        switch (item.type) {
-          case "query":
-            // Prior to Bug 610501, records didn't carry their Smart Bookmark
-            // anno, so we won't be able to dupe them correctly. This altKey
-            // hack should get them to dupe correctly.
-            if (item.queryId) {
-              key = "q" + item.queryId;
-              altKey = "b" + item.bmkUri + ":" + item.title;
+              if (queryId)
+                key = "q" + queryId;
+              else
+                key = "b" + PlacesUtils.bookmarks.getBookmarkURI(id).spec + ":" +
+                      PlacesUtils.bookmarks.getItemTitle(id);
               break;
-            }
-            // No queryID? Fall through to the regular bookmark case.
-          case "bookmark":
-          case "microsummary":
-            key = "b" + item.bmkUri + ":" + item.title;
-            break;
-          case "folder":
-          case "livemark":
-            key = "f" + item.title;
-            break;
-          case "separator":
-            key = "s" + item.pos;
-            break;
-          default:
-            return;
+            case PlacesUtils.bookmarks.TYPE_FOLDER:
+              key = "f" + PlacesUtils.bookmarks.getItemTitle(id);
+              break;
+            case PlacesUtils.bookmarks.TYPE_SEPARATOR:
+              key = "s" + PlacesUtils.bookmarks.getItemIndex(id);
+              break;
+            default:
+              continue;
+          }
+
+          // The mapping is on a per parent-folder-name basis
+          let parent = PlacesUtils.bookmarks.getFolderIdForItem(id);
+          if (parent <= 0)
+            continue;
+
+          let parentName = PlacesUtils.bookmarks.getItemTitle(parent);
+          if (lazyMap[parentName] == null)
+            lazyMap[parentName] = {};
+
+          // If the entry already exists, remember that there are explicit dupes
+          let entry = new String(guid);
+          entry.hasDupe = lazyMap[parentName][key] != null;
+
+          // Remember this item's guid for its parent-name/key pair
+          lazyMap[parentName][key] = entry;
+          self._log.trace("Mapped: " + [parentName, key, entry, entry.hasDupe]);
         }
 
-        // Give the guid if we have the matching pair
-        this._log.trace("Finding mapping: " + item.parentName + ", " + key);
-        let parent = lazyMap[item.parentName];
-        
-        if (!parent) {
-          this._log.trace("No parent => no dupe.");
-          return undefined;
-        }
+        // Expose a helper function to get a dupe guid for an item
+        return self._lazyMap = function(item) {
+          // Figure out if we have something to key with
+          let key;
+          let altKey;
+          switch (item.type) {
+            case "query":
+              // Prior to Bug 610501, records didn't carry their Smart Bookmark
+              // anno, so we won't be able to dupe them correctly. This altKey
+              // hack should get them to dupe correctly.
+              if (item.queryId) {
+                key = "q" + item.queryId;
+                altKey = "b" + item.bmkUri + ":" + item.title;
+                break;
+              }
+              // No queryID? Fall through to the regular bookmark case.
+            case "bookmark":
+            case "microsummary":
+              key = "b" + item.bmkUri + ":" + item.title;
+              break;
+            case "folder":
+            case "livemark":
+              key = "f" + item.title;
+              break;
+            case "separator":
+              key = "s" + item.pos;
+              break;
+            default:
+              return;
+          }
+
+          // Give the guid if we have the matching pair
+          self._log.trace("Finding mapping: " + item.parentName + ", " + key);
+          let parent = lazyMap[item.parentName];
+
+          if (!parent) {
+            self._log.trace("No parent => no dupe.");
+            return undefined;
+          }
+
+          let dupe = parent[key];
           
-        let dupe = parent[key];
-        
-        if (dupe) {
-          this._log.trace("Mapped dupe: " + dupe);
-          return dupe;
-        }
-        
-        if (altKey) {
-          dupe = parent[altKey];
           if (dupe) {
-            this._log.trace("Mapped dupe using altKey " + altKey + ": " + dupe);
+            self._log.trace("Mapped dupe: " + dupe);
             return dupe;
           }
-        }
-        
-        this._log.trace("No dupe found for key " + key + "/" + altKey + ".");
-        return undefined;
-      };
-    });
 
-    this._store._childrenToOrder = {};
+          if (altKey) {
+            dupe = parent[altKey];
+            if (dupe) {
+              self._log.trace("Mapped dupe using altKey " + altKey + ": " + dupe);
+              return dupe;
+            }
+          }
+
+          self._log.trace("No dupe found for key " + key + "/" + altKey + ".");
+          return undefined;
+        };
+      });
+
+      self._store._childrenToOrder = {};
+      callback();
+    }
+
+    function startup(err) {
+      if (err) {
+        callback(err);
+        return;
+      }
+      try {
+        archive();
+        buildLazyMap();
+      } catch (ex) {
+        callback(ex);
+      }
+    }
+
+    SyncEngine.prototype._syncStartupCb.call(this, startup);
   },
 
   _processIncoming: function _processIncoming() {

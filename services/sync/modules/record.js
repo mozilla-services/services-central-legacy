@@ -38,8 +38,9 @@
  * ***** END LICENSE BLOCK ***** */
 
 const EXPORTED_SYMBOLS = ["WBORecord", "RecordManager", "Records",
-                          "CryptoWrapper", "CollectionKeys", "BulkKeyBundle",
-                          "SyncKeyBundle", "Collection"];
+                          "CryptoWrapper", "CollectionKeys",
+                          "BulkKeyBundle", "SyncKeyBundle",
+                          "AsyncCollection", "Collection"];
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
@@ -717,9 +718,8 @@ SyncKeyBundle.prototype = {
   }
 };
 
-
-function Collection(uri, recordObj) {
-  Resource.call(this, uri);
+function AsyncCollection(uri, recordObj) {
+  IncrementalResource.call(this, uri);
   this._recordObj = recordObj;
 
   this._full = false;
@@ -729,9 +729,9 @@ function Collection(uri, recordObj) {
   this._newer = 0;
   this._data = [];
 }
-Collection.prototype = {
-  __proto__: Resource.prototype,
-  _logName: "Collection",
+AsyncCollection.prototype = {
+  __proto__: IncrementalResource.prototype,
+  _logName: "AsyncCollection",
 
   _rebuildURL: function Coll__rebuildURL() {
     // XXX should consider what happens if it's not a URL...
@@ -809,24 +809,28 @@ Collection.prototype = {
   },
 
   set recordHandler(onRecord) {
-    // Save this because onProgress is called with this as the ChannelListener
+    // Save `this` because onProgress is called with this as the ChannelListener.
     let coll = this;
-
-    // Switch to newline separated records for incremental parsing
-    coll.setHeader("Accept", "application/newlines");
-
-    this._onProgress = function() {
-      let newline;
-      while ((newline = this._data.indexOf("\n")) > 0) {
-        // Split the json record from the rest of the data
-        let json = this._data.slice(0, newline);
-        this._data = this._data.slice(newline + 1);
-
-        // Deserialize a record from json and give it to the callback
-        let record = new coll._recordObj();
-        record.deserialize(json);
-        onRecord(record);
-      }
+    this.lineHandler = function jsonOnRecord(json, resource) {
+      // Deserialize a record from JSON and give it to the callback.
+      let record = new coll._recordObj();
+      record.deserialize(json);
+      onRecord(record, coll);
     };
   }
+};
+
+function Collection(uri, recordObj) {
+  AsyncCollection.call(this, uri, recordObj);
+}
+Collection.prototype = {
+  __proto__: AsyncCollection.prototype,
+  _logName: "Collection",
+
+  // Now mix-in the synchronous methods we need.
+  _request: Resource.prototype._request,
+  delete:   Resource.prototype.delete,
+  get:      Resource.prototype.get,
+  post:     Resource.prototype.post,
+  put:      Resource.prototype.put
 };

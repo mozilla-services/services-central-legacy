@@ -80,6 +80,15 @@ function server_json(metadata, response) {
   response.bodyOutputStream.write(body, body.length);
 }
 
+function server_line_by_line(metadata, response) {
+  let body = "";
+  for each (let item in [123, 456, 789]) {
+    body += JSON.stringify({"foo": item}) + "\n";
+  }
+  response.setStatusLine(metadata.httpVersion, 200, "OK");
+  response.bodyOutputStream.write(body, body.length);
+}
+
 const TIMESTAMP = 1274380461;
 
 function server_timestamp(metadata, response) {
@@ -154,6 +163,7 @@ function run_test() {
     "/upload": server_upload,
     "/delete": server_delete,
     "/json": server_json,
+    "/line-by-line": server_line_by_line,
     "/timestamp": server_timestamp,
     "/headers": server_headers,
     "/backoff": server_backoff,
@@ -306,6 +316,21 @@ add_test(function test_put_data_string() {
     do_check_eq(content, "Valid data upload via PUT");
     do_check_eq(content.status, 200);
     do_check_eq(res_upload.data, content);
+    run_next_test();
+  });
+});
+
+add_test(function test_line_by_line() {
+  _("Test line-by-line handling.");
+  let received = [];
+  let res20 = new IncrementalResource("http://localhost:8080/line-by-line",
+                                      function(json) {
+                                        received.push(JSON.parse(json));
+                                      });
+  res20.get(function (error, content) {
+    do_check_false(!!error);
+    do_check_eq(received.length, 3);
+    do_check_true(received.every(function (x) [123, 456, 789].indexOf(x.foo) != -1 ));
     run_next_test();
   });
 });

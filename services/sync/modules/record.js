@@ -743,9 +743,8 @@ SyncKeyBundle.prototype = {
   }
 };
 
-
-function Collection(uri, recordObj) {
-  Resource.call(this, uri);
+function AsyncCollection(uri, recordObj) {
+  AsyncResource.call(this, uri);
   this._recordObj = recordObj;
 
   this._full = false;
@@ -755,9 +754,9 @@ function Collection(uri, recordObj) {
   this._newer = 0;
   this._data = [];
 }
-Collection.prototype = {
-  __proto__: Resource.prototype,
-  _logName: "Collection",
+AsyncCollection.prototype = {
+  __proto__: AsyncResource.prototype,
+  _logName: "AsyncCollection",
 
   _rebuildURL: function Coll__rebuildURL() {
     // XXX should consider what happens if it's not a URL...
@@ -855,4 +854,19 @@ Collection.prototype = {
       }
     };
   }
+};
+
+function Collection(uri, recordObj) {
+  AsyncCollection.call(this, uri, recordObj);
+}
+Collection.prototype = {
+  __proto__: AsyncCollection.prototype,
+  _logName: "Collection",
+
+  // Now mix-in the synchronous methods we need.
+  _request: Resource.prototype._request,
+  delete:   Resource.prototype.delete,
+  get:      Resource.prototype.get,
+  post:     Resource.prototype.post,
+  put:      Resource.prototype.put
 };

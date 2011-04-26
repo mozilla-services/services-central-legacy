@@ -526,10 +526,6 @@ SyncEngine.prototype = {
     return record;
   },
 
-  _syncStartup: function syncStartup() {
-    Async.callSynchronously(this, this._syncStartupCb);
-  },
-
   // Any setup that needs to happen at the beginning of each sync.
   _syncStartupCb: function _syncStartupCb(callback) {
     try {

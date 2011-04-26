@@ -37,7 +37,7 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-const EXPORTED_SYMBOLS = ["Resource", "AsyncResource",
+const EXPORTED_SYMBOLS = ["Resource", "AsyncResource", "IncrementalResource",
                           "Auth", "BrokenBasicAuthenticator",
                           "BasicAuthenticator", "NoOpAuthenticator"];
 
@@ -431,6 +431,40 @@ AsyncResource.prototype = {
   }
 };
 
+/*
+ * An async resource which calls an onRecord callback on a handler object as
+ * lines are retrieved. Each line will be delivered as text.
+ */
+function IncrementalResource(uri, lineHandler) {
+  AsyncResource.call(this, uri);
+  if (lineHandler) {
+    this.lineHandler = lineHandler;
+  }
+}
+IncrementalResource.prototype = {
+  __proto__: AsyncResource.prototype,
+  _logName: "Net.IncrementalResource",
+
+  set lineHandler(handler) {
+    let resource = this;
+    this._onProgress = function () {
+      let newline;
+      while ((newline = this._data.indexOf("\n")) > 0) {
+        // Split the JSON record from the rest of the data.
+        let json = this._data.slice(0, newline);
+        this._data = this._data.slice(newline + 1);
+
+        // Give the JSON to the callback.
+        handler(json, resource);
+      }
+    };
+  },
+
+  get: function (callback) {
+    this.setHeader("Accept", "application/newlines");
+    AsyncResource.prototype.get.call(this, callback);
+  }
+};
 
 /*
  * Represent a remote network resource, identified by a URI, with a

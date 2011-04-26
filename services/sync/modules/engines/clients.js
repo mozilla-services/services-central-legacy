@@ -173,13 +173,13 @@ ClientEngine.prototype = {
     return false;
   },
 
-  _syncStartup: function _syncStartup() {
+  _syncStartupCb: function _syncStartupCb(callback) {
     // Reupload new client record periodically.
     if (Date.now() / 1000 - this.lastRecordUpload > CLIENTS_TTL_REFRESH) {
       this._tracker.addChangedID(this.localID);
       this.lastRecordUpload = Date.now() / 1000;
     }
-    SyncEngine.prototype._syncStartup.call(this);
+    SyncEngine.prototype._syncStartupCb.call(this, callback);
   },
 
   // Always process incoming items because they might have commands

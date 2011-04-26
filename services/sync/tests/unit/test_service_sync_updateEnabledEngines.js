@@ -1,6 +1,7 @@
 Cu.import("resource://services-sync/engines.js");
 Cu.import("resource://services-sync/engines/clients.js");
 Cu.import("resource://services-sync/util.js");
+Cu.import("resource://services-sync/async.js");
 Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/record.js");
 
@@ -27,7 +28,7 @@ SteamEngine.prototype = {
   _storeObj: QuietStore,
   
   _sync: function _sync() {
-    this._syncStartup();
+    Async.callSynchronously(this, this._syncStartupCb);
   }
 };
 Engines.register(SteamEngine);

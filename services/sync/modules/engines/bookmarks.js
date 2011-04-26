@@ -373,13 +373,13 @@ BookmarksEngine.prototype = {
     function startup(err) {
       if (err) {
         callback(err);
-      } else {
-        try {
-          archive();
-          buildLazyMap();
-        } catch (ex) {
-          callback(ex);
-        }
+        return;
+      }
+      try {
+        archive();
+        buildLazyMap();
+      } catch (ex) {
+        callback(ex);
       }
     }
 

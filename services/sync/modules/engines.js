@@ -390,7 +390,7 @@ Engine.prototype = {
   },
 
   /**
-   * Get rid of any local meta-data
+   * Get rid of any local metadata.
    */
   resetClient: function Engine_resetClient() {
     if (!this._resetClient)
@@ -535,6 +535,7 @@ SyncEngine.prototype = {
     }
   },
 
+  // This is wrapped in a try block by _syncStartupCb.
   _syncStartupUnsafe: function _syncStartupUnsafe(callback) {
     // Determine if we need to wipe on outdated versions
     let metaGlobal = Records.get(this.metaURL);

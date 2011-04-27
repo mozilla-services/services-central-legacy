@@ -618,10 +618,21 @@ SyncEngine.prototype = {
     }.bind(this));
   },
 
-  // Process incoming records
-  _processIncoming: function SyncEngine__processIncoming() {
-    this._log.trace("Downloading & applying server changes");
+  _processIncoming: function _processIncoming() {
+    Async.callSynchronously(this, this._processIncomingCb);
+  },
 
+  // Process incoming records.
+  _processIncomingCb: function _processIncomingCb(callback) {
+    this._log.trace("Downloading & applying server changes");
+    try {
+      this._processIncomingUnsafe(callback);
+    } catch (ex) {
+      callback(ex);
+    }
+  },
+
+  _processIncomingUnsafe: function _processIncomingUnsafe(callback) {
     // Figure out how many total items to fetch this sync; do less on mobile.
     let batchSize = Infinity;
     let newitems = new Collection(this.engineURL, this._recordObj);
@@ -745,7 +756,8 @@ SyncEngine.prototype = {
       doApplyBatchAndPersistFailed.call(this);
       if (!resp.success) {
         resp.failureCode = ENGINE_DOWNLOAD_FAIL;
-        throw resp;
+        callback(resp);
+        return;
       }
     }
 
@@ -824,6 +836,7 @@ SyncEngine.prototype = {
                     count.applied, "applied,",
                     count.failed, "failed to apply,",
                     count.reconciled, "reconciled."].join(" "));
+    callback();
   },
 
   /**

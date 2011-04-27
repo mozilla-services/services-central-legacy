@@ -167,6 +167,25 @@ let Async = {
                          });
   },
 
+  /*
+   * Return a callback which executes `f` then `callback`, regardless of
+   * whether it was invoked with an error. If an exception is thrown during the
+   * evaluation of `f`, it takes precedence over an error provided to the
+   * callback.
+   *
+   * This behaves similarly to a try..finally block in plain JavaScript.
+   */
+  finallyCallback: function (callback, f) {
+    return function(err) {
+      try {
+        f();
+        callback(err);
+      } catch (ex) {
+        callback(ex);
+      }
+    };
+  },
+
   // Prototype for mozIStorageCallback, used in queryAsync below.
   // This allows us to define the handle* functions just once rather
   // than on every queryAsync invocation.

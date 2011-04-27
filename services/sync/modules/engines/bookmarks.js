@@ -386,16 +386,16 @@ BookmarksEngine.prototype = {
     SyncEngine.prototype._syncStartupCb.call(this, startup);
   },
 
-  _processIncoming: function _processIncoming() {
-    try {
-      SyncEngine.prototype._processIncoming.call(this);
-    } finally {
-      // Reorder children.
+  _processIncomingCb: function _processIncomingCb(callback) {
+    let reorderChildren = function() {
       this._tracker.ignoreAll = true;
       this._store._orderChildren();
       this._tracker.ignoreAll = false;
       delete this._store._childrenToOrder;
-    }
+    }.bind(this);
+
+    let cb = Async.finallyCallback(callback, reorderChildren);
+    SyncEngine.prototype._processIncomingCb.call(this, cb);
   },
 
   _syncFinish: function _syncFinish() {

@@ -750,7 +750,7 @@ SyncEngine.prototype = {
       self._store._sleep(0);
     };
 
-    // Only bother getting data from the server if there's new things
+    // Only bother getting data from the server if there are new items.
     if (this.lastModified == null || this.lastModified > this.lastSync) {
       let resp = newitems.get();
       doApplyBatchAndPersistFailed.call(this);

@@ -38,8 +38,9 @@
  * ***** END LICENSE BLOCK ***** */
 
 const EXPORTED_SYMBOLS = ["WBORecord", "RecordManager", "Records",
-                          "CryptoWrapper", "CollectionKeys", "BulkKeyBundle",
-                          "SyncKeyBundle", "Collection"];
+                          "CryptoWrapper", "CollectionKeys",
+                          "BulkKeyBundle", "SyncKeyBundle",
+                          "AsyncCollection", "Collection"];
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;

@@ -113,21 +113,21 @@ AuthMgr.prototype = {
 /*
  * AsyncResource represents a remote network resource, identified by a URI.
  * Create an instance like so:
- * 
+ *
  *   let resource = new AsyncResource("http://foobar.com/path/to/resource");
- * 
+ *
  * The 'resource' object has the following methods to issue HTTP requests
  * of the corresponding HTTP methods:
- * 
+ *
  *   get(callback)
  *   put(data, callback)
  *   post(data, callback)
  *   delete(callback)
- * 
+ *
  * 'callback' is a function with the following signature:
- * 
+ *
  *   function callback(error, result) {...}
- * 
+ *
  * 'error' will be null on successful requests. Likewise, result will not be
  * passed (=undefined) when an error occurs. Note that this is independent of
  * the status of the HTTP response.
@@ -150,11 +150,11 @@ AsyncResource.prototype = {
 
   // The string to use as the base User-Agent in Sync requests.
   // These strings will look something like
-  // 
+  //
   //   Firefox/4.0 FxSync/1.8.0.20100101.mobile
-  //   
+  //
   // or
-  // 
+  //
   //   Firefox Aurora/5.0a1 FxSync/1.9.0.20110409.desktop
   //
   _userAgent:
@@ -249,7 +249,7 @@ AsyncResource.prototype = {
       let ua = this._userAgent + Svc.Prefs.get("client.type", "desktop");
       channel.setRequestHeader("user-agent", ua, false);
     }
-    
+
     // Avoid calling the authorizer more than once.
     let headers = this.headers;
     for (let key in headers) {
@@ -463,7 +463,7 @@ IncrementalResource.prototype = {
 /*
  * Represent a remote network resource, identified by a URI, with a
  * synchronous API.
- * 
+ *
  * 'Resource' is not recommended for new code. Use the asynchronous API of
  * 'AsyncResource' instead.
  */
@@ -607,7 +607,7 @@ ChannelListener.prototype = {
                      " bytes from " + siStream + ".");
       throw ex;
     }
-    
+
     try {
       this._onProgress();
     } catch (ex) {
@@ -617,7 +617,7 @@ ChannelListener.prototype = {
       this._log.trace("Rethrowing; expect a failure code from the HTTP channel.");
       throw ex;
     }
-    
+
     this.delayAbort();
   },
 

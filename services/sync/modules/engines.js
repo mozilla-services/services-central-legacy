@@ -866,9 +866,9 @@ SyncEngine.prototype = {
         Observers.notify("weave:engine:sync:apply-failed", count, this.name);
       }
       this._log.info(["Records:",
-                      count.applied, "applied,",
-                      count.failed, "failed to apply,",
-                      count.reconciled, "reconciled."].join(" "));
+                     count.applied, "applied,",
+                     count.failed, "failed to apply,",
+                     count.reconciled, "reconciled."].join(" "));
       callback();
     }.bind(this));
   },

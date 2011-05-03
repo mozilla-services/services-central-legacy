@@ -618,6 +618,25 @@ SyncEngine.prototype = {
     }.bind(this));
   },
 
+  /*
+   * Fetch a list of URLs from the (presumably collection) URL.
+   */
+  _guidFetcher: function _guidFetcher(url, newer, limit, sort) {
+    let args = [];
+    if (newer)
+      args.push("newer=" + newer);
+    if (limit)
+      args.push("limit=" + limit);
+    if (sort)
+      args.push("sort=" + sort);
+
+    let uri = Utils.makeURL(url);
+    if (args.length)
+      uri.query = args.join("&");
+
+    return new AsyncResource(uri);
+  },
+
   _processIncoming: function _processIncoming() {
     Async.callSynchronously(this, this._processIncomingCb);
   },
@@ -761,82 +780,97 @@ SyncEngine.prototype = {
       }
     }
 
-    // Mobile: check if we got the maximum that we requested; get the rest if so.
-    if (handled.length == newitems.limit) {
-      let guidColl = new Collection(this.engineURL);
-
-      // Sort and limit so that on mobile we only get the last X records.
-      guidColl.limit = this.downloadLimit;
-      guidColl.newer = this.lastSync;
-
-      // index: Orders by the sortindex descending (highest weight first).
-      guidColl.sort  = "index";
-
-      let guids = guidColl.get();
-      if (!guids.success)
-        throw guids;
-
-      // Figure out which guids weren't just fetched then remove any guids that
-      // were already waiting and prepend the new ones
-      let extra = Utils.arraySub(guids.obj, handled);
-      if (extra.length > 0) {
-        fetchBatch = Utils.arrayUnion(extra, fetchBatch);
-        this.toFetch = Utils.arrayUnion(extra, this.toFetch);
-      }
-    }
-
-    // Fast-foward the lastSync timestamp since we have stored the
-    // remaining items in toFetch.
-    if (this.lastSync < this.lastModified) {
-      this.lastSync = this.lastModified;
-    }
-
-    // Process any backlog of GUIDs.
-    // At this point we impose an upper limit on the number of items to fetch
-    // in a single request, even for desktop, to avoid hitting URI limits.
-    batchSize = isMobile ? this.mobileGUIDFetchBatchSize :
-                           this.guidFetchBatchSize;
-
-    while (fetchBatch.length) {
-      // Reuse the original query, but get rid of the restricting params
-      // and batch remaining records.
-      newitems.limit = 0;
-      newitems.newer = 0;
-      newitems.ids = fetchBatch.slice(0, batchSize);
-
-      // Reuse the existing record handler set earlier
-      let resp = newitems.get();
-      if (!resp.success) {
-        resp.failureCode = ENGINE_DOWNLOAD_FAIL;
-        throw resp;
+    // Either fetch a list of GUIDs and add them to toFetch, or just romp
+    // straight on.
+    let bounce = function(onward) {
+      // Mobile: check if we got the maximum that we requested; get the rest if
+      // so.
+      if (handled.length != newitems.limit) {
+        onward();
+        return;
       }
 
-      // This batch was successfully applied. Not using
-      // doApplyBatchAndPersistFailed() here to avoid writing toFetch twice.
-      fetchBatch = fetchBatch.slice(batchSize);
-      let newToFetch = Utils.arraySub(this.toFetch, newitems.ids);
-      this.toFetch = Utils.arrayUnion(newToFetch, failed);
-      count.failed += failed.length;
-      this._log.debug("Records that failed to apply: " + failed);
-      failed = [];
+      let fetcher = this._guidFetcher(
+        this.engineURL,
+        this.lastSync,          // Newer than this...
+        this.downloadLimit,     // No more than this...
+        "index");               // Highest weight first.
+
+      fetcher.get(function (error, guids) {
+        if (error) {
+          callback(error);
+          return;
+        }
+        if (!guids.success) {
+          callback(guids);
+          return;
+        }
+
+        // Figure out which GUIDs weren't just fetched. Remove any that
+        // were already waiting. Prepend new ones.
+        let extra = Utils.arraySub(guids.obj, handled);
+        if (extra.length > 0) {
+          fetchBatch = Utils.arrayUnion(extra, fetchBatch);
+          this.toFetch = Utils.arrayUnion(extra, this.toFetch);
+        }
+        onward();
+      }.bind(this));
+    }.bind(this);
+
+    bounce(function() {
+      // Fast-foward the lastSync timestamp since we have stored the
+      // remaining items in toFetch.
       if (this.lastSync < this.lastModified) {
         this.lastSync = this.lastModified;
       }
-    }
 
-    // Apply remaining items.
-    doApplyBatchAndPersistFailed.call(this);
+      // Process any backlog of GUIDs.
+      // At this point we impose an upper limit on the number of items to fetch
+      // in a single request, even for desktop, to avoid hitting URI limits.
+      batchSize = isMobile ? this.mobileGUIDFetchBatchSize :
+                             this.guidFetchBatchSize;
 
-    if (count.failed) {
-      // Notify observers if records failed to apply. Pass the count object
-      // along so that they can make an informed decision on what to do.
-      Observers.notify("weave:engine:sync:apply-failed", count, this.name);
-    }
-    this._log.info(["Records:",
-                    count.applied, "applied,",
-                    count.failed, "failed to apply,",
-                    count.reconciled, "reconciled."].join(" "));
-    callback();
+      while (fetchBatch.length) {
+        // Reuse the original query, but get rid of the restricting params
+        // and batch remaining records.
+        newitems.limit = 0;
+        newitems.newer = 0;
+        newitems.ids = fetchBatch.slice(0, batchSize);
+
+        // Reuse the existing record handler set earlier
+        let resp = newitems.get();
+        if (!resp.success) {
+          resp.failureCode = ENGINE_DOWNLOAD_FAIL;
+          throw resp;
+        }
+
+        // This batch was successfully applied. Not using
+        // doApplyBatchAndPersistFailed() here to avoid writing toFetch twice.
+        fetchBatch = fetchBatch.slice(batchSize);
+        let newToFetch = Utils.arraySub(this.toFetch, newitems.ids);
+        this.toFetch = Utils.arrayUnion(newToFetch, failed);
+        count.failed += failed.length;
+        this._log.debug("Records that failed to apply: " + failed);
+        failed = [];
+        if (this.lastSync < this.lastModified) {
+          this.lastSync = this.lastModified;
+        }
+      }
+
+      // Apply remaining items.
+      doApplyBatchAndPersistFailed.call(this);
+
+      if (count.failed) {
+        // Notify observers if records failed to apply. Pass the count object
+        // along so that they can make an informed decision on what to do.
+        Observers.notify("weave:engine:sync:apply-failed", count, this.name);
+      }
+      this._log.info(["Records:",
+                      count.applied, "applied,",
+                      count.failed, "failed to apply,",
+                      count.reconciled, "reconciled."].join(" "));
+      callback();
+    }.bind(this));
   },
 
   /**

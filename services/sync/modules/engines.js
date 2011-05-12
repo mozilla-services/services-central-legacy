@@ -661,7 +661,7 @@ SyncEngine.prototype = {
       batchSize = MOBILE_BATCH_SIZE;
     }
     newitems.newer = this.lastSync;
-    newitems.full = true;
+    newitems.full  = true;
     newitems.limit = batchSize;
 
     let count = {applied: 0, failed: 0, reconciled: 0};
@@ -694,7 +694,7 @@ SyncEngine.prototype = {
     // Not binding this method to 'this' for performance reasons. It gets
     // called for every incoming record.
     let self = this;
-    newitems.recordHandler = function(item) {
+    function recordHandler(item) {
       // Grab a later last modified if possible
       if (self.lastModified == null || item.modified > self.lastModified)
         self.lastModified = item.modified;
@@ -767,7 +767,8 @@ SyncEngine.prototype = {
         doApplyBatch.call(self);
       }
       self._store._sleep(0);
-    };
+    }
+    newitems.recordHandler = recordHandler;
 
     // Only bother getting data from the server if there are new items.
     if (this.lastModified == null || this.lastModified > this.lastSync) {

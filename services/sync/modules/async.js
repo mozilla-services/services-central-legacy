@@ -168,6 +168,23 @@ let Async = {
   },
 
   /*
+   * Exactly like barrieredCallbacks, but with the same callback each time.
+   */
+  countedCallback: function (componentCb, count, output) {
+    let counter = count;
+    return function (error, result) {
+      if (!output)
+        return;
+
+      let err = componentCb(error, result);
+      if ((0 == --counter) || err) {
+        output(err);
+        output = undefined;      // Abandon!
+      }
+    };
+  },
+
+  /*
    * Return a callback which executes `f` then `callback`, regardless of
    * whether it was invoked with an error. If an exception is thrown during the
    * evaluation of `f`, it takes precedence over an error provided to the

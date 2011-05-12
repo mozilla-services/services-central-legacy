@@ -665,10 +665,10 @@ SyncEngine.prototype = {
     newitems.limit = batchSize;
 
     let count = {applied: 0, failed: 0, reconciled: 0};
-    let handled = [];
-    let applyBatch = [];
-    let failed = [];
-    let fetchBatch = this.toFetch;
+    let handled    = [];              // Every record we've seen.
+    let failed     = [];              // Records that didn't apply.
+    let applyBatch = [];              // Latest chunk to apply.
+    let fetchBatch = this.toFetch;    // Persisted records that we want to retry.
 
     function doApplyBatch() {
       this._tracker.ignoreAll = true;
@@ -702,7 +702,7 @@ SyncEngine.prototype = {
       // Track the collection for the WBO.
       item.collection = self.name;
 
-      // Remember which records were processed
+      // Remember which records were processed.
       handled.push(item.id);
 
       try {
@@ -831,46 +831,96 @@ SyncEngine.prototype = {
       batchSize = isMobile ? this.mobileGUIDFetchBatchSize :
                              this.guidFetchBatchSize;
 
-      while (fetchBatch.length) {
-        // Reuse the original query, but get rid of the restricting params
-        // and batch remaining records.
-        newitems.limit = 0;
-        newitems.newer = 0;
-        newitems.ids = fetchBatch.slice(0, batchSize);
+      // Track items from now on.
+      handled = [];
 
-        // Reuse the existing record handler set earlier
-        let resp = newitems.get();
-        if (!resp.success) {
+      if (!fetchBatch.length) {
+        // We're done.
+        callback();
+        return;
+      }
+
+      let batches = Utils.slices(fetchBatch, batchSize);
+
+      let processBatch = Async.countedCallback(
+        // The callback handler for each AsyncResource.get invocation.
+        function handleBatchResult(error, resp) {
+          this._log.info("Handling batch result... " + error + ", " + resp);
+          this._log.info("Failed contains " + failed.length + " items.");
+          if (error) {
+            this._log.debug("Returning error: " + error);
+            return error;
+          }
+          if (resp.success)
+            return null;
+
+          this._log.debug("Failure response. Returning ENGINE_DOWNLOAD_FAIL.");
           resp.failureCode = ENGINE_DOWNLOAD_FAIL;
-          throw resp;
-        }
+          // countedCallback will handle the error propagation for us.
+          return resp;
 
-        // This batch was successfully applied. Not using
-        // doApplyBatchAndPersistFailed() here to avoid writing toFetch twice.
-        fetchBatch = fetchBatch.slice(batchSize);
-        let newToFetch = Utils.arraySub(this.toFetch, newitems.ids);
-        this.toFetch = Utils.arrayUnion(newToFetch, failed);
-        count.failed += failed.length;
-        this._log.debug("Records that failed to apply: " + failed);
-        failed = [];
-        if (this.lastSync < this.lastModified) {
-          this.lastSync = this.lastModified;
-        }
+        }.bind(this),
+
+        batches.length,
+
+        function allBatchesDone(error) {
+          this._log.info("All batches done: " + error);
+          this._log.info("toFetch: " + this.toFetch.length);
+
+          // Always persist this info. This callback gets hit if any individual
+          // batch fails, so we don't need to worry about doing it each time.
+          let newToFetch = Utils.arraySub(this.toFetch, handled);
+          this.toFetch   = Utils.arrayUnion(newToFetch, failed);
+
+          count.failed += failed.length;
+          failed = [];
+
+          if (this.lastSync < this.lastModified) {
+            this.lastSync = this.lastModified;
+          }
+
+          if (error) {
+            callback(error);
+            return;
+          }
+
+          try {
+            if (applyBatch.length) {
+              doApplyBatch.call(this);
+            }
+
+            if (count.failed) {
+              // Notify observers if records failed to apply. Pass the count object
+              // along so that they can make an informed decision on what to do.
+              Observers.notify("weave:engine:sync:apply-failed", count, this.name);
+            }
+            this._log.info(["Records:",
+                           count.applied, "applied,",
+                           count.failed, "failed to apply,",
+                           count.reconciled, "reconciled."].join(" "));
+          } catch (ex) {
+            callback(ex);
+            return;
+          }
+          this._log.info("Invoking callback.");
+          callback();
+        }.bind(this));
+
+      this._log.info("Making requests of " + batches.length + " batch(es).");
+
+      for each (let batch in batches) {
+        // Make a new AsyncResource and do this work.
+        // Each of these requests runs in parallel.
+        let r = new AsyncCollection(this.engineURL, this._recordObj);
+        r.full  = true;
+        r.limit = 0;
+        r.newer = 0;
+        r.ids   = batch;
+        r.recordHandler = recordHandler;
+        this._log.info("Go...");
+        r.get(processBatch);
       }
 
-      // Apply remaining items.
-      doApplyBatchAndPersistFailed.call(this);
-
-      if (count.failed) {
-        // Notify observers if records failed to apply. Pass the count object
-        // along so that they can make an informed decision on what to do.
-        Observers.notify("weave:engine:sync:apply-failed", count, this.name);
-      }
-      this._log.info(["Records:",
-                     count.applied, "applied,",
-                     count.failed, "failed to apply,",
-                     count.reconciled, "reconciled."].join(" "));
-      callback();
     }.bind(this));
   },
 

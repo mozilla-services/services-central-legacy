@@ -234,6 +234,7 @@ AsyncResource.prototype = {
   // to obtain a request channel.
   //
   _createRequest: function Res__createRequest() {
+    this._log.trace("XXX: _createRequest. " + this.spec);
     let channel = Svc.IO.newChannel(this.spec, null, null).
       QueryInterface(Ci.nsIRequest).QueryInterface(Ci.nsIHttpChannel);
 
@@ -262,10 +263,12 @@ AsyncResource.prototype = {
     return channel;
   },
 
-  _onProgress: function Res__onProgress(channel) {},
+  _onProgress: function Res__onProgress(channel) {
+    this._log.trace("XXX: onProgress. " + this.spec);
+  },
 
   _doRequest: function _doRequest(action, data, callback) {
-    this._log.trace("In _doRequest.");
+    this._log.trace("XXX: _doRequest. " + this.spec);
     this._callback = callback;
     let channel = this._channel = this._createRequest();
 
@@ -295,7 +298,7 @@ AsyncResource.prototype = {
     // Setup a channel listener so that the actual network operation
     // is performed asynchronously.
     let listener = new ChannelListener(this._onComplete, this._onProgress,
-                                       this._log, this.ABORT_TIMEOUT);
+                                       this._log, this.ABORT_TIMEOUT / 10);
     channel.requestMethod = action;
     channel.asyncOpen(listener, null);
   },
@@ -405,6 +408,7 @@ AsyncResource.prototype = {
       }
     }
 
+    this._log.info("Calling callback (" + null + ", " + ret);
     this._callback(null, ret);
   },
 
@@ -553,6 +557,7 @@ function ChannelListener(onComplete, onProgress, logger, timeout) {
 ChannelListener.prototype = {
 
   onStartRequest: function Channel_onStartRequest(channel) {
+    this._log.trace("ZZZ: onStartRequest. " + channel);
     this._log.trace("onStartRequest called for channel " + channel + ".");
     channel.QueryInterface(Ci.nsIHttpChannel);
 
@@ -571,6 +576,7 @@ ChannelListener.prototype = {
   onStopRequest: function Channel_onStopRequest(channel, context, status) {
     // Clear the abort timer now that the channel is done.
     this.abortTimer.clear();
+    this._log.trace("ZZZ: onStopRequest. " + channel);
 
     let success = Components.isSuccessCode(status);
     this._log.trace("Channel for " + channel.requestMethod + " " +
@@ -597,6 +603,7 @@ ChannelListener.prototype = {
   },
 
   onDataAvailable: function Channel_onDataAvail(req, cb, stream, off, count) {
+    this._log.trace("ZZZ: onDataAvailable. " + req);
     let siStream = Cc["@mozilla.org/scriptableinputstream;1"].
       createInstance(Ci.nsIScriptableInputStream);
     siStream.init(stream);

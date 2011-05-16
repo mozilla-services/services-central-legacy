@@ -851,8 +851,10 @@ SyncEngine.prototype = {
             this._log.debug("Returning error: " + error);
             return error;
           }
-          if (resp.success)
+          if (resp.success) {
+            this._log.debug("Returning null.");
             return null;
+          }
 
           this._log.debug("Failure response. Returning ENGINE_DOWNLOAD_FAIL.");
           resp.failureCode = ENGINE_DOWNLOAD_FAIL;
@@ -871,6 +873,7 @@ SyncEngine.prototype = {
           // batch fails, so we don't need to worry about doing it each time.
           let newToFetch = Utils.arraySub(this.toFetch, handled);
           this.toFetch   = Utils.arrayUnion(newToFetch, failed);
+          this._log.info("toFetch: " + this.toFetch.length);
 
           count.failed += failed.length;
           failed = [];

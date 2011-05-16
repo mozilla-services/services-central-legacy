@@ -49,6 +49,7 @@ const CB_FAIL = {};
 const REASON_ERROR = Ci.mozIStorageStatementCallback.REASON_ERROR;
 
 Cu.import("resource://services-sync/util.js");
+Cu.import("resource://services-sync/log4moz.js");
 
 /*
  * Helpers for various async operations.
@@ -61,6 +62,11 @@ let Async = {
    * If you value your sanity, do not look closely at the following functions.
    */
 
+  spin: function spin() {
+    let thread = Cc["@mozilla.org/thread-manager;1"].getService().currentThread;
+    thread.processNextEvent(true);
+  },
+          
   /**
    * Create a sync callback that remembers state like whether it's been called
    */
@@ -171,13 +177,18 @@ let Async = {
    * Exactly like barrieredCallbacks, but with the same callback each time.
    */
   countedCallback: function (componentCb, count, output) {
+    logger = Log4Moz.repository.getLogger("countedCallback");
+    logger.level = Log4Moz.Level[Utils.prefs.getCharPref("log.logger.network.resources")];
     let counter = count;
     return function (error, result) {
+      logger.info("CC: " + error + ", " + result);
       if (!output)
         return;
 
       let err = componentCb(error, result);
+      logger.info("CC: decrementing counter from " + counter);
       if ((0 == --counter) || err) {
+        logger.info("CC: invoking output callback.");
         output(err);
         output = undefined;      // Abandon!
       }

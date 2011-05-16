@@ -842,7 +842,10 @@ AsyncCollection.prototype = {
     coll.setHeader("Accept", "application/newlines");
 
     this._onProgress = function() {
+      this._log.trace("YYY: _onProgress. " + this.spec);
       let newline;
+
+      // TODO: switch to using IncrementalResource.
       while ((newline = this._data.indexOf("\n")) > 0) {
         // Split the json record from the rest of the data
         let json = this._data.slice(0, newline);

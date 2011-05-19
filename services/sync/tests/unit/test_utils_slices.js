@@ -11,6 +11,14 @@ function run_test() {
   }
   do_check_eq("Invalid slice size.", err);
 
+  err = undefined;
+  try {
+    Utils.slices(input);
+  } catch (ex) {
+    err = ex;
+  }
+  do_check_eq("Invalid slice size.", err);
+
   let sliced1 = Utils.slices(input, 1);
   let sliced2 = Utils.slices(input, 2);
   let sliced3 = Utils.slices(input, 5);
@@ -27,4 +35,12 @@ function run_test() {
   do_check_eq(sliced2[2].length, 1);
   sliced3.every(function(x) x.length == 5);
   sliced4.every(function(x) x.length == 5);
+
+  let sliced5 = Utils.slices(["foo"], 50);
+  do_check_eq(sliced5.length, 1);
+  do_check_eq(sliced5[0], "foo");
+
+  let sliced6 = Utils.slices([], 50);
+  do_check_eq(sliced6.length, 1);
+  do_check_eq(sliced6[0].length, 0);
 }

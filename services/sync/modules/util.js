@@ -211,7 +211,7 @@ let Utils = {
    */
   slices: function slices(arr, sliceSize) {
     let out = [];
-    if (sliceSize <= 0)
+    if (!sliceSize || sliceSize <= 0)
       throw "Invalid slice size.";
 
     if (sliceSize > arr.length)

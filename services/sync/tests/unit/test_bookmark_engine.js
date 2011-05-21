@@ -137,6 +137,7 @@ add_test(function test_processIncoming_error_orderChildren() {
     engine.lastSync = Date.now() / 1000 - 60;
     engine.toFetch = [BOGUS_GUID];
 
+    _("Trying to sync...");
     let error;
     try {
       engine.sync();

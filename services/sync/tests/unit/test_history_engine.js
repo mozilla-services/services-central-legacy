@@ -36,7 +36,8 @@ add_test(function test_processIncoming_mobile_history_batched() {
   let visitType = Ci.nsINavHistoryService.TRANSITION_LINK;
   for (var i = 0; i < 234; i++) {
     let id = 'record-no' + ("00" + i).slice(-3);
-    let modified = Date.now()/1000 - 60*(i+10);
+    let start = Date.now() / 1000 - (255 * 60);
+    let modified = start + 60*(i+10);
     let payload = encryptPayload({
       id: id,
       histUri: "http://foo/bar?" + id,
@@ -49,6 +50,7 @@ add_test(function test_processIncoming_mobile_history_batched() {
     wbo.modified = modified;
     collection.wbos[id] = wbo;
   }
+  _("Oldest record: " + collection.wbos["record-no000"].modified);
   
   let server = sync_httpd_setup({
       "/1.1/foo/storage/history": collection.handler()
@@ -67,16 +69,17 @@ add_test(function test_processIncoming_mobile_history_batched() {
       engine.downloadLimit = FAKE_DOWNLOAD_LIMIT;
       _("Last modified: " + engine.lastModified);
       _("Processing...");
-      engine._processIncoming();
+      engine._processIncoming();    // One fetch, one GUID fetch, one batch.
 
       _("Last modified: " + engine.lastModified);
       engine._syncFinish();
+      _("Sync finished.");
 
       // Back to the normal limit.
       _("Running again. Should fetch none, because of lastModified");
       engine.downloadLimit = MAX_HISTORY_DOWNLOAD;
       _("Processing...");
-      engine._processIncoming();
+      engine._processIncoming();    // Zero fetches.
 
       _("Last modified: " + engine.lastModified);
       _("Running again. Expecting to pull everything");
@@ -84,9 +87,10 @@ add_test(function test_processIncoming_mobile_history_batched() {
       engine.lastModified = undefined;
       engine.lastSync     = 0;
       _("Processing...");
-      engine._processIncoming();
+      engine._processIncoming();    // One fetch, one GUID fetch, four batches.
 
       _("Last modified: " + engine.lastModified);
+      _("Get log: " + collection.get_log.length);
 
       // Verify that the right number of GET requests with the right
       // kind of parameters were made.
@@ -108,13 +112,18 @@ add_test(function test_processIncoming_mobile_history_batched() {
       do_check_eq(collection.get_log[0].limit, MOBILE_BATCH_SIZE);
       do_check_eq(collection.get_log[1].full, undefined);
       do_check_eq(collection.get_log[1].sort, "index");
-      do_check_eq(collection.get_log[1].limit, FAKE_DOWNLOAD_LIMIT);
+      
+      // The limits here are not the same as the total download limit,
+      // because we already downloaded a batch on our first request.
+      do_check_eq(collection.get_log[1].limit,
+                  FAKE_DOWNLOAD_LIMIT - MOBILE_BATCH_SIZE);
       do_check_eq(collection.get_log[2].full, 1);
       do_check_eq(collection.get_log[3].full, 1);
       do_check_eq(collection.get_log[3].limit, MOBILE_BATCH_SIZE);
       do_check_eq(collection.get_log[4].full, undefined);
       do_check_eq(collection.get_log[4].sort, "index");
-      do_check_eq(collection.get_log[4].limit, MAX_HISTORY_DOWNLOAD);
+      do_check_eq(collection.get_log[4].limit,
+                  MAX_HISTORY_DOWNLOAD - MOBILE_BATCH_SIZE);
       for (let i = 0; i <= Math.floor((234 - 50) / MOBILE_BATCH_SIZE); i++) {
         let j = i + 5;
         do_check_eq(collection.get_log[j].full, 1);

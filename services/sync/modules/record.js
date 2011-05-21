@@ -833,6 +833,10 @@ AsyncCollection.prototype = {
   clearRecords: function Coll_clearRecords() {
     this._data = [];
   },
+  
+  extendResponse: function extendResponse(ret) {
+    ret.ids = this.ids;
+  },
 
   set recordHandler(onRecord) {
     // Save this because onProgress is called with this as the ChannelListener
@@ -842,7 +846,6 @@ AsyncCollection.prototype = {
     coll.setHeader("Accept", "application/newlines");
 
     this._onProgress = function() {
-      this._log.trace("YYY: _onProgress. " + this.spec);
       let newline;
 
       // TODO: switch to using IncrementalResource.
@@ -854,7 +857,7 @@ AsyncCollection.prototype = {
         // Deserialize a record from json and give it to the callback
         let record = new coll._recordObj();
         record.deserialize(json);
-        onRecord(record);
+        onRecord(record, coll);
       }
     };
   }

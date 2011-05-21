@@ -126,7 +126,7 @@ AuthMgr.prototype = {
  *
  * 'callback' is a function with the following signature:
  *
- *   function callback(error, result) {...}
+ *   function callback(error, result, resource) {...}
  *
  * 'error' will be null on successful requests. Likewise, result will not be
  * passed (=undefined) when an error occurs. Note that this is independent of
@@ -267,6 +267,9 @@ AsyncResource.prototype = {
     this._log.trace("XXX: onProgress. " + this.spec);
   },
 
+  extendResponse: function extendResponse(ret) {
+  },
+
   _doRequest: function _doRequest(action, data, callback) {
     this._log.trace("XXX: _doRequest. " + this.spec);
     this._callback = callback;
@@ -307,7 +310,7 @@ AsyncResource.prototype = {
     this._log.trace("In _onComplete. Error is " + error + ".");
 
     if (error) {
-      this._callback(error);
+      this._callback(error, null, this);
       return;
     }
 
@@ -384,6 +387,10 @@ AsyncResource.prototype = {
     ret.success = success;
     ret.headers = headers;
 
+    // Allow subclasses to do neat things like attach the IDs they were trying
+    // to fetch.
+    this.extendResponse(ret);
+
     // Make a lazy getter to convert the json response into an object.
     // Note that this can cause a parse error to be thrown far away from the
     // actual fetch, so be warned!
@@ -407,9 +414,7 @@ AsyncResource.prototype = {
         return;
       }
     }
-
-    this._log.info("Calling callback (" + null + ", " + ret);
-    this._callback(null, ret);
+    this._callback(null, ret, this);
   },
 
   get: function get(callback) {
@@ -441,6 +446,7 @@ function IncrementalResource(uri, handler) {
   AsyncResource.call(this, uri);
   this._handler = handler;
 
+  let resource = this;
   let onRecord = handler.onRecord;
   this._onProgress = function () {
     let newline;
@@ -450,7 +456,7 @@ function IncrementalResource(uri, handler) {
       this._data = this._data.slice(newline + 1);
 
       // Give the JSON to the callback.
-      onRecord(json);
+      onRecord(json, resource);
     }
   };
 }

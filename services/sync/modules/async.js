@@ -180,17 +180,35 @@ let Async = {
     logger = Log4Moz.repository.getLogger("countedCallback");
     logger.level = Log4Moz.Level[Utils.prefs.getCharPref("log.logger.network.resources")];
     let counter = count;
-    return function (error, result) {
+    return function (error, result, context) {
       logger.info("CC: " + error + ", " + result);
-      if (!output)
+      if (!output) {
+        logger.info("CC: no output callback. Stopping here.");
         return;
+      }
 
-      let err = componentCb(error, result);
+      logger.info("CC: invoking component callback " + componentCb);
+      let err;
+      try {
+        err = componentCb(error, result, context);
+      } catch (ex) {
+        logger.warn("Got exception in component callback!");
+        logger.warn(Utils.exceptionStr(ex));
+        output(ex);
+        output = undefined;      // Abandon!
+        return;
+      }
       logger.info("CC: decrementing counter from " + counter);
       if ((0 == --counter) || err) {
         logger.info("CC: invoking output callback.");
-        output(err);
-        output = undefined;      // Abandon!
+        try {
+          output(err);
+          output = undefined;      // Abandon!
+        } catch (ex) {
+          logger.warn("Got exception in output callback! " +
+                      Utils.exceptionStr(ex));
+          throw ex;
+        }
       }
     };
   },

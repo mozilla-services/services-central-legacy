@@ -1033,15 +1033,12 @@ SyncEngine.prototype = {
       // Now, when the callback fires, each of these collection objects will
       // be carrying a bunch of useful metadata.
 
-      let processBatch = Async.countedCallback(
-        handleBatchResult.bind(this),
-        collections.length,
-        allBatchesDone.bind(this, collections, counts));
-
       this._log.debug("Batching fetch into " + collections.length + " requests.");
-      collections.forEach(function (r) {
-        r.get(processBatch);
-      });
+      Async.serially(
+        collections,
+        function (coll, cb) { coll.get(cb); },
+        handleBatchResult.bind(this),
+        allBatchesDone.bind(this, collections, counts));
     }
 
     // Only bother getting data from the server if there are new items, or

@@ -1051,40 +1051,44 @@ WeaveSvc.prototype = {
     }))(),
 
   startOverCb: function(callback) {
-    // Deletion doesn't make sense if we aren't set up yet!
-    let self = this;
 
-    function completeStartOver() {
+    let completeStartOver = function () {
       // Set a username error so the status message shows "set up..."
-      Status.login = LOGIN_FAILED_NO_USERNAME;
-      this.logout();
+      try {
+        Status.login = LOGIN_FAILED_NO_USERNAME;
+        this.logout();
 
-      // Reset all engines and clear keys.
-      this.resetClient();
-      CollectionKeys.clear();
+        // Reset all engines and clear keys.
+        this.resetClient();
+        CollectionKeys.clear();
 
-      // Reset Weave prefs.
-      this._ignorePrefObserver = true;
-      Svc.Prefs.resetBranch("");
-      this._ignorePrefObserver = false;
+        // Reset Weave prefs.
+        this._ignorePrefObserver = true;
+        Svc.Prefs.resetBranch("");
+        this._ignorePrefObserver = false;
 
-      Svc.Prefs.set("lastversion", WEAVE_VERSION);
-      // Find weave logins and remove them.
-      this.password = "";
-      this.passphrase = "";
-      Svc.Login.findLogins({}, PWDMGR_HOST, "", "").map(function(login) {
-        Svc.Login.removeLogin(login);
-      });
-      Svc.Obs.notify("weave:service:start-over");
-      Svc.Obs.notify("weave:engine:stop-tracking");
-      callback();
-    }
+        Svc.Prefs.set("lastversion", WEAVE_VERSION);
+        // Find weave logins and remove them.
+        this.password = "";
+        this.passphrase = "";
+        Services.logins.findLogins({}, PWDMGR_HOST, "", "").map(function(login) {
+          Services.logins.removeLogin(login);
+        });
+        Svc.Obs.notify("weave:service:start-over");
+        Svc.Obs.notify("weave:engine:stop-tracking");
+        callback();
+      } catch (ex) {
+        callback(ex);
+      }
+    }.bind(this);
 
+    // Deletion doesn't make sense if we aren't set up yet!
     if (!this.clusterURL) {
       this._log.debug("Skipping client data removal: no cluster URL.");
-      completeStartOver.call(this);
+      completeStartOver();
     } else {
 
+      let self = this;
       // Clear client-specific data from the server, including disabled engines.
       // This is all done asynchronously, so we invoke the rest of startOver
       // (by way of completeStartOver()) once all the callbacks have been

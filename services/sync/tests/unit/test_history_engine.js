@@ -108,17 +108,13 @@ add_test(function test_processIncoming_mobile_history_batched() {
       do_check_eq(collection.get_log[1].full, undefined);
       do_check_eq(collection.get_log[1].sort, "index");
 
-      // The limits here are not the same as the total download limit,
-      // because we already downloaded a batch on our first request.
-      do_check_eq(collection.get_log[1].limit,
-                  FAKE_DOWNLOAD_LIMIT - MOBILE_BATCH_SIZE);
+      do_check_eq(collection.get_log[1].limit, FAKE_DOWNLOAD_LIMIT);
       do_check_eq(collection.get_log[2].full, 1);
       do_check_eq(collection.get_log[3].full, 1);
       do_check_eq(collection.get_log[3].limit, MOBILE_BATCH_SIZE);
       do_check_eq(collection.get_log[4].full, undefined);
       do_check_eq(collection.get_log[4].sort, "index");
-      do_check_eq(collection.get_log[4].limit,
-                  MAX_HISTORY_DOWNLOAD - MOBILE_BATCH_SIZE);
+      do_check_eq(collection.get_log[4].limit, MAX_HISTORY_DOWNLOAD);
       for (let i = 0; i <= Math.floor((234 - 50) / MOBILE_BATCH_SIZE); i++) {
         let j = i + 5;
         do_check_eq(collection.get_log[j].full, 1);

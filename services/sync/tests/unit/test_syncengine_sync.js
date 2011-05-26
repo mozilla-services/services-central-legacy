@@ -471,38 +471,54 @@ add_test(function test_processIncoming_mobile_batchSize() {
 
   _("On a mobile client, we get new records from the server in batches of 50.");
   engine._syncStartupCb(function (err) {
-    try {
-      engine._processIncoming();
-      do_check_eq([id for (id in engine._store.items)].length, 234);
-      do_check_true('record-no-0' in engine._store.items);
-      do_check_true('record-no-49' in engine._store.items);
-      do_check_true('record-no-50' in engine._store.items);
-      do_check_true('record-no-233' in engine._store.items);
+      do_check_true(!err);
+      engine._processIncomingCb(function (err) {
+        try {
+          do_check_true(!err);
 
-      // Verify that the right number of GET requests with the right
-      // kind of parameters were made.
-      do_check_eq(collection.get_log.length,
-                  Math.ceil(234 / MOBILE_BATCH_SIZE) + 1);
-      do_check_eq(collection.get_log[0].full, 1);
-      do_check_eq(collection.get_log[0].limit, MOBILE_BATCH_SIZE);
-      do_check_eq(collection.get_log[1].full, undefined);
-      do_check_eq(collection.get_log[1].limit, undefined);
-      for (let i = 1; i <= Math.floor(234 / MOBILE_BATCH_SIZE); i++) {
-        do_check_eq(collection.get_log[i+1].full, 1);
-        do_check_eq(collection.get_log[i+1].limit, undefined);
-        if (i < Math.floor(234 / MOBILE_BATCH_SIZE))
-          do_check_eq(collection.get_log[i+1].ids.length, MOBILE_BATCH_SIZE);
-        else
-          do_check_eq(collection.get_log[i+1].ids.length, 234 % MOBILE_BATCH_SIZE);
-      }
+          do_check_eq([id for (id in engine._store.items)].length, 234);
+          do_check_true('record-no-0' in engine._store.items);
+          do_check_true('record-no-49' in engine._store.items);
+          do_check_true('record-no-50' in engine._store.items);
+          do_check_true('record-no-233' in engine._store.items);
 
-    } finally {
-      cleanAndGo(server);
-    }
-  });
+          // Verify that the right number of GET requests with the right
+          // kind of parameters were made.
+          do_check_eq(collection.get_log.length,
+                      Math.ceil(234 / MOBILE_BATCH_SIZE) + 1);
+          do_check_eq(collection.get_log[0].full, 1);
+          do_check_eq(collection.get_log[0].limit, MOBILE_BATCH_SIZE);
+          do_check_eq(collection.get_log[1].full, undefined);
+          do_check_eq(collection.get_log[1].limit, undefined);
+          for (let i = 1; i <= Math.floor(234 / MOBILE_BATCH_SIZE); i++) {
+            do_check_eq(collection.get_log[i+1].full, 1);
+            do_check_eq(collection.get_log[i+1].limit, undefined);
+            if (i < Math.floor(234 / MOBILE_BATCH_SIZE))
+              do_check_eq(collection.get_log[i+1].ids.length, MOBILE_BATCH_SIZE);
+            else
+              do_check_eq(collection.get_log[i+1].ids.length, 234 % MOBILE_BATCH_SIZE);
+          }
+          _("Done with checks.");
+        } finally {
+          _("Clean and go.");
+          cleanAndGo(server);
+        }
+      })
+    });
 });
 
-// This tests assumes serial downloads. TODO: rewrite it to be happy with parallel!
+// This test formerly attempted to download three batches, making the third
+// fail with an HTTP 500 error. The test assessed whether the first two batches
+// were completely applied, and the third not at all -- assuming 50 records per
+// batch, it tested that 100 had been applied. This worked, because our
+// downloads were serial.
+//
+// In a modern, async, concurrent world, testing in this way is more difficult.
+// We'll observe that, say, 78 records applied -- the third request failed
+// part-way through the line-by-line processing of the second.
+//
+// Instead we will adapt, verifying that behavior is within spec.
+//
 add_test(function test_processIncoming_store_toFetch() {
   _("If processIncoming fails in the middle of a batch on mobile, state is saved in toFetch and lastSync.");
   let syncTesting = new SyncTestingInfrastructure();
@@ -517,6 +533,7 @@ add_test(function test_processIncoming_store_toFetch() {
   collection.get = function() {
     this._get_calls += 1;
     if (this._get_calls > 3) {
+      _("Failing HTTP serve.");
       throw "Abort on fourth call!";
     }
     return this._get.apply(this, arguments);
@@ -556,13 +573,36 @@ add_test(function test_processIncoming_store_toFetch() {
     do_check_true(!!error);
 
     // Only the first two batches have been applied.
-    do_check_eq([id for (id in engine._store.items)].length,
-                MOBILE_BATCH_SIZE * 2);
+    let appliedIDs   = [id for (id in engine._store.items)];
+    let appliedCount = appliedIDs.length;
+    do_check_true(MOBILE_BATCH_SIZE <= appliedCount <= (2 * MOBILE_BATCH_SIZE));
 
-    // The third batch is stuck in toFetch. lastSync has been moved forward to
-    // the last successful item's timestamp.
-    do_check_eq(engine.toFetch.length, MOBILE_BATCH_SIZE);
-    do_check_eq(engine.lastSync, collection.wbos["record-no-99"].modified);
+    // Verify that all items will be fetched on the next sync: either
+    //
+    // * They are in toFetch (i.e., known failures), or
+    // * They have modified times greater than the engine's lastSync.
+    //
+    // (Or, of course, they're in the engine store.)
+    let lastSync   = engine.lastSync;
+    let notFetched = [id for (id in collection.wbos) if (appliedIDs.indexOf(id) == -1)];
+    let future     = [id for (id in collection.wbos) if (collection.wbos[id].modified > lastSync)];
+    let toFetch    = engine.toFetch;
+
+    _("lastSync: "    + lastSync);
+    _("Not fetched: " + notFetched);
+    _("Future: "      + future);
+    _("To fetch: "    + toFetch);
+
+    do_check_true(notFetched.every(function (id) {
+      return future.indexOf(id) != -1 ||
+             toFetch.indexOf(id) != -1;
+    }));
+
+    // We only update lastSync for batches that completed before an HTTP error,
+    // so only count in whole batch sizes.
+    let newestCompleted = appliedCount - appliedCount % MOBILE_BATCH_SIZE;
+    do_check_eq(engine.lastSync,
+                  collection.wbos["record-no-" + (newestCompleted - 1)].modified);
 
   } finally {
     cleanAndGo(server);

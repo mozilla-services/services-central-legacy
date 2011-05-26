@@ -214,6 +214,38 @@ let Async = {
   },
 
   /*
+   * Invoke `f` with each item and a wrapped version of `componentCb`.
+   * When each component callback is invoked, the next invocation of `f` is
+   * begun, unless the return value is truthy. (See barrieredCallbacks.)
+   *
+   * Finally, invoke the output callback.
+   */
+  serially: function serially(items, f, componentCb, output) {
+    if (!output) {
+      throw "No output callback provided to serially.";
+    }
+
+    let count = items.length;
+    let i = 0;
+    function cb(error, result, context) {
+      let err = error;
+      if (!err) {
+        try {
+          err = componentCb(error, result, context);
+        } catch (ex) {
+          err = ex;
+        }
+      }
+      if ((++i == count) || err) {
+        output(err);
+        return;
+      }
+      Utils.delay(function () { f(items[i], cb); });
+    }
+    f(items[i], cb);
+  },
+
+  /*
    * Return a callback which executes `f` then `callback`, regardless of
    * whether it was invoked with an error. If an exception is thrown during the
    * evaluation of `f`, it takes precedence over an error provided to the

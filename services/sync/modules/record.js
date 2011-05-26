@@ -838,6 +838,10 @@ AsyncCollection.prototype = {
     this._data = [];
   },
 
+  extendResponse: function extendResponse(ret) {
+    ret.ids = this.ids;
+  },
+
   set recordHandler(onRecord) {
     // Save `this` because onProgress is called with this as the ChannelListener.
     let coll = this;

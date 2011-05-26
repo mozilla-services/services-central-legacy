@@ -249,6 +249,25 @@ let Utils = {
     return Utils.waitForSyncCallback(storageCallback.syncCb);
   },
 
+  /*
+   * Partition the input array into an array of arrays.
+   */
+  slices: function slices(arr, sliceSize) {
+    let out = [];
+    if (!sliceSize || sliceSize <= 0)
+      throw "Invalid slice size.";
+
+    if (sliceSize > arr.length)
+      return [arr];
+
+    let offset = 0;
+    while (arr.length > offset) {
+      out.push(arr.slice(offset, offset + sliceSize));
+      offset += sliceSize;
+    }
+    return out;
+  },
+
   byteArrayToString: function byteArrayToString(bytes) {
     return [String.fromCharCode(byte) for each (byte in bytes)].join("");
   },

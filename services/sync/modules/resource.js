@@ -128,7 +128,7 @@ AuthMgr.prototype = {
  *
  * 'callback' is a function with the following signature:
  *
- *   function callback(error, result) {...}
+ *   function callback(error, result, resource) {...}
  *
  * 'error' will be null on successful requests. Likewise, result will not be
  * passed (=undefined) when an error occurs. Note that this is independent of
@@ -310,7 +310,7 @@ AsyncResource.prototype = {
     this._log.trace("In _onComplete. Error is " + error + ".");
 
     if (error) {
-      this._callback(error);
+      this._callback(error, null, this);
       return;
     }
 
@@ -414,8 +414,7 @@ AsyncResource.prototype = {
         return;
       }
     }
-
-    this._callback(null, ret);
+    this._callback(null, ret, this);
   },
 
   get: function get(callback) {

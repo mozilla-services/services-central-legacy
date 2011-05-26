@@ -267,6 +267,9 @@ AsyncResource.prototype = {
 
   _onProgress: function Res__onProgress(channel) {},
 
+  extendResponse: function extendResponse(ret) {
+  },
+
   _doRequest: function _doRequest(action, data, callback) {
     this._log.trace("In _doRequest.");
     this._callback = callback;
@@ -383,6 +386,10 @@ AsyncResource.prototype = {
     ret.status  = status;
     ret.success = success;
     ret.headers = headers;
+
+    // Allow subclasses to do neat things like attach the IDs they were trying
+    // to fetch.
+    this.extendResponse(ret);
 
     // Make a lazy getter to convert the json response into an object.
     // Note that this can cause a parse error to be thrown far away from the

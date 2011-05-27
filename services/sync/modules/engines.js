@@ -647,109 +647,165 @@ SyncEngine.prototype = {
     }.bind(this));
   },
 
-  // Process incoming records
-  _processIncoming: function SyncEngine__processIncoming() {
-    this._log.trace("Downloading & applying server changes");
+  /*
+   * Fetch a list of URLs from the (presumably collection) URL.
+   */
+  _guidFetcher: function _guidFetcher(url, newer, limit, sort) {
+    let args = [];
+    if (newer)
+      args.push("newer=" + newer);
+    if (limit)
+      args.push("limit=" + limit);
+    if (sort)
+      args.push("sort=" + sort);
+
+    let uri = Utils.makeURL(url);
+    if (args.length)
+      uri.query = args.join("&");
+
+    return new AsyncResource(uri);
+  },
+
+  _processIncoming: function _processIncoming() {
+    Async.callSpinningly(this, this._processIncomingCb);
+  },
+
+  // Process incoming records.
+  _processIncomingCb: function _processIncomingCb(callback) {
+    this._log.trace("Downloading & applying server changes.");
+    try {
+      this._processIncomingUnsafe(callback);
+    } catch (ex) {
+      callback(ex);
+    }
+  },
+
+  // Returns true if the record was successfully handled.
+  _handleRecord: function _handleRecord(item, onFailure) {
+    try {
+      try {
+        item.decrypt();
+      } catch (ex if Utils.isHMACMismatch(ex)) {
+        let strategy = this.handleHMACMismatch(item, true);
+        if (strategy == SyncEngine.kRecoveryStrategy.retry) {
+          // You only get one retry.
+          try {
+            // Try decrypting again, typically because we've got new keys.
+            this._log.info("Trying decrypt again...");
+            item.decrypt();
+            strategy = null;
+          } catch (ex if Utils.isHMACMismatch(ex)) {
+            strategy = this.handleHMACMismatch(item, false);
+          }
+        }
+
+        switch (strategy) {
+          case null:
+            // Retry succeeded! No further handling.
+            break;
+          case SyncEngine.kRecoveryStrategy.retry:
+            this._log.debug("Ignoring second retry suggestion.");
+            // Fall through to error case.
+          case SyncEngine.kRecoveryStrategy.error:
+            this._log.warn("Error decrypting record: " + Utils.exceptionStr(ex));
+            onFailure(item);
+            return false;
+          case SyncEngine.kRecoveryStrategy.ignore:
+            this._log.debug("Ignoring record " + item.id +
+                            " with bad HMAC: already handled.");
+            return false;
+        }
+      }
+    } catch (ex) {
+      this._log.warn("Error decrypting record: " + Utils.exceptionStr(ex));
+      onFailure(item);
+      return false;
+    }
+    return true;
+  },
+
+  _processIncomingUnsafe: function _newProcessIncomingUnsafe(callback) {
+    this._log.trace("In _processIncomingUnsafe.");
+
+    // Steps:
+    // 1. Fetch new items from the server, up to our limit.
+    // 2. If we hit the limit, fetch GUIDs and batch the rest, according to our
+    //    client type.
+    // 3. If we had any prior failed items, try to fetch those, too.
+    // 4. Persist both old and new failures, ping observers, and invoke the callback.
+    //
+    // Potential complications:
+    // * Batches, when executed asynchronously, can complete out of order. Indeed,
+    //   they can even be processed line-by-line out of order. That means we can't
+    //   naïvely track last modified times; we must either store the IDs that
+    //   contributed to failed batches in toFetch, or take the greatest
+    //   modified time of the last successful batch as our last successful sync
+    //   time.
+    // * If we need to abort due to a mid-sync error, we need to stop HTTP
+    //   requests mid-flight: they're running in parallel, not sequentially. We
+    //   handle that for now with an `aborted` flag, which we set if the final
+    //   callback is invoked with an error. This doesn't stop the HTTP
+    //   requests, but it does stop us doing line-by-line processing.
+    //
+    // We currently execute batches serially to avoid excessive memory
+    // consumption, but this code is safe for out-of-order batches and
+    // addresses both of the above complications.
 
     // Figure out how many total items to fetch this sync; do less on mobile.
     let batchSize = Infinity;
-    let newitems = new Collection(this.engineURL, this._recordObj);
     let isMobile = (Svc.Prefs.get("client.type") == "mobile");
 
     if (isMobile) {
       batchSize = MOBILE_BATCH_SIZE;
     }
-    newitems.newer = this.lastSync;
-    newitems.full = true;
-    newitems.limit = batchSize;
-    
-    // applied    => number of items that should be applied.
-    // failed     => number of items that failed in this sync.
-    // newFailed  => number of items that failed for the first time in this sync.
-    // reconciled => number of items that were reconciled.
-    let count = {applied: 0, failed: 0, newFailed: 0, reconciled: 0};
-    let handled = [];
-    let applyBatch = [];
-    let failed = [];
-    let failedInPreviousSync = this.previousFailed;
-    let fetchBatch = Utils.arrayUnion(this.toFetch, failedInPreviousSync);
-    // Reset previousFailed for each sync since previously failed items may not fail again.
-    this.previousFailed = [];
 
-    function doApplyBatch() {
-      this._tracker.ignoreAll = true;
-      failed = failed.concat(this._store.applyIncomingBatch(applyBatch));
-      this._tracker.ignoreAll = false;
-      applyBatch = [];
-    }
+    let fetchBatch = this.toFetch;    // Persisted records that we want to retry.
+    let aborting   = false;           // If true, don't process any more records.
+    let collName   = this.name;       // Collection for each item.
 
-    function doApplyBatchAndPersistFailed() {
-      // Apply remaining batch.
-      if (applyBatch.length) {
-        doApplyBatch.call(this);
-      }
-      // Persist failed items so we refetch them.
-      if (failed.length) {
-        this.previousFailed = Utils.arrayUnion(failed, this.previousFailed);
-        count.failed += failed.length;
-        this._log.debug("Records that failed to apply: " + failed);
-        failed = [];
-      }
-    }
-
-    // Not binding this method to 'this' for performance reasons. It gets
-    // called for every incoming record.
+    // Not binding recordHandler to 'this' for performance reasons. It gets
+    // called for every incoming record. Similarly for doApplyBatch and
+    // doPersistFailed.
     let self = this;
-    newitems.recordHandler = function(item) {
-      // Grab a later last modified if possible
-      if (self.lastModified == null || item.modified > self.lastModified)
-        self.lastModified = item.modified;
+
+    // `collection` is the AsyncCollection (i.e., AsyncResource) object that's
+    // in control of the fetch.
+    //
+    // On the collection object we store:
+    // * handled:           record IDs that we processed.
+    // * applyBatch:        records that we'll apply at the end of the batch.
+    // * lastModified:      the largest timestamp we've seen.
+    // * failed:            IDs that did not process or reconcile.
+    // * counts:            a map of applied/failed/reconciled.
+    //
+    // recordHandler (called in onRecord on AsyncResource) updates these as it
+    // processes each downloaded record.
+    function recordHandler(item, collection) {
+      // So that HTTP requests don't continue to do work if we've had a failure.
+      if (aborting)
+        return;
+
+      // Grab a later last modified if possible. Track it per-fetch, because
+      // resource fetches will complete out of order.
+      if (!collection.lastModified ||
+          item.modified > collection.lastModified)
+        collection.lastModified = item.modified;
 
       // Track the collection for the WBO.
-      item.collection = self.name;
+      item.collection = collName;
 
-      // Remember which records were processed
-      handled.push(item.id);
+      // Remember which records were processed so we can skip retries.
+      collection.handled.push(item.id);
 
-      try {
-        try {
-          item.decrypt();
-        } catch (ex if Utils.isHMACMismatch(ex)) {
-          let strategy = self.handleHMACMismatch(item, true);
-          if (strategy == SyncEngine.kRecoveryStrategy.retry) {
-            // You only get one retry.
-            try {
-              // Try decrypting again, typically because we've got new keys.
-              self._log.info("Trying decrypt again...");
-              item.decrypt();
-              strategy = null;
-            } catch (ex if Utils.isHMACMismatch(ex)) {
-              strategy = self.handleHMACMismatch(item, false);
-            }
-          }
-
-          switch (strategy) {
-            case null:
-              // Retry succeeded! No further handling.
-              break;
-            case SyncEngine.kRecoveryStrategy.retry:
-              self._log.debug("Ignoring second retry suggestion.");
-              // Fall through to error case.
-            case SyncEngine.kRecoveryStrategy.error:
-              self._log.warn("Error decrypting record: " + Utils.exceptionStr(ex));
-              failed.push(item.id);
-              return;
-            case SyncEngine.kRecoveryStrategy.ignore:
-              self._log.debug("Ignoring record " + item.id +
-                              " with bad HMAC: already handled.");
-              return;
-          }
-        }
-      } catch (ex) {
-        self._log.warn("Error decrypting record: " + Utils.exceptionStr(ex));
-        failed.push(item.id);
-        return;
+      function trackFailed(item) {
+        collection.failed.push(item.id);
+        collection.counts.failed++;
       }
+
+      if (!self._handleRecord(item, trackFailed)) {
+        self._log.warn("Failed to handle incoming record " + item.id);
+        return;
+      };
 
       let shouldApply;
       try {
@@ -757,113 +813,331 @@ SyncEngine.prototype = {
       } catch (ex) {
         self._log.warn("Failed to reconcile incoming record " + item.id);
         self._log.warn("Encountered exception: " + Utils.exceptionStr(ex));
-        failed.push(item.id);
+        trackFailed(item);
         return;
       }
 
       if (shouldApply) {
-        count.applied++;
-        applyBatch.push(item);
+        collection.counts.applied++;
+        collection.applyBatch.push(item);
       } else {
-        count.reconciled++;
+        collection.counts.reconciled++;
         self._log.trace("Skipping reconciled incoming item " + item.id);
       }
 
-      if (applyBatch.length == self.applyIncomingBatchSize) {
-        doApplyBatch.call(self);
-      }
-      self._store._sleep(0);
-    };
-
-    // Only bother getting data from the server if there are new items.
-    if (this.lastModified == null || this.lastModified > this.lastSync) {
-      let resp = newitems.get();
-      doApplyBatchAndPersistFailed.call(this);
-      if (!resp.success) {
-        resp.failureCode = ENGINE_DOWNLOAD_FAIL;
-        throw resp;
+      if (collection.applyBatch.length == self.applyIncomingBatchSize) {
+        doApplyBatch(collection);
       }
     }
 
-    // Mobile: check if we got the maximum that we requested; get the rest if so.
-    if (handled.length == newitems.limit) {
-      let guidColl = new Collection(this.engineURL);
+    // Apply the items that a collection has accrued, updating metadata.
+    function doApplyBatch(collection) {
+      self._tracker.ignoreAll = true;
+      let failures = self._store.applyIncomingBatch(collection.applyBatch);
+      if (failures) {
+        collection.failed = collection.failed.concat(failures);
+        collection.counts.failed += failures.length;
+      }
+      self._tracker.ignoreAll = false;
+      collection.applyBatch = [];
+    }
 
-      // Sort and limit so that on mobile we only get the last X records.
-      guidColl.limit = this.downloadLimit;
-      guidColl.newer = this.lastSync;
+    // Persist any items that have failed into toFetch.
+    // Note that we don't alter counts.
+    function doPersistFailed(collection) {
+      self._log.debug("Persisting " + collection.counts.failed + " potential new failures.");
+      self.toFetch = Utils.arrayUnion(self.toFetch, collection.failed);
+      collection.failed = [];
+    }
 
-      // index: Orders by the sortindex descending (highest weight first).
-      guidColl.sort  = "index";
+    // Return a Collection object that's set up to track downloaded items.
+    // TODO: it would be nice to bust this out into its own class.
+    let engineURL = this.engineURL;
+    let recordObj = this._recordObj;
+    function preparedCollection() {
+      let r = new AsyncCollection(engineURL, recordObj);
+      r.applyBatch = [];              // Latest chunk to apply.
+      r.handled    = [];              // Every record we've seen.
+      r.failed     = [];              // Records that didn't apply.
+      r.counts     = {applied: 0, reconciled: 0, failed: 0};
+      r.lastModified  = 0
+      r.recordHandler = recordHandler;
+      return r;
+    }
 
-      let guids = guidColl.get();
-      if (!guids.success)
-        throw guids;
+    // This function fetches an array of GUIDs that we haven't handled yet.
+    // `callback` should be a function of (error, guids).
+    //
+    // Optionally provide an array of IDs that have already been handled, and
+    // those that should also be fetched (e.g., past failures to retry).
+    //
+    // If shouldFetchGUIDs is false, it means that the caller knows there are no
+    // more items on the server. In that case, only `more` are passed on, and
+    // this function behaves like a trampoline.
+    //
+    // Pass 'since' to use as a historical value of this.lastSync: make sure we
+    // get an overlapping batch. We'll remove values in `handled`, so they
+    // won't be re-processed.
+    function retrieveRemainingGUIDs(callback, handled, more, since,
+                                    shouldFetchGUIDs) {
+      if (this.downloadLimit != null && this.downloadLimit <= 0) {
+        shouldFetchGUIDs = false;
+      }
 
-      // Figure out which guids weren't just fetched then remove any guids that
-      // were already waiting and prepend the new ones
-      let extra = Utils.arraySub(guids.obj, handled);
-      if (extra.length > 0) {
-        fetchBatch = Utils.arrayUnion(extra, fetchBatch);
-        this.toFetch = Utils.arrayUnion(extra, this.toFetch);
+      if (!shouldFetchGUIDs) {
+        this._log.debug("Not fetching more GUIDs. downloadLimit: " +
+                        this.downloadLimit);
+        let remaining = Utils.arraySub(more, handled);
+        callback(null, remaining);
+        return;
+      }
+
+      // There's no need to reduce the limit to account for existing items;
+      // they're subsequently removed from the returned list.
+      this._log.debug("Fetching more GUIDs.");
+      let fetcher = this._guidFetcher(
+        this.engineURL,
+        since,                 // Newer than this...
+        this.downloadLimit,    // No more than this...
+        "index");              // Highest weight first.
+
+      fetcher.get(function (error, guids) {
+        if (error) {
+          callback(error);
+          return;
+        }
+        if (!guids.success) {
+          this._log.trace("Non-success; calling with error = guids.");
+          callback(guids);
+          return;
+        }
+
+        // Figure out which GUIDs weren't just fetched. Remove any that
+        // were already waiting. Append new ones. Hand over.
+        let desired   = Utils.arrayUnion(guids.obj, more);
+        let remaining = Utils.arraySub(desired, handled);
+        this._log.trace("Remaining GUIDs: " + remaining);
+        callback(null, remaining);
+      }.bind(this));
+    }
+
+    // Called each time an asynchronous batch collection fetch completes.
+    // Note that the callback includes the resource itself as the third
+    // "context" argument, which allows us simultaneous access to both our
+    // parent engine and the AsyncCollection.
+    function handleBatchResult(error, response, resource) {
+      this._log.trace("Handling batch result... " + error + ", " + response);
+
+      // This function is wrapped by the async utils; returning will cause an
+      // error to propagate to the final callback.
+      if (error) {
+        return error;
+      }
+
+      if (response.success) {
+        // Apply any un-applied items, just as we do within the record handler.
+        if (resource.applyBatch.length) {
+          doApplyBatch(resource);
+        }
+        resource.batchHandled = true;
+        return null;
+      }
+
+      response.failureCode = ENGINE_DOWNLOAD_FAIL;
+      return response;
+    }
+
+    // Notify observers if records failed to apply. Pass the count object
+    // along so that they can make an informed decision on what to do.
+    // Finally, invoke the callback.
+    function finishUp(error, counts) {
+      try {
+        if (counts.failed) {
+          this._log.debug("count.failed is " + counts.failed +
+                          "; notifying observers for " + this.name);
+          Observers.notify("weave:engine:sync:apply-failed", counts, self.name);
+        }
+        this._log.info("Records: " +
+                       counts.applied    + " applied, " +
+                       counts.failed     + " failed to apply, " +
+                       counts.reconciled + " reconciled.");
+      } finally {
+        callback(error);
       }
     }
 
-    // Fast-foward the lastSync timestamp since we have stored the
-    // remaining items in toFetch.
-    if (this.lastSync < this.lastModified) {
-      this.lastSync = this.lastModified;
-    }
-
-    // Process any backlog of GUIDs.
-    // At this point we impose an upper limit on the number of items to fetch
-    // in a single request, even for desktop, to avoid hitting URI limits.
-    batchSize = isMobile ? this.mobileGUIDFetchBatchSize :
-                           this.guidFetchBatchSize;
-
-    while (fetchBatch.length) {
-      // Reuse the original query, but get rid of the restricting params
-      // and batch remaining records.
-      newitems.limit = 0;
-      newitems.newer = 0;
-      newitems.ids = fetchBatch.slice(0, batchSize);
-
-      // Reuse the existing record handler set earlier
-      let resp = newitems.get();
-      if (!resp.success) {
-        resp.failureCode = ENGINE_DOWNLOAD_FAIL;
-        throw resp;
+    function updateTimes(coll) {
+      m = coll.lastModified;
+      if (!this.lastModified || this.lastModified < m) {
+        this.lastModified = m;
       }
-
-      // This batch was successfully applied. Not using
-      // doApplyBatchAndPersistFailed() here to avoid writing toFetch twice.
-      fetchBatch = fetchBatch.slice(batchSize);
-      this.toFetch = Utils.arraySub(this.toFetch, newitems.ids);
-      this.previousFailed = Utils.arrayUnion(this.previousFailed, failed);
-      if (failed.length) {
-        count.failed += failed.length;
-        this._log.debug("Records that failed to apply: " + failed);
-      }
-      failed = [];
-      if (this.lastSync < this.lastModified) {
-        this.lastSync = this.lastModified;
+      if (this.lastSync == null || this.lastSync < m) {
+        this.lastSync = m;
       }
     }
 
-    // Apply remaining items.
-    doApplyBatchAndPersistFailed.call(this);
+    // We use `bind` to curry collections and counts, hence the unusual
+    // argument order.
+    function allBatchesDone(collections, counts, error) {
+      this._log.trace("All batches done.");
 
-    count.newFailed = Utils.arraySub(this.previousFailed, failedInPreviousSync).length;
-    if (count.newFailed) {
-      // Notify observers if records failed to apply. Pass the count object
-      // along so that they can make an informed decision on what to do.
-      Observers.notify("weave:engine:sync:apply-failed", count, this.name);
+      // Persist failures, then hand off to callbacks.
+      if (error) {
+        aborting = true;
+      }
+
+      let allFailed = [];
+
+      // Persist failures and compute aggregate counts.
+      let applied    = 0;
+      let failed     = 0;
+      let reconciled = 0;
+
+      for each (let collection in collections) {
+        let counts  = collection.counts;
+        failed     += counts.failed;
+        applied    += counts.applied;
+        reconciled += counts.reconciled;
+        allFailed   = allFailed.concat(collection.failed);
+      }
+      this.toFetch = Utils.arrayUnion(this.toFetch, allFailed);
+
+      // Update last sync time. Do this by sorting the collections according to their
+      // own last sync, discarding those that have none, and taking the latest one
+      // prior to any HTTP failure. (We don't care about minor failures -- we already
+      // persisted those.)
+      // By discarding batches that aren't marked as complete, we ensure that we're
+      // only looking at those that finished prior to any HTTP error that brought us
+      // here.
+      let completed = collections.filter(function (c) c.batchHandled);
+      let sorted    = completed.sort(function (a, b) {
+        return (b.lastModified || 0) - (a.lastModified || 0);
+      });
+
+      let newest = sorted[0];
+
+      if (newest) {
+        updateTimes.call(this, newest);
+      } else {
+        this._log.trace("No newest batch! Not updating times.");
+      }
+
+      // Compute aggregate counts and notify observers.
+      counts.applied    += applied;
+      counts.failed     += failed;
+      counts.reconciled += reconciled;
+
+      finishUp.call(this, error, counts);
     }
-    this._log.info(["Records:",
-                    count.applied, "applied,",
-                    count.failed, "failed to apply,",
-                    count.newFailed, "newly failed to apply,",
-                    count.reconciled, "reconciled."].join(" "));
+
+    // This function is in charge of the follow-up behavior of
+    // _processIncoming, once the initial batch has been fetched.
+    // We use `bind` to curry counts, hence the unusual argument order.
+    function retrieveBatchedItems(counts, error, guids) {
+      if (error) {
+        this._log.warn("Error fetching remaining GUIDs.");
+        callback(error);
+        return;
+      }
+
+      if (!guids.length) {
+        finishUp.call(this, null, counts);
+        return;
+      }
+
+      // Process any backlog of GUIDs.
+      // At this point we impose an upper limit on the number of items to fetch
+      // in a single request, even for desktop, to avoid hitting URI limits.
+      batchSize = isMobile ? this.mobileGUIDFetchBatchSize :
+                             this.guidFetchBatchSize;
+
+      let batches = Utils.slices(guids, batchSize);
+      let collections = [];
+      for each (let batch in batches) {
+        if (!batch.length) {
+          continue;
+        }
+
+        // Make a new AsyncResource and do this work.
+        // Each of these requests runs in parallel.
+        let r = preparedCollection();
+        r.full  = true;
+        r.limit = 0;
+        r.newer = 0;
+        r.ids   = batch;
+        collections.push(r);
+      }
+
+      // Now, when the callback fires, each of these collection objects will
+      // be carrying a bunch of useful metadata.
+
+      this._log.debug("Batching fetch into " + collections.length + " requests.");
+      Async.serially(
+        collections,
+        function (coll, cb) { coll.get(cb); },
+        handleBatchResult.bind(this),
+        allBatchesDone.bind(this, collections, counts));
+    }
+
+    // Only bother getting data from the server if there are new items, or
+    // if we want to retry some failed items.
+    let existingFailures = this.toFetch;
+    if (!this.lastModified ||
+        this.lastModified > this.lastSync ||
+        existingFailures.length) {
+
+      // Track this so we get a broader range of GUIDs, which should avoid
+      // issues with batch content ordering.
+      let oldLastSync = this.lastSync;
+
+      // Step 1: fetch new items.
+      let newitems = preparedCollection();
+      newitems.full  = true;
+      newitems.limit = batchSize;
+      newitems.newer = this.lastSync;
+      newitems.get(function (error, resp) {
+
+        if (error) {
+          callback(error);
+          return;
+        }
+
+        // Apply whatever we got.
+        if (newitems.applyBatch.length) {
+          doApplyBatch(newitems);
+        }
+
+        // Persist new failures, but hang on to the old ones -- we don't want to
+        // immediately retry the ones that just failed!
+        doPersistFailed(newitems);
+
+        if (!resp.success) {
+          resp.failureCode = ENGINE_DOWNLOAD_FAIL;
+          callback(resp);
+          return;
+        }
+
+        // Update lastSync for this batch.
+        updateTimes.call(this, newitems);
+
+        let limitHit = newitems.limit <= newitems.handled.length;
+
+        // Step 2: more to get? Let's do it!
+        let cb = retrieveBatchedItems.bind(this, newitems.counts);
+        let remainder = this.toFetch;
+        retrieveRemainingGUIDs.call(
+            this,
+            cb,
+            newitems.handled,                 // Items already handled.
+            remainder,                        // Additional items to fetch.
+            oldLastSync,                      // When to pull GUIDs from.
+            limitHit);                        // Whether to fetch more items.
+      }.bind(this));
+
+    } else {
+      this._log.info("Nothing to do for incoming records.");
+      callback();
+    }
   },
 
   /**
@@ -923,8 +1197,8 @@ SyncEngine.prototype = {
     if (this._log.level <= Log4Moz.Level.Trace)
       this._log.trace("Incoming: " + item);
 
-    this._log.trace("Reconcile step 1: Check for conflicts");
-    if (item.id in this._modified) {
+    this._log.trace("Reconcile step 1: Check for conflicts. item.id is " + item.id);
+    if (this._modified && item.id in this._modified) {
       // If the incoming and local changes are the same, skip
       if (this._isEqual(item)) {
         delete this._modified[item.id];

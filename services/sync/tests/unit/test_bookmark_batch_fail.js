@@ -3,8 +3,8 @@ Cu.import("resource://services-sync/engines/bookmarks.js");
 
 function run_test() {
   let engine = new BookmarksEngine();
-  engine._syncStartup = function() {
-    throw "FAIL!";
+  engine._syncStartupCb = function(callback) {
+    callback("FAIL!");
   };
 
   try {

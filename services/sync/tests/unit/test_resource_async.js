@@ -655,7 +655,7 @@ function run_test() {
       do_check_eq(warnings.pop(),
                   "Got exception calling onProgress handler during fetch of " +
                   "http://localhost:8080/json");
-      
+
       do_test_finished();
       next();
     }));
@@ -678,7 +678,7 @@ function run_test() {
       do_check_eq(warnings.pop(),
                   "Got exception calling onProgress handler during fetch of " +
                   "http://localhost:8080/json");
-      
+
       do_test_finished();
       next();
     }));

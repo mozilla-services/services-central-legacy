@@ -163,7 +163,6 @@ add_test(function test_annotation_uploaded() {
     store.update(newRecord);
     do_check_eq("LeastVisited", PlacesUtils.annotations.getItemAnnotation(
       newID, SMART_BOOKMARKS_ANNO));
-    
 
   } finally {
     // Clean up.

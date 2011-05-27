@@ -11,7 +11,7 @@ add_test(function test_processIncoming_mobile_history_batched() {
   _("SyncEngine._processIncoming works on history engine.");
 
   let FAKE_DOWNLOAD_LIMIT = 100;
-  
+
   Svc.Prefs.set("clusterURL", "http://localhost:8080/");
   Svc.Prefs.set("username", "foo");
   Svc.Prefs.set("client.type", "mobile");
@@ -40,12 +40,12 @@ add_test(function test_processIncoming_mobile_history_batched() {
         sortindex: i,
         visits: [{date: (modified - 5) * 1000000, type: visitType}],
         deleted: false});
-    
+
     let wbo = new ServerWBO(id, payload);
     wbo.modified = modified;
     collection.wbos[id] = wbo;
   }
-  
+
   let server = sync_httpd_setup({
       "/1.1/foo/storage/history": collection.handler()
   });

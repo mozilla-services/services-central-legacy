@@ -306,7 +306,7 @@ EngineManagerSvc.prototype = {
   getEnabled: function EngMgr_getEnabled() {
     return this.getAll().filter(function(engine) engine.enabled);
   },
-  
+
   /**
    * Register an Engine to the service. Alternatively, give an array of engine
    * objects to register.
@@ -393,7 +393,7 @@ Engine.prototype = {
   },
 
   /**
-   * Get rid of any local meta-data
+   * Get rid of any local metadata.
    */
   resetClient: function Engine_resetClient() {
     if (!this._resetClient)
@@ -433,16 +433,16 @@ SyncEngine.prototype = {
   __proto__: Engine.prototype,
   _recordObj: CryptoWrapper,
   version: 1,
-  
+
   // How many records to pull in a single sync. This is primarily to avoid very
   // long first syncs against profiles with many history records.
   downloadLimit: null,
-  
+
   // How many records to pull at one time when specifying IDs. This is to avoid
   // URI length limitations.
   guidFetchBatchSize: DEFAULT_GUID_FETCH_BATCH_SIZE,
   mobileGUIDFetchBatchSize: DEFAULT_MOBILE_GUID_FETCH_BATCH_SIZE,
-  
+
   // How many records to process in a single batch.
   applyIncomingBatchSize: DEFAULT_STORE_BATCH_SIZE,
 
@@ -658,7 +658,7 @@ SyncEngine.prototype = {
 
       // Track the collection for the WBO.
       item.collection = self.name;
-      
+
       // Remember which records were processed
       handled.push(item.id);
 
@@ -678,7 +678,7 @@ SyncEngine.prototype = {
               strategy = self.handleHMACMismatch(item, false);
             }
           }
-          
+
           switch (strategy) {
             case null:
               // Retry succeeded! No further handling.
@@ -726,7 +726,7 @@ SyncEngine.prototype = {
       self._store._sleep(0);
     };
 
-    // Only bother getting data from the server if there's new things
+    // Only bother getting data from the server if there are new items.
     if (this.lastModified == null || this.lastModified > this.lastSync) {
       let resp = newitems.get();
       doApplyBatchAndPersistFailed.call(this);
@@ -739,7 +739,7 @@ SyncEngine.prototype = {
     // Mobile: check if we got the maximum that we requested; get the rest if so.
     if (handled.length == newitems.limit) {
       let guidColl = new Collection(this.engineURL);
-      
+
       // Sort and limit so that on mobile we only get the last X records.
       guidColl.limit = this.downloadLimit;
       guidColl.newer = this.lastSync;

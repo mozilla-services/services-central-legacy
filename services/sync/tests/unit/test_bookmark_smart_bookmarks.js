@@ -201,39 +201,41 @@ add_test(function test_smart_bookmarks_duped() {
     "/1.1/foo/storage/bookmarks": collection.handler()
   });
   
-  try {
-    engine._syncStartup();
-    
-    _("Verify that lazyMap uses the anno, discovering a dupe regardless of URI.");
-    do_check_eq(mostVisitedGUID, engine._lazyMap(record));
-    
-    record.bmkUri = "http://foo/";
-    do_check_eq(mostVisitedGUID, engine._lazyMap(record));
-    do_check_neq(PlacesUtils.bookmarks.getBookmarkURI(mostVisitedID).spec,
-                 record.bmkUri);
-    
-    _("Verify that different annos don't dupe.");
-    let other = new BookmarkQuery("bookmarks", "abcdefabcdef");
-    other.queryId = "LeastVisited";
-    other.parentName = "Bookmarks Toolbar";
-    other.bmkUri = "place:foo";
-    other.title = "";
-    do_check_eq(undefined, engine._findDupe(other));
-    
-    _("Handle records without a queryId entry.");
-    record.bmkUri = uri;
-    delete record.queryId;
-    do_check_eq(mostVisitedGUID, engine._lazyMap(record));
-    
-    engine._syncFinish();
+  engine._syncStartupCb(function (err) {
+    try {
+      do_check_false(!!err);
 
-  } finally {
-    // Clean up.
-    store.wipe();
-    server.stop(do_test_finished);
-    Svc.Prefs.resetBranch("");
-    Records.clearCache();
-  }
+      _("Verify that lazyMap uses the anno, discovering a dupe regardless of URI.");
+      do_check_eq(mostVisitedGUID, engine._lazyMap(record));
+
+      record.bmkUri = "http://foo/";
+      do_check_eq(mostVisitedGUID, engine._lazyMap(record));
+      do_check_neq(PlacesUtils.bookmarks.getBookmarkURI(mostVisitedID).spec,
+                   record.bmkUri);
+
+      _("Verify that different annos don't dupe.");
+      let other = new BookmarkQuery("bookmarks", "abcdefabcdef");
+      other.queryId = "LeastVisited";
+      other.parentName = "Bookmarks Toolbar";
+      other.bmkUri = "place:foo";
+      other.title = "";
+      do_check_eq(undefined, engine._findDupe(other));
+
+      _("Handle records without a queryId entry.");
+      record.bmkUri = uri;
+      delete record.queryId;
+      do_check_eq(mostVisitedGUID, engine._lazyMap(record));
+
+      engine._syncFinish();
+
+    } finally {
+      // Clean up.
+      store.wipe();
+      Svc.Prefs.resetBranch("");
+      Records.clearCache();
+      server.stop(run_next_test);
+    }
+  });
 });
 
 function run_test() {

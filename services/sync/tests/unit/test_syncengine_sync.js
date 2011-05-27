@@ -1619,9 +1619,7 @@ function test_canDecrypt_true() {
 
   let engine = makeSteamEngine();
   try {
-
     do_check_true(engine.canDecrypt());
-
   } finally {
     server.stop(do_test_finished);
     Svc.Prefs.resetBranch("");

@@ -77,6 +77,7 @@ SteamTracker.prototype = {
 function SteamEngine() {
   SyncEngine.call(this, "Steam");
   this.toFetch = [];
+  this.previousFailed = [];
 }
 SteamEngine.prototype = {
   __proto__: SyncEngine.prototype,
@@ -832,7 +833,7 @@ add_test(function test_processIncoming_failed_items_reported_once() {
 
   // Do sync.
   engine._syncStartupCb(function (err) {
-    do_check_true(!err);
+    _("syncStartupCB passed: " + err);
 
     try {
       engine._processIncoming();

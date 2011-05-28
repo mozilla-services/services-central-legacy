@@ -759,9 +759,15 @@ SyncEngine.prototype = {
       batchSize = MOBILE_BATCH_SIZE;
     }
 
-    let fetchBatch = this.toFetch;    // Persisted records that we want to retry.
     let aborting   = false;           // If true, don't process any more records.
     let collName   = this.name;       // Collection for each item.
+
+    // Persisted records that we want to retry.
+    let failedInPreviousSync = this.previousFailed;
+
+    // Reset previousFailed for each sync since previously failed items may not
+    // fail again.
+    this.previousFailed = [];
 
     // Not binding recordHandler to 'this' for performance reasons. It gets
     // called for every incoming record. Similarly for doApplyBatch and
@@ -776,7 +782,12 @@ SyncEngine.prototype = {
     // * applyBatch:        records that we'll apply at the end of the batch.
     // * lastModified:      the largest timestamp we've seen.
     // * failed:            IDs that did not process or reconcile.
-    // * counts:            a map of applied/failed/reconciled.
+    // * counts:            a map of applied/failed/newFailed/reconciled.
+    //
+    // applied    => number of items that should be applied.
+    // failed     => number of items that failed in this sync.
+    // newFailed  => number of items that failed for the first time in this sync.
+    // reconciled => number of items that were reconciled.
     //
     // recordHandler (called in onRecord on AsyncResource) updates these as it
     // processes each downloaded record.
@@ -845,9 +856,21 @@ SyncEngine.prototype = {
     // Persist any items that have failed into toFetch.
     // Note that we don't alter counts.
     function doPersistFailed(collection) {
-      self._log.debug("Persisting " + collection.counts.failed + " potential new failures.");
-      self.toFetch = Utils.arrayUnion(self.toFetch, collection.failed);
-      collection.failed = [];
+      self._log.debug("Persisting " + collection.counts.failed +
+                      " potential new failures.");
+      self.toFetch = Utils.arraySub(self.toFetch, collection.ids);
+      if (collection.counts.failed) {
+        self.previousFailed = Utils.arrayUnion(self.previousFailed,
+                                               collection.failed);
+        collection.failed = [];
+      }
+    }
+
+    // Calculate newFailed for a collection.
+    function updateFailureCounts(collection) {
+      self._log.debug("Updating failure counts.");
+      collection.counts.newFailed += Utils.arraySub(collection.failed,
+                                                    failedInPreviousSync).length;
     }
 
     // Return a Collection object that's set up to track downloaded items.
@@ -859,7 +882,7 @@ SyncEngine.prototype = {
       r.applyBatch = [];              // Latest chunk to apply.
       r.handled    = [];              // Every record we've seen.
       r.failed     = [];              // Records that didn't apply.
-      r.counts     = {applied: 0, reconciled: 0, failed: 0};
+      r.counts     = {applied: 0, failed: 0, newFailed: 0, reconciled: 0};
       r.lastModified  = 0
       r.recordHandler = recordHandler;
       return r;
@@ -939,6 +962,8 @@ SyncEngine.prototype = {
         if (resource.applyBatch.length) {
           doApplyBatch(resource);
         }
+        updateFailureCounts(resource);
+        doPersistFailed(resource);
         resource.batchHandled = true;
         return null;
       }
@@ -951,15 +976,17 @@ SyncEngine.prototype = {
     // along so that they can make an informed decision on what to do.
     // Finally, invoke the callback.
     function finishUp(error, counts) {
+      this._log.debug("finishUp: " + JSON.stringify(counts));
       try {
-        if (counts.failed) {
-          this._log.debug("count.failed is " + counts.failed +
+        if (counts.newFailed) {
+          this._log.debug("count.newFailed is " + counts.newFailed +
                           "; notifying observers for " + this.name);
           Observers.notify("weave:engine:sync:apply-failed", counts, self.name);
         }
         this._log.info("Records: " +
                        counts.applied    + " applied, " +
                        counts.failed     + " failed to apply, " +
+                       counts.newFailed  + " newly failed to apply, " +
                        counts.reconciled + " reconciled.");
       } finally {
         callback(error);
@@ -986,21 +1013,19 @@ SyncEngine.prototype = {
         aborting = true;
       }
 
-      let allFailed = [];
-
       // Persist failures and compute aggregate counts.
       let applied    = 0;
       let failed     = 0;
+      let newFailed  = 0;
       let reconciled = 0;
 
       for each (let collection in collections) {
         let counts  = collection.counts;
-        failed     += counts.failed;
         applied    += counts.applied;
+        failed     += counts.failed;
+        newFailed  += counts.newFailed;
         reconciled += counts.reconciled;
-        allFailed   = allFailed.concat(collection.failed);
       }
-      this.toFetch = Utils.arrayUnion(this.toFetch, allFailed);
 
       // Update last sync time. Do this by sorting the collections according to their
       // own last sync, discarding those that have none, and taking the latest one
@@ -1025,6 +1050,7 @@ SyncEngine.prototype = {
       // Compute aggregate counts and notify observers.
       counts.applied    += applied;
       counts.failed     += failed;
+      counts.newFailed  += newFailed;
       counts.reconciled += reconciled;
 
       finishUp.call(this, error, counts);
@@ -1081,10 +1107,10 @@ SyncEngine.prototype = {
 
     // Only bother getting data from the server if there are new items, or
     // if we want to retry some failed items.
-    let existingFailures = this.toFetch;
+    let remainder = Utils.arrayUnion(this.toFetch, failedInPreviousSync);
     if (!this.lastModified ||
         this.lastModified > this.lastSync ||
-        existingFailures.length) {
+        remainder.length) {
 
       // Track this so we get a broader range of GUIDs, which should avoid
       // issues with batch content ordering.
@@ -1102,6 +1128,9 @@ SyncEngine.prototype = {
           return;
         }
 
+        // Set ids here, so we can treat this initial batch just like any other.
+        newitems.ids = newitems.handled;
+
         // Apply whatever we got.
         if (newitems.applyBatch.length) {
           doApplyBatch(newitems);
@@ -1109,6 +1138,7 @@ SyncEngine.prototype = {
 
         // Persist new failures, but hang on to the old ones -- we don't want to
         // immediately retry the ones that just failed!
+        updateFailureCounts(newitems);
         doPersistFailed(newitems);
 
         if (!resp.success) {
@@ -1117,6 +1147,8 @@ SyncEngine.prototype = {
           return;
         }
 
+        // TODO: verify that we're persisting toFetch prior to taking action.
+
         // Update lastSync for this batch.
         updateTimes.call(this, newitems);
 
@@ -1124,7 +1156,6 @@ SyncEngine.prototype = {
 
         // Step 2: more to get? Let's do it!
         let cb = retrieveBatchedItems.bind(this, newitems.counts);
-        let remainder = this.toFetch;
         retrieveRemainingGUIDs.call(
             this,
             cb,

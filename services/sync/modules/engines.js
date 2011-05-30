@@ -1059,17 +1059,28 @@ SyncEngine.prototype = {
     // This function is in charge of the follow-up behavior of
     // _processIncoming, once the initial batch has been fetched.
     // We use `bind` to curry counts, hence the unusual argument order.
-    function retrieveBatchedItems(counts, error, guids) {
+    function retrieveBatchedItems(initialBatch, error, guids) {
       if (error) {
         this._log.warn("Error fetching remaining GUIDs.");
         callback(error);
         return;
       }
 
+      let counts = initialBatch.counts;
       if (!guids.length) {
+        // Update lastSync for the initial batch.
+        updateTimes.call(this, initialBatch);
         finishUp.call(this, null, counts);
         return;
       }
+
+      // Persist the whole set. We'll whittle this down as we download each batch.
+      // We do this before we update lastSync for the initial batch. Should our
+      // fetching of subsequent batches fail catastrophically, this avoids us
+      // accidentally leaping over undownloaded records whose modified times
+      // and sort order are different.
+      this.toFetch = Utils.arrayUnion(guids, this.toFetch);
+      updateTimes.call(this, initialBatch);
 
       // Process any backlog of GUIDs.
       // At this point we impose an upper limit on the number of items to fetch
@@ -1147,15 +1158,10 @@ SyncEngine.prototype = {
           return;
         }
 
-        // TODO: verify that we're persisting toFetch prior to taking action.
-
-        // Update lastSync for this batch.
-        updateTimes.call(this, newitems);
-
         let limitHit = newitems.limit <= newitems.handled.length;
 
         // Step 2: more to get? Let's do it!
-        let cb = retrieveBatchedItems.bind(this, newitems.counts);
+        let cb = retrieveBatchedItems.bind(this, newitems);
         retrieveRemainingGUIDs.call(
             this,
             cb,

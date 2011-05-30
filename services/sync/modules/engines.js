@@ -666,20 +666,6 @@ SyncEngine.prototype = {
     return new AsyncResource(uri);
   },
 
-  _processIncoming: function _processIncoming() {
-    Async.callSpinningly(this, this._processIncomingCb);
-  },
-
-  // Process incoming records.
-  _processIncomingCb: function _processIncomingCb(callback) {
-    this._log.trace("Downloading & applying server changes.");
-    try {
-      this._processIncomingUnsafe(callback);
-    } catch (ex) {
-      callback(ex);
-    }
-  },
-
   // Returns true if the record was successfully handled.
   _handleRecord: function _handleRecord(item, onFailure) {
     try {
@@ -723,6 +709,25 @@ SyncEngine.prototype = {
     }
     return true;
   },
+
+  _processIncoming: function _processIncoming() {
+    Async.callSpinningly(this, this._processIncomingCb);
+  },
+
+  // Process incoming records.
+  _processIncomingCb: function _processIncomingCb(callback) {
+    this._log.trace("Downloading & applying server changes.");
+
+    // This arrangement with the try block simply ensures that a programming
+    // error inside _processIncomingUnsafe can't cause us to wait endlessly for
+    // the callback to be called.
+    try {
+      this._processIncomingUnsafe(callback);
+    } catch (ex) {
+      callback(ex);
+    }
+  },
+
 
   _processIncomingUnsafe: function _newProcessIncomingUnsafe(callback) {
     this._log.trace("In _processIncomingUnsafe.");
@@ -797,7 +802,7 @@ SyncEngine.prototype = {
         return;
 
       // Grab a later last modified if possible. Track it per-fetch, because
-      // resource fetches will complete out of order.
+      // async resource fetches could complete out of order.
       if (!collection.lastModified ||
           item.modified > collection.lastModified)
         collection.lastModified = item.modified;
@@ -845,7 +850,7 @@ SyncEngine.prototype = {
     function doApplyBatch(collection) {
       self._tracker.ignoreAll = true;
       let failures = self._store.applyIncomingBatch(collection.applyBatch);
-      if (failures) {
+      if (failures.length) {
         collection.failed = collection.failed.concat(failures);
         collection.counts.failed += failures.length;
       }
@@ -856,10 +861,10 @@ SyncEngine.prototype = {
     // Persist any items that have failed into toFetch.
     // Note that we don't alter counts.
     function doPersistFailed(collection) {
-      self._log.debug("Persisting " + collection.counts.failed +
-                      " potential new failures.");
       self.toFetch = Utils.arraySub(self.toFetch, collection.ids);
       if (collection.counts.failed) {
+        self._log.debug("Persisting " + collection.counts.failed +
+                        " potential new failures.");
         self.previousFailed = Utils.arrayUnion(self.previousFailed,
                                                collection.failed);
         collection.failed = [];
@@ -972,11 +977,10 @@ SyncEngine.prototype = {
       return response;
     }
 
-    // Notify observers if records failed to apply. Pass the count object
+    // Notify observers if records newly failed to apply. Pass the count object
     // along so that they can make an informed decision on what to do.
     // Finally, invoke the callback.
     function finishUp(error, counts) {
-      this._log.debug("finishUp: " + JSON.stringify(counts));
       try {
         if (counts.newFailed) {
           this._log.debug("count.newFailed is " + counts.newFailed +
@@ -1034,13 +1038,14 @@ SyncEngine.prototype = {
       // By discarding batches that aren't marked as complete, we ensure that we're
       // only looking at those that finished prior to any HTTP error that brought us
       // here.
+      // This is negligible additional complexity when we serialize fetches,
+      // but entirely necessary should we ever make concurrent requests.
       let completed = collections.filter(function (c) c.batchHandled);
       let sorted    = completed.sort(function (a, b) {
         return (b.lastModified || 0) - (a.lastModified || 0);
       });
 
       let newest = sorted[0];
-
       if (newest) {
         updateTimes.call(this, newest);
       } else {
@@ -1115,6 +1120,11 @@ SyncEngine.prototype = {
         handleBatchResult.bind(this),
         allBatchesDone.bind(this, collections, counts));
     }
+
+    //
+    // End of subfunctions.
+    //
+
 
     // Only bother getting data from the server if there are new items, or
     // if we want to retry some failed items.

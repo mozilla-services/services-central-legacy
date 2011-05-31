@@ -46,6 +46,7 @@ const Ci = Components.interfaces;
 const Cr = Components.results;
 const Cu = Components.utils;
 
+Cu.import("resource://services-sync/async.js");
 Cu.import("resource://services-sync/record.js");
 Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/ext/Observers.js");
@@ -200,10 +201,10 @@ function Store(name) {
 Store.prototype = {
 
   _sleep: function _sleep(delay) {
-    let cb = Utils.makeSyncCallback();
+    let cb = Async.makeSyncCallback();
     this._timer.initWithCallback({notify: cb}, delay,
                                  Ci.nsITimer.TYPE_ONE_SHOT);
-    Utils.waitForSyncCallback(cb);
+    Async.waitForSyncCallback(cb);
   },
 
   applyIncomingBatch: function applyIncomingBatch(records) {
@@ -915,7 +916,7 @@ SyncEngine.prototype = {
       }
 
       // Records differ so figure out which to take
-      let recordAge = Resource.serverTime - item.modified;
+      let recordAge = AsyncResource.serverTime - item.modified;
       let localAge = Date.now() / 1000 - this._modified[item.id];
       this._log.trace("Record age vs local age: " + [recordAge, localAge]);
 

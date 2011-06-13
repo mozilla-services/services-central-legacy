@@ -107,8 +107,12 @@ TabEngine.prototype = {
     this._tracker.modified = true;
   },
 
-  removeClientData: function removeClientData() {
-    new Resource(this.engineURL + "/" + Clients.localID).delete();
+  removeClientData: function removeClientData(callback) {
+    try {
+      new AsyncResource(this.engineURL + "/" + Clients.localID).delete(callback);
+    } catch (ex) {
+      callback(ex);
+    }
   },
 
   /* The intent is not to show tabs in the menu if they're already

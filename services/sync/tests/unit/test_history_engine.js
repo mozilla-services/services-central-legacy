@@ -11,7 +11,7 @@ add_test(function test_processIncoming_mobile_history_batched() {
   _("SyncEngine._processIncoming works on history engine.");
 
   let FAKE_DOWNLOAD_LIMIT = 100;
-  
+
   Svc.Prefs.set("clusterURL", "http://localhost:8080/");
   Svc.Prefs.set("username", "foo");
   Svc.Prefs.set("client.type", "mobile");
@@ -31,8 +31,10 @@ add_test(function test_processIncoming_mobile_history_batched() {
   // 10 minutes old.
   let visitType = Ci.nsINavHistoryService.TRANSITION_LINK;
   for (var i = 0; i < 234; i++) {
+    // Make sure the records go from oldest to newest.
     let id = 'record-no' + ("00" + i).slice(-3);
-    let modified = Date.now()/1000 - 60*(i+10);
+    let start = Date.now() / 1000 - (255 * 60);
+    let modified = start + 60*(i+10);
     let payload = encryptPayload({
       id: id,
       histUri: "http://foo/bar?" + id,
@@ -40,12 +42,12 @@ add_test(function test_processIncoming_mobile_history_batched() {
         sortindex: i,
         visits: [{date: (modified - 5) * 1000000, type: visitType}],
         deleted: false});
-    
+
     let wbo = new ServerWBO(id, payload);
     wbo.modified = modified;
     collection.wbos[id] = wbo;
   }
-  
+
   let server = sync_httpd_setup({
       "/1.1/foo/storage/history": collection.handler()
   });
@@ -55,79 +57,81 @@ add_test(function test_processIncoming_mobile_history_batched() {
   meta_global.payload.engines = {history: {version: engine.version,
                                            syncID: engine.syncID}};
 
-  try {
+  _("On a mobile client, we get new records from the server in batches of 50.");
+  engine._syncStartupCb(function (err) {
+    do_check_false(!!err);
+    try {
+      // Fake a lower limit.
+      engine.downloadLimit = FAKE_DOWNLOAD_LIMIT;
+      _("Last modified: " + engine.lastModified);
+      _("Processing...");
+      engine._processIncoming();    // One fetch, one GUID fetch, one batch.
 
-    _("On a mobile client, we get new records from the server in batches of 50.");
-    engine._syncStartup();
-    
-    // Fake a lower limit.
-    engine.downloadLimit = FAKE_DOWNLOAD_LIMIT;
-    _("Last modified: " + engine.lastModified);
-    _("Processing...");
-    engine._processIncoming();
-    
-    _("Last modified: " + engine.lastModified);
-    engine._syncFinish();
-    
-    // Back to the normal limit.
-    _("Running again. Should fetch none, because of lastModified");
-    engine.downloadLimit = MAX_HISTORY_DOWNLOAD;
-    _("Processing...");
-    engine._processIncoming();
-    
-    _("Last modified: " + engine.lastModified);
-    _("Running again. Expecting to pull everything");
-    
-    engine.lastModified = undefined;
-    engine.lastSync     = 0;
-    _("Processing...");
-    engine._processIncoming();
-    
-    _("Last modified: " + engine.lastModified);
+      _("Last modified: " + engine.lastModified);
+      engine._syncFinish();
+      _("Sync finished.");
 
-    // Verify that the right number of GET requests with the right
-    // kind of parameters were made.
-    do_check_eq(collection.get_log.length,
-        // First try:
-        1 +    // First 50...
-        1 +    // 1 GUID fetch...
-               // 1 fetch...
-        Math.ceil((FAKE_DOWNLOAD_LIMIT - 50) / MOBILE_BATCH_SIZE) +
-        // Second try: none
-        // Third try:
-        1 +    // First 50...
-        1 +    // 1 GUID fetch...
-               // 4 fetch...
-        Math.ceil((234 - 50) / MOBILE_BATCH_SIZE));
-    
-    // Check the structure of each HTTP request.
-    do_check_eq(collection.get_log[0].full, 1);
-    do_check_eq(collection.get_log[0].limit, MOBILE_BATCH_SIZE);
-    do_check_eq(collection.get_log[1].full, undefined);
-    do_check_eq(collection.get_log[1].sort, "index");
-    do_check_eq(collection.get_log[1].limit, FAKE_DOWNLOAD_LIMIT);
-    do_check_eq(collection.get_log[2].full, 1);
-    do_check_eq(collection.get_log[3].full, 1);
-    do_check_eq(collection.get_log[3].limit, MOBILE_BATCH_SIZE);
-    do_check_eq(collection.get_log[4].full, undefined);
-    do_check_eq(collection.get_log[4].sort, "index");
-    do_check_eq(collection.get_log[4].limit, MAX_HISTORY_DOWNLOAD);
-    for (let i = 0; i <= Math.floor((234 - 50) / MOBILE_BATCH_SIZE); i++) {
-      let j = i + 5;
-      do_check_eq(collection.get_log[j].full, 1);
-      do_check_eq(collection.get_log[j].limit, undefined);
-      if (i < Math.floor((234 - 50) / MOBILE_BATCH_SIZE))
-        do_check_eq(collection.get_log[j].ids.length, MOBILE_BATCH_SIZE);
-      else
-        do_check_eq(collection.get_log[j].ids.length, 234 % MOBILE_BATCH_SIZE);
+      // Back to the normal limit.
+      _("Running again. Should fetch none, because of lastModified");
+      engine.downloadLimit = MAX_HISTORY_DOWNLOAD;
+      _("Processing...");
+      engine._processIncoming();    // Zero fetches.
+
+      _("Last modified: " + engine.lastModified);
+      _("Running again. Expecting to pull everything");
+
+      engine.lastModified = undefined;
+      engine.lastSync     = 0;
+      _("Processing...");
+      engine._processIncoming();    // One fetch, one GUID fetch, four batches.
+
+      _("Last modified: " + engine.lastModified);
+
+      // Verify that the right number of GET requests with the right
+      // kind of parameters were made.
+      do_check_eq(collection.get_log.length,
+          // First try:
+          1 +    // First 50...
+          1 +    // 1 GUID fetch...
+                 // 1 fetch...
+          Math.ceil((FAKE_DOWNLOAD_LIMIT - 50) / MOBILE_BATCH_SIZE) +
+          // Second try: none
+          // Third try:
+          1 +    // First 50...
+          1 +    // 1 GUID fetch...
+                 // 4 fetch...
+          Math.ceil((234 - 50) / MOBILE_BATCH_SIZE));
+
+      // Check the structure of each HTTP request.
+      do_check_eq(collection.get_log[0].full, 1);
+      do_check_eq(collection.get_log[0].limit, MOBILE_BATCH_SIZE);
+      do_check_eq(collection.get_log[1].full, undefined);
+      do_check_eq(collection.get_log[1].sort, "index");
+
+      do_check_eq(collection.get_log[1].limit, FAKE_DOWNLOAD_LIMIT);
+      do_check_eq(collection.get_log[2].full, 1);
+      do_check_eq(collection.get_log[3].full, 1);
+      do_check_eq(collection.get_log[3].limit, MOBILE_BATCH_SIZE);
+      do_check_eq(collection.get_log[4].full, undefined);
+      do_check_eq(collection.get_log[4].sort, "index");
+      do_check_eq(collection.get_log[4].limit, MAX_HISTORY_DOWNLOAD);
+      for (let i = 0; i <= Math.floor((234 - 50) / MOBILE_BATCH_SIZE); i++) {
+        let j = i + 5;
+        do_check_eq(collection.get_log[j].full, 1);
+        do_check_eq(collection.get_log[j].limit, undefined);
+        if (i < Math.floor((234 - 50) / MOBILE_BATCH_SIZE))
+          do_check_eq(collection.get_log[j].ids.length, MOBILE_BATCH_SIZE);
+        else
+          do_check_eq(collection.get_log[j].ids.length, 234 % MOBILE_BATCH_SIZE);
+      }
+
+    } finally {
+      PlacesUtils.history.removeAllPages();
+      Svc.Prefs.resetBranch("");
+      Records.clearCache();
+      server.stop(run_next_test);
     }
-
-  } finally {
-    PlacesUtils.history.removeAllPages();
-    server.stop(do_test_finished);
-    Svc.Prefs.resetBranch("");
-    Records.clearCache();
-  }
+  });
 });
 
 function run_test() {

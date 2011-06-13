@@ -37,7 +37,7 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-const EXPORTED_SYMBOLS = ["Resource", "AsyncResource",
+const EXPORTED_SYMBOLS = ["Resource", "AsyncResource", "IncrementalResource",
                           "Auth", "BrokenBasicAuthenticator",
                           "BasicAuthenticator", "NoOpAuthenticator"];
 
@@ -52,6 +52,7 @@ Cu.import("resource://services-sync/ext/Observers.js");
 Cu.import("resource://services-sync/ext/Preferences.js");
 Cu.import("resource://services-sync/log4moz.js");
 Cu.import("resource://services-sync/util.js");
+Cu.import("resource://services-sync/async.js");
 
 XPCOMUtils.defineLazyGetter(this, "Auth", function () {
   return new AuthMgr();
@@ -115,21 +116,21 @@ AuthMgr.prototype = {
 /*
  * AsyncResource represents a remote network resource, identified by a URI.
  * Create an instance like so:
- * 
+ *
  *   let resource = new AsyncResource("http://foobar.com/path/to/resource");
- * 
+ *
  * The 'resource' object has the following methods to issue HTTP requests
  * of the corresponding HTTP methods:
- * 
+ *
  *   get(callback)
  *   put(data, callback)
  *   post(data, callback)
  *   delete(callback)
- * 
+ *
  * 'callback' is a function with the following signature:
- * 
- *   function callback(error, result) {...}
- * 
+ *
+ *   function callback(error, result, resource) {...}
+ *
  * 'error' will be null on successful requests. Likewise, result will not be
  * passed (=undefined) when an error occurs. Note that this is independent of
  * the status of the HTTP response.
@@ -152,11 +153,11 @@ AsyncResource.prototype = {
 
   // The string to use as the base User-Agent in Sync requests.
   // These strings will look something like
-  // 
+  //
   //   Firefox/4.0 FxSync/1.8.0.20100101.mobile
-  //   
+  //
   // or
-  // 
+  //
   //   Firefox Aurora/5.0a1 FxSync/1.9.0.20110409.desktop
   //
   _userAgent:
@@ -252,7 +253,7 @@ AsyncResource.prototype = {
       let ua = this._userAgent + Svc.Prefs.get("client.type", "desktop");
       channel.setRequestHeader("user-agent", ua, false);
     }
-    
+
     // Avoid calling the authorizer more than once.
     let headers = this.headers;
     for (let key in headers) {
@@ -266,6 +267,9 @@ AsyncResource.prototype = {
   },
 
   _onProgress: function Res__onProgress(channel) {},
+
+  extendResponse: function extendResponse(ret) {
+  },
 
   _doRequest: function _doRequest(action, data, callback) {
     this._log.trace("In _doRequest.");
@@ -307,7 +311,7 @@ AsyncResource.prototype = {
     this._log.trace("In _onComplete. Error is " + error + ".");
 
     if (error) {
-      this._callback(error);
+      this._callback(error, null, this);
       return;
     }
 
@@ -384,6 +388,10 @@ AsyncResource.prototype = {
     ret.success = success;
     ret.headers = headers;
 
+    // Allow subclasses to do neat things like attach the IDs they were trying
+    // to fetch.
+    this.extendResponse(ret);
+
     // Make a lazy getter to convert the json response into an object.
     // Note that this can cause a parse error to be thrown far away from the
     // actual fetch, so be warned!
@@ -407,8 +415,7 @@ AsyncResource.prototype = {
         return;
       }
     }
-
-    this._callback(null, ret);
+    this._callback(null, ret, this);
   },
 
   get: function get(callback) {
@@ -432,11 +439,45 @@ AsyncResource.prototype = {
   }
 };
 
+/*
+ * An async resource which calls an onRecord callback on a handler object as
+ * lines are retrieved. Each line will be delivered as text.
+ */
+function IncrementalResource(uri, lineHandler) {
+  AsyncResource.call(this, uri);
+  if (lineHandler) {
+    this.lineHandler = lineHandler;
+  }
+}
+IncrementalResource.prototype = {
+  __proto__: AsyncResource.prototype,
+  _logName: "Net.IncrementalResource",
+
+  set lineHandler(handler) {
+    let resource = this;
+    this._onProgress = function () {
+      let newline;
+      while ((newline = this._data.indexOf("\n")) > 0) {
+        // Split the JSON record from the rest of the data.
+        let json = this._data.slice(0, newline);
+        this._data = this._data.slice(newline + 1);
+
+        // Give the JSON to the callback.
+        handler(json, resource);
+      }
+    };
+  },
+
+  get: function (callback) {
+    this.setHeader("Accept", "application/newlines");
+    AsyncResource.prototype.get.call(this, callback);
+  }
+};
 
 /*
  * Represent a remote network resource, identified by a URI, with a
  * synchronous API.
- * 
+ *
  * 'Resource' is not recommended for new code. Use the asynchronous API of
  * 'AsyncResource' instead.
  */
@@ -581,7 +622,7 @@ ChannelListener.prototype = {
                      " bytes from " + siStream + ".");
       throw ex;
     }
-    
+
     try {
       this._onProgress();
     } catch (ex) {
@@ -591,7 +632,7 @@ ChannelListener.prototype = {
       this._log.trace("Rethrowing; expect a failure code from the HTTP channel.");
       throw ex;
     }
-    
+
     this.delayAbort();
   },
 

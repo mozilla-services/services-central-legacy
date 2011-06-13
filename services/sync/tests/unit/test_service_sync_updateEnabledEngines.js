@@ -1,6 +1,7 @@
 Cu.import("resource://services-sync/engines.js");
 Cu.import("resource://services-sync/engines/clients.js");
 Cu.import("resource://services-sync/util.js");
+Cu.import("resource://services-sync/async.js");
 Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/record.js");
 
@@ -25,9 +26,9 @@ SteamEngine.prototype = {
   __proto__: SyncEngine.prototype,
   // We're not interested in engine sync but what the service does.
   _storeObj: QuietStore,
-  
+
   _sync: function _sync() {
-    this._syncStartup();
+    Async.callSpinningly(this, this._syncStartupCb);
   }
 };
 Engines.register(SteamEngine);

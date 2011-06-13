@@ -38,8 +38,9 @@
  * ***** END LICENSE BLOCK ***** */
 
 const EXPORTED_SYMBOLS = ["WBORecord", "RecordManager", "Records",
-                          "CryptoWrapper", "CollectionKeys", "BulkKeyBundle",
-                          "SyncKeyBundle", "Collection"];
+                          "CryptoWrapper", "CollectionKeys",
+                          "BulkKeyBundle", "SyncKeyBundle",
+                          "AsyncCollection", "Collection"];
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
@@ -54,6 +55,7 @@ Cu.import("resource://services-sync/identity.js");
 Cu.import("resource://services-sync/log4moz.js");
 Cu.import("resource://services-sync/resource.js");
 Cu.import("resource://services-sync/util.js");
+Cu.import("resource://services-sync/async.js");
 
 function WBORecord(collection, id) {
   this.data = {};
@@ -72,17 +74,46 @@ WBORecord.prototype = {
 
   // Get thyself from your URI, then deserialize.
   // Set thine 'response' field.
-  fetch: function fetch(uri) {
-    let r = new Resource(uri).get();
-    if (r.success) {
-      this.deserialize(r);   // Warning! Muffles exceptions!
+  // Invoke the callback.
+  fetchCb: function fetchCb(uri, callback) {
+    let res  = new AsyncResource(uri);
+    let self = this;
+
+    function cb(error, result) {
+      if (!error) {
+        if (result.success) {
+          try {
+            self.deserialize(result);
+          } catch (ex) {
+            // JSON parse exception, most likely.
+            callback(ex);
+            return;
+          }
+        }
+        self.response = result;
+      }
+      callback(error, self);
     }
-    this.response = r;
-    return this;
+
+    res.get(cb);
+  },
+
+  uploadCb: function uploadCb(uri, callback) {
+    new AsyncResource(uri).put(this, callback);
+  },
+
+  // Get thyself from your URI, then deserialize.
+  // Set thine 'response' field.
+  fetch: function fetch(uri) {
+    let callback = Async.makeSpinningCallback();
+    this.fetchCb(uri, callback);
+    return callback.wait();
   },
 
   upload: function upload(uri) {
-    return new Resource(uri).put(this);
+    let callback = Async.makeSpinningCallback();
+    this.uploadCb(uri, callback);
+    return callback.wait();
   },
 
   // Take a base URI string, with trailing slash, and return the URI of this
@@ -717,9 +748,8 @@ SyncKeyBundle.prototype = {
   }
 };
 
-
-function Collection(uri, recordObj) {
-  Resource.call(this, uri);
+function AsyncCollection(uri, recordObj) {
+  IncrementalResource.call(this, uri);
   this._recordObj = recordObj;
 
   this._full = false;
@@ -729,9 +759,9 @@ function Collection(uri, recordObj) {
   this._newer = 0;
   this._data = [];
 }
-Collection.prototype = {
-  __proto__: Resource.prototype,
-  _logName: "Collection",
+AsyncCollection.prototype = {
+  __proto__: IncrementalResource.prototype,
+  _logName: "AsyncCollection",
 
   _rebuildURL: function Coll__rebuildURL() {
     // XXX should consider what happens if it's not a URL...
@@ -808,25 +838,33 @@ Collection.prototype = {
     this._data = [];
   },
 
+  extendResponse: function extendResponse(ret) {
+    ret.ids = this.ids;
+  },
+
   set recordHandler(onRecord) {
-    // Save this because onProgress is called with this as the ChannelListener
+    // Save `this` because onProgress is called with this as the ChannelListener.
     let coll = this;
-
-    // Switch to newline separated records for incremental parsing
-    coll.setHeader("Accept", "application/newlines");
-
-    this._onProgress = function() {
-      let newline;
-      while ((newline = this._data.indexOf("\n")) > 0) {
-        // Split the json record from the rest of the data
-        let json = this._data.slice(0, newline);
-        this._data = this._data.slice(newline + 1);
-
-        // Deserialize a record from json and give it to the callback
-        let record = new coll._recordObj();
-        record.deserialize(json);
-        onRecord(record);
-      }
+    this.lineHandler = function jsonOnRecord(json, resource) {
+      // Deserialize a record from JSON and give it to the callback.
+      let record = new coll._recordObj();
+      record.deserialize(json);
+      onRecord(record, coll);
     };
   }
+};
+
+function Collection(uri, recordObj) {
+  AsyncCollection.call(this, uri, recordObj);
+}
+Collection.prototype = {
+  __proto__: AsyncCollection.prototype,
+  _logName: "Collection",
+
+  // Now mix-in the synchronous methods we need.
+  _request: Resource.prototype._request,
+  delete:   Resource.prototype.delete,
+  get:      Resource.prototype.get,
+  post:     Resource.prototype.post,
+  put:      Resource.prototype.put
 };

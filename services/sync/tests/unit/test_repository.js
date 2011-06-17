@@ -3,23 +3,7 @@
 
 Cu.import("resource://services-sync/repository.js");
 
-/**
- * Amend an iterator to return DONE as the last value.
- */
-function andDone(iterator) {
-  for (let value in iterator) {
-    yield value;
-  }
-  yield Repository.prototype.DONE;
-}
-
-/**
- * Consume an iterator into an Array.
- */
-function arrayify(iterator) {
-  return [value for (value in iterator)];
-}
-
+const DONE = Repository.prototype.DONE;
 
 /**
  * A repository based on a simple map of GUID -> WBO.
@@ -32,31 +16,45 @@ WBORepository.prototype = {
 
   __proto__: Repository.prototype,
 
+  /**
+   * Repository API
+   */
+
   guidsSince: function guidsSince(timestamp, guidsCallback) {
-    this.fetchSince(timestamp, function callback(error, recs) {
-      return guidsCallback(
-        error, ((record == Repository.prototype.DONE ? record : record.id)
-                for (record in recs)));
-    });
+    guidsCallback(null, [guid for ([guid, wbo] in Iterator(this.wbos))
+                              if (wbo.modified > timestamp)]);
   },
 
   fetchSince: function fetchSince(timestamp, fetchCallback) {
-    let wbos = this.wbos;
-    fetchCallback(null, andDone(wbo for ([guid, wbo] in Iterator(wbos))
-                                    if (wbo.modified >= timestamp)));
+    for (let [guid, wbo] in Iterator(this.wbos)) {
+      if (wbo.modified > timestamp) {
+        fetchCallback(null, wbo);
+      }
+    }
+    fetchCallback(null, DONE);
   },
 
   fetch: function fetch(guids, fetchCallback) {
-    fetchCallback(null, andDone(this.wbos[guid] for (guid in Iterator(guids))));
+    for (let i = 0; i < guids.length; i++) {
+      let wbo = this.wbos[guids[i]];
+      if (wbo) {
+        fetchCallback(null, wbo);
+      }
+    }
+    fetchCallback(null, DONE);
   },
 
   store: function store(recs, storeCallback) {
-    for (let record in recs) {
-      _("Adding " + record.id + ".");
+    for (let i = 0; i < recs.length; i++) {
+      let record = recs[i];
       this.wbos[record.id] = record;
     }
-    storeCallback(Repository.prototype.DONE);
+    storeCallback(DONE);
   },
+
+  /**
+   * Helpers
+   */
 
   get count() {
     return [guid for (guid in this.wbos)].length;
@@ -67,15 +65,6 @@ WBORepository.prototype = {
 function run_test() {
   run_next_test();
 }
-
-add_test(function test_DONE() {
-  _("DONE is an iterable that contains just itself.");
-  let values = arrayify(Repository.prototype.DONE);
-  do_check_eq(values.length, 1);
-  do_check_eq(values[0], Repository.prototype.DONE);
-  run_next_test();
-});
-
 
 add_test(function test_guidsSince() {
   let repo = new WBORepository();
@@ -92,27 +81,10 @@ add_test(function test_guidsSince() {
                      modified: 5000}
   };
   let expected = ["123456789012", "charliesheen", "trololololol"];
-  let calledDone = false;
-  repo.guidsSince(3000, function guidsCallback(error, guids) {
-    if (calledDone) {
-      do_throw("Did not expect any more items after DONE!");
-    }
-
+  repo.guidsSince(2000, function guidsCallback(error, guids) {
     do_check_eq(error, null);
-    for (let guid in guids) {
-      // Verify that the GUID is one of the ones we expect.
-      if (expected.length) {
-        let index = expected.indexOf(guid);
-        do_check_neq(index, -1);
-        expected.splice(index, 1);
-        continue;
-      }
-
-      // We've reached the end of the list, hopefully.
-      do_check_eq(guid, Repository.prototype.DONE);
-      calledDone = true;
-      run_next_test();
-    }
+    do_check_eq(expected + "", guids.sort());
+    run_next_test();
   });
 });
 
@@ -133,26 +105,24 @@ add_test(function test_fetchSince() {
   };
   let expected = ["123456789012", "charliesheen", "trololololol"];
   let calledDone = false;
-  repo.fetchSince(3000, function fetchCallback(error, recs) {
+  repo.fetchSince(2000, function fetchCallback(error, record) {
     if (calledDone) {
       do_throw("Did not expect any more items after DONE!");
     }
 
     do_check_eq(error, null);
-    for (let record in recs) {
-      // Verify that the GUID is one of the ones we expect.
-      if (expected.length) {
-        let index = expected.indexOf(record.id);
-        do_check_neq(index, -1);
-        expected.splice(index, 1);
-        continue;
-      }
-
-      // We've reached the end of the list, hopefully.
-      do_check_eq(record, Repository.prototype.DONE);
-      calledDone = true;
-      run_next_test();
+    // Verify that the record is one of the ones we expect.
+    if (expected.length) {
+      let index = expected.indexOf(record.id);
+      do_check_neq(index, -1);
+      expected.splice(index, 1);
+      return;
     }
+
+    // We've reached the end of the list, so we must be done.
+    do_check_eq(record, DONE);
+    calledDone = true;
+    run_next_test();
   });
 });
 
@@ -162,10 +132,10 @@ add_test(function test_fetch() {
 });
 
 add_test(function test_store_empty() {
-  _("Test adding no items to WBORepository.");
+  _("Test adding no items to an empty WBORepository.");
   let repo = new WBORepository();
-  repo.store(Iterator([]), function (val) {
-    do_check_eq(val, Repository.prototype.DONE);
+  repo.store([], function (error) {
+    do_check_eq(error, DONE);
     do_check_eq(0, repo.count);
     run_next_test();
   });
@@ -173,29 +143,21 @@ add_test(function test_store_empty() {
 
 add_test(function test_store() {
   _("Test adding items to WBORepository.");
-  let items = function () {
-    yield {id: "123412341234", foo: "Bar4"};
-    yield {id: "123412341235", foo: "Bar5"};
-  };
+  let items = [{id: "123412341234", foo: "Bar4"},
+               {id: "123412341235", foo: "Bar5"}];
   let repo = new WBORepository();
 
   let calledDone = false;
-  repo.store(items(), function storeCallback(errs) {
+  repo.store(items, function storeCallback(error) {
     if (calledDone) {
       do_throw("Did not expect any more items after DONE!");
     }
-
-    for (let error in errs) {
-      if (error == Repository.prototype.DONE) {
-        calledDone = true;
-        do_check_eq(2, repo.count);
-        do_check_eq("Bar4", repo.wbos["123412341234"].foo);
-        do_check_eq("Bar5", repo.wbos["123412341235"].foo);
-        do_check_eq(undefined, repo.wbos["123412341230"]);
-        run_next_test();
-      } else {
-        do_throw("Did not expect an error!");
-      }
-    }
+    do_check_eq(error, DONE);
+    calledDone = true;
+    do_check_eq(2, repo.count);
+    do_check_eq("Bar4", repo.wbos["123412341234"].foo);
+    do_check_eq("Bar5", repo.wbos["123412341235"].foo);
+    do_check_eq(undefined, repo.wbos["123412341230"]);
+    run_next_test();
   });
 });

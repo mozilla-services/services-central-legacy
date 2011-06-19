@@ -61,12 +61,7 @@ WBORepository.prototype = {
   }
 };
 
-
-function run_test() {
-  run_next_test();
-}
-
-add_test(function test_guidsSince() {
+function setup_fixtures() {
   let repo = new WBORepository();
   repo.wbos = {
     "0000deadbeef": {id: "0000deadbeef",
@@ -80,6 +75,15 @@ add_test(function test_guidsSince() {
     "123456789012": {id: "123456789012",
                      modified: 5000}
   };
+  return repo;
+}
+
+function run_test() {
+  run_next_test();
+}
+
+add_test(function test_guidsSince() {
+  let repo = setup_fixtures();
   let expected = ["123456789012", "charliesheen", "trololololol"];
   repo.guidsSince(2000, function guidsCallback(error, guids) {
     do_check_eq(error, null);
@@ -90,19 +94,7 @@ add_test(function test_guidsSince() {
 
 
 add_test(function test_fetchSince() {
-  let repo = new WBORepository();
-  repo.wbos = {
-    "0000deadbeef": {id: "0000deadbeef",
-                     modified: 1000},
-    "abcdefghijkl": {id: "abcdefghijkl",
-                     modified: 2000},
-    "charliesheen": {id: "charliesheen",
-                     modified: 3000},
-    "trololololol": {id: "trololololol",
-                     modified: 4000},
-    "123456789012": {id: "123456789012",
-                     modified: 5000}
-  };
+  let repo = setup_fixtures();
   let expected = ["123456789012", "charliesheen", "trololololol"];
   let calledDone = false;
   repo.fetchSince(2000, function fetchCallback(error, record) {
@@ -128,7 +120,29 @@ add_test(function test_fetchSince() {
 
 
 add_test(function test_fetch() {
-  run_next_test(); //TODO
+  let repo = setup_fixtures();
+  let guids = ["123456789012", "non-existent", "charliesheen", "trololololol"];
+  let expected = ["123456789012", "charliesheen", "trololololol"];
+  let calledDone = false;
+  repo.fetch(guids, function fetchCallback(error, record) {
+    if (calledDone) {
+      do_throw("Did not expect any more items after DONE!");
+    }
+
+    do_check_eq(error, null);
+    // Verify that the record is one of the ones we expect.
+    if (expected.length) {
+      let index = expected.indexOf(record.id);
+      do_check_neq(index, -1);
+      expected.splice(index, 1);
+      return;
+    }
+
+    // We've reached the end of the list, so we must be done.
+    do_check_eq(record, DONE);
+    calledDone = true;
+    run_next_test();
+  });
 });
 
 add_test(function test_store_empty() {

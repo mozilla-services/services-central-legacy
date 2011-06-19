@@ -157,8 +157,8 @@ add_test(function test_store_empty() {
 
 add_test(function test_store() {
   _("Test adding items to WBORepository.");
-  let items = [{id: "123412341234", foo: "Bar4"},
-               {id: "123412341235", foo: "Bar5"}];
+  let items = [{id: "123412341234", payload: "Bar4"},
+               {id: "123412341235", paylaod: "Bar5"}];
   let repo = new WBORepository();
 
   let calledDone = false;
@@ -169,8 +169,8 @@ add_test(function test_store() {
     do_check_eq(error, DONE);
     calledDone = true;
     do_check_eq(2, repo.count);
-    do_check_eq("Bar4", repo.wbos["123412341234"].foo);
-    do_check_eq("Bar5", repo.wbos["123412341235"].foo);
+    do_check_eq("Bar4", repo.wbos["123412341234"].payload);
+    do_check_eq("Bar5", repo.wbos["123412341235"].payload);
     do_check_eq(undefined, repo.wbos["123412341230"]);
     run_next_test();
   });

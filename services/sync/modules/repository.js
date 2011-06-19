@@ -43,6 +43,9 @@ const EXPORTED_SYMBOLS = ["Repository",
                           "ServerRepository",
                           "Crypto5Middleware"];
 
+const DONE = {};
+const STOP = {};
+
 /**
  * Base repository
  */
@@ -52,8 +55,8 @@ Repository.prototype = {
   /**
    * Values to pass to and from callbacks.
    */
-  DONE: {},
-  STOP: {},
+  DONE: DONE,
+  STOP: STOP,
 
   /**
    * Retrieve a sequence of GUIDs corresponding to records that have been
@@ -168,17 +171,20 @@ ServerRepository.prototype = {
   },
 
   fetch: function fetch(guids, fetchCallback) {
-    let uri = this.uri + "full=1&ids=" + guids;
+    let uri = this.uri + "?full=1&ids=" + guids;
     this._fetchRecords(uri, fetchCallback);
   },
 
   store: function store(recs, storeCallback) {
     //TODO batching? or should this be done by the Synchronizer?
     // or a batching middleware?
-    let resource = new AsyncResource(uri);
-    resource.put(recs, function onPut(error, result) {
+    let resource = new AsyncResource(this.uri);
+    resource.post(recs, function onPut(error, result) {
+      if (error) {
+        storeCallback(error);
+      }
       //TODO process result, may contain errors about individual records
-      storeCallback(error);
+      storeCallback(DONE);
     });
   },
 
@@ -211,7 +217,7 @@ ServerRepository.prototype = {
       }
     };
     resource.get(function onGet(error, result) {
-      fetchCallback(error, Repository.prototype.DONE);
+      fetchCallback(error, DONE);
     });
   }
 

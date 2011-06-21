@@ -103,11 +103,17 @@ add_test(function test_store_empty() {
     "/collection": collection.handler()
   });
   let repo = new ServerRepository("http://localhost:8080/collection");
-  repo.store([], function (error) {
+  let calledDone = false;
+  let session = repo.newStoreSession(function storeCallback(error) {
+    if (calledDone) {
+      do_throw("Did not expect any more items after DONE!");
+    }
     do_check_eq(error, DONE);
+    calledDone = true;
     do_check_eq(0, collection.count());
     server.stop(run_next_test);
   });
+  session.store(DONE);
 });
 
 add_test(function test_store() {
@@ -121,7 +127,7 @@ add_test(function test_store() {
                {id: "123412341235", payload: "Bar5"}];
 
   let calledDone = false;
-  repo.store(items, function storeCallback(error) {
+  let session = repo.newStoreSession(function storeCallback(error) {
     if (calledDone) {
       do_throw("Did not expect any more items after DONE!");
     }
@@ -133,4 +139,9 @@ add_test(function test_store() {
     do_check_eq(undefined, collection.wbos["123412341230"]);
     server.stop(run_next_test);
   });
+
+  for each (record in items) {
+    session.store(record);
+  }
+  session.store(DONE);
 });

@@ -62,7 +62,7 @@ WBORepository.prototype = {
    */
 
   get count() {
-    return [guid for (guid in this.wbos)].length;
+    return Object.keys(this.wbos).length;
   }
 };
 

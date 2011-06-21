@@ -107,21 +107,26 @@ Repository.prototype = {
   },
 
   /**
-   * Store the given sequence of records. Invoke the callback for each failed
-   * item and finally with the DONE value.
+   * Create and return a new store session object.
    *
-   * @param recs
-   *        Array of records.
    * @param storeCallback
-   *        Callback with the signature (error)
-   *        @param error describes an error. It may be an arbitrary exception
-   *        object, a repository error where error.guid contains the GUID of
-   *        the record that couldn't be stored, or the DONE value to indicate
-   *        the operation has completed.
-   *        @return STOP if the store operation should be aborted.
+   *        Callback with the signature (error). It may be called multiple
+   *        times with error objects. It will be always called with the DONE
+   *        value when the store operation has been completed.
+   *        @param error is an error object (where `error.guids` is an array
+   *                     of the records' GUIDs that couldn't be stored) or
+   *                     the DONE value.
+   *        @return STOP if the store session should be aborted.
+   *
+   * @return an object with the following interface:
+   *
+   *   store(record) -- Store an individual record. Implementations may
+   *                    choose to flush records to the data store in batches.
+   *                    Callers must therefore call it with the DONE value
+   *                    after the last item.
    */
-  store: function store(recs, storeCallback) {
-    throw "Repository must implement 'store'";
+  newStoreSession: function newStoreSession(storeCallback) {
+    throw "Repository must implement 'newStoreSession'";
   }
 
 };
@@ -138,6 +143,7 @@ ServerRepository.prototype = {
 
   __proto__: Repository.prototype,
 
+  uri: null,
   downloadLimit: null,
 
   /**
@@ -175,17 +181,8 @@ ServerRepository.prototype = {
     this._fetchRecords(uri, fetchCallback);
   },
 
-  store: function store(recs, storeCallback) {
-    //TODO batching? or should this be done by the Synchronizer?
-    // or a batching middleware?
-    let resource = new AsyncResource(this.uri);
-    resource.post(recs, function onPut(error, result) {
-      if (error) {
-        storeCallback(error);
-      }
-      //TODO process result, may contain errors about individual records
-      storeCallback(DONE);
-    });
+  newStoreSession: function newStoreSession(storeCallback) {
+    return new ServerStoreSession(this, storeCallback);
   },
 
   /**
@@ -223,6 +220,50 @@ ServerRepository.prototype = {
 
 };
 
+function ServerStoreSession(repository, storeCallback) {
+  this.repository = repository;
+  this.storeCallback = storeCallback;
+  this.batch = [];
+}
+ServerStoreSession.prototype = {
+
+  repository: null,
+  storeCallback: null,
+  batch: null,
+
+  batchSize: 100,
+
+  store: function store(record) {
+    if (record == DONE) {
+      if (this.batch.length) {
+        this.flush(true);
+      } else {
+        this.storeCallback(DONE);
+      }
+      return;
+    }
+    this.batch.push(record);
+    if (this.batch.length == this.batchSize) {
+      this.flush();
+    }
+  },
+
+  flush: function flush(last) {
+    let batch = this.batch;
+    this.batch = [];
+    let resource = new AsyncResource(this.repository.uri);
+    let storeCallback = this.storeCallback;
+    resource.post(batch, function onPost(error, result) {
+      if (error) {
+        storeCallback(error);
+      }
+      //TODO process result, may contain errors about individual records
+      if (last) {
+        storeCallback(DONE);
+      }
+    });
+  }
+};
 
 
 /**
@@ -254,15 +295,8 @@ Crypto5Middleware = {
     this.repository.fetch(guids, this.makeDecryptCb(fetchCallback));
   },
 
-  store: function store(recs, storeCallback) {
-    for (let i = 0; i < recs.length; i++) {
-      //XXX we're assuming we own the recs array here, avoids having to create
-      // another array object.
-      //TODO if encryption fails somehow, catch the error and call storeCallback
-      // appropriately.
-      recs[i] = this.encrypt(recs[i]);
-    }
-    this.repository.store(recs, storeCallback);
+  newStoreSession: function newStoreSession(storeCallback) {
+    return new Crypto5StoreSession(this, storeCallback);
   },
 
   /**
@@ -307,6 +341,25 @@ Crypto5Middleware = {
       throw "Cannot compute HMAC without an HMAC key.";
 
     return Utils.bytesAsHex(Utils.digestUTF8(ciphertext, hasher));
-  },
+  }
+
+};
+
+function Crypto5StoreSession(repository, storeCallback) {
+  this.repository = repository;
+  this.storeCallback = storeCallback;
+  this.session = repository.repository.newStoreSession(storeCallback);
+}
+Crypto5StoreSession.prototype = {
+
+  repository: null,
+  storeCallback: null,
+  session: null,
+
+  store: function store(record) {
+    //TODO if encryption fails somehow, catch the error and call storeCallback
+    // appropriately.
+    this.session.store(this.repository.encrypt(record));
+  }
 
 };

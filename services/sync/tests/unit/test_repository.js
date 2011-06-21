@@ -44,12 +44,17 @@ WBORepository.prototype = {
     fetchCallback(null, DONE);
   },
 
-  store: function store(recs, storeCallback) {
-    for (let i = 0; i < recs.length; i++) {
-      let record = recs[i];
-      this.wbos[record.id] = record;
-    }
-    storeCallback(DONE);
+  newStoreSession: function newStoreSession(storeCallback) {
+    let repo = this;
+    return {
+      store: function store(record) {
+        if (record == DONE) {
+          storeCallback(DONE);
+          return;
+        }
+        repo.wbos[record.id] = record;
+      }
+    };
   },
 
   /**
@@ -148,21 +153,27 @@ add_test(function test_fetch() {
 add_test(function test_store_empty() {
   _("Test adding no items to an empty WBORepository.");
   let repo = new WBORepository();
-  repo.store([], function (error) {
+  let calledDone = false;
+  let session = repo.newStoreSession(function storeCallback(error) {
+    if (calledDone) {
+      do_throw("Did not expect any more items after DONE!");
+    }
     do_check_eq(error, DONE);
+    calledDone = true;
     do_check_eq(0, repo.count);
     run_next_test();
   });
+  session.store(DONE);
 });
 
 add_test(function test_store() {
   _("Test adding items to WBORepository.");
   let items = [{id: "123412341234", payload: "Bar4"},
-               {id: "123412341235", paylaod: "Bar5"}];
+               {id: "123412341235", payload: "Bar5"}];
   let repo = new WBORepository();
 
   let calledDone = false;
-  repo.store(items, function storeCallback(error) {
+  let session = repo.newStoreSession(function storeCallback(error) {
     if (calledDone) {
       do_throw("Did not expect any more items after DONE!");
     }
@@ -174,4 +185,9 @@ add_test(function test_store() {
     do_check_eq(undefined, repo.wbos["123412341230"]);
     run_next_test();
   });
+
+  for each (record in items) {
+    session.store(record);
+  }
+  session.store(DONE);
 });

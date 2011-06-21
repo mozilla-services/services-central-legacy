@@ -37,7 +37,9 @@
  * ***** END LICENSE BLOCK ***** */
 
 const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
+
 Cu.import("resource://services-sync/resource.js");
+Cu.import("resource://services-sync/util.js");
 
 const EXPORTED_SYMBOLS = ["Repository",
                           "ServerRepository",
@@ -271,11 +273,12 @@ ServerStoreSession.prototype = {
  *
  * Transforms a local record to a WBO.
  */
-function Crypto5Middleware(repository) {
+function Crypto5Middleware(repository, keyBundle) {
   Repository.call(this);
   this.repository = repository;
+  this.keyBundle = keyBundle;
 }
-Crypto5Middleware = {
+Crypto5Middleware.prototype = {
 
   __proto__: Repository.prototype,
 
@@ -303,43 +306,73 @@ Crypto5Middleware = {
    * Crypto + storage format stuff
    */
 
+  //XXX TODO this doesn't handle key refetches yet
   makeDecryptCb: function makeDecryptCb(fetchCallback) {
     return (function decryptCallback(error, record) {
       if (!error && record != DONE) {
-        //TODO if decryption fails somehow, catch the error and call
-        // fetchCallback appropriately.
-        record = this.decrypt(record);
+        try {
+          record = this.decrypt(record);
+        } catch (ex) {
+          record = null;
+          error = ex;
+        }
       }
       return fetchCallback(error, record);
     }).bind(this);
   },
 
-  //XXX TODO this doesn't handle errors and key refetches very well
-  // idea: catch exceptions above and don't invoke callback until we have keys.
-  encrypt: function encrypt(record, keyBundle) {
-    keyBundle = keyBundle || CollectionKeys.keyForCollection(this.collection);
-    if (!keyBundle)
-      throw new Error("Key bundle is null for " + this.uri.spec);
+  encrypt: function encrypt(record) {
+    // 'sortindex' and 'ttl' are properties on the outer WBO.
+    let sortindex = record.sortindex;
+    let ttl = record.ttl;
+    delete record.sortindex;
+    delete record.ttl;
 
     let iv = Svc.Crypto.generateRandomIV();
     let ciphertext = Svc.Crypto.encrypt(JSON.stringify(record),
-                                        keyBundle.encryptionKey, iv);
-    let payload = {IV: iv,
+                                        this.keyBundle.encryptionKey, iv);
+    let payload = {IV:         iv,
                    ciphertext: ciphertext,
-                   hmac: this.ciphertextHMAC(ciphertext, keyBundle)};
-    return {id: record.id,
-            sortindex: record.sortindex,
-            payload: JSON.stringify(payload)};
+                   hmac:       this.ciphertextHMAC(ciphertext)};
+    return {id:        record.id,
+            sortindex: sortindex,
+            ttl:       ttl,
+            payload:   JSON.stringify(payload)};
   },
 
-  decrypt: function decrypt(record, keyBundle) {
+  //XXX TODO this doesn't handle key refetches yet
+  decrypt: function decrypt(wbo) {
+    let payload = JSON.parse(wbo.payload);
+
+    // Authenticate the encrypted blob with the expected HMAC
+    let computedHMAC = this.ciphertextHMAC(payload.ciphertext);
+    if (computedHMAC != payload.hmac) {
+      Utils.throwHMACMismatch(payload.hmac, computedHMAC);
+    }
+
+    // Handle invalid data here. Elsewhere we assume that cleartext is an object.
+    let cleartext = Svc.Crypto.decrypt(payload.ciphertext,
+                                       this.keyBundle.encryptionKey,
+                                       payload.IV);
+    let record = JSON.parse(cleartext);
+
+    // Verify that the outer WBO's id matches the inner record's id.
+    if (record.id != wbo.id) {
+      throw "Record id mismatch: " + record.id + " != " + wbo.id;
+    }
+
+    // Copy outer WBO attributes to inner record.
+    record.modified = wbo.modified;
+    record.sortindex = wbo.sortindex;
+    record.ttl = wbo.ttl;
+    return record;
   },
 
-  ciphertextHMAC: function ciphertextHMAC(ciphertext, keyBundle) {
-    let hasher = keyBundle.sha256HMACHasher;
-    if (!hasher)
+  ciphertextHMAC: function ciphertextHMAC(ciphertext) {
+    let hasher = this.keyBundle.sha256HMACHasher;
+    if (!hasher) {
       throw "Cannot compute HMAC without an HMAC key.";
-
+    }
     return Utils.bytesAsHex(Utils.digestUTF8(ciphertext, hasher));
   }
 
@@ -357,9 +390,20 @@ Crypto5StoreSession.prototype = {
   session: null,
 
   store: function store(record) {
-    //TODO if encryption fails somehow, catch the error and call storeCallback
-    // appropriately.
-    this.session.store(this.repository.encrypt(record));
+    if (record == DONE) {
+      this.session.store(record);
+      return;
+    }
+
+    let wbo;
+    try {
+      wbo = this.repository.encrypt(record);
+    } catch(ex) {
+      //TODO this feels weird.
+      this.storeCallback({error: ex, guids: [record.id]});
+      return;
+    }
+    this.session.store(wbo);
   }
 
 };

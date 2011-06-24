@@ -45,6 +45,44 @@ add_test(function test_guidsSince() {
   });
 });
 
+add_test(function test_guidsSince_networkError() {
+  let repo = new ServerRepository("http://localhost:8080/collection");
+  repo.guidsSince(2000, function guidsCallback(error, guids) {
+    do_check_eq(guids, null);
+    do_check_neq(error, null);
+    do_check_eq(error.result, Cr.NS_ERROR_CONNECTION_REFUSED);
+    run_next_test();
+  });
+});
+
+add_test(function test_guidsSince_httpError() {
+  let server = httpd_setup({
+    "/collection": httpd_handler(404, "Not Found", "Cannae\nfind\nit")
+  });
+  let repo = new ServerRepository("http://localhost:8080/collection");
+  repo.guidsSince(2000, function guidsCallback(error, guids) {
+    do_check_eq(guids, null);
+    do_check_neq(error, null);
+    do_check_eq(error.status, 404);
+    do_check_eq(error, "Cannae\nfind\nit");
+    server.stop(run_next_test);
+  });
+});
+
+add_test(function test_guidsSince_invalidJSON() {
+  let server = httpd_setup({
+    "/collection": httpd_handler(200, "OK", "this is invalid JSON")
+  });
+  let repo = new ServerRepository("http://localhost:8080/collection");
+  repo.guidsSince(2000, function guidsCallback(error, guids) {
+    do_check_eq(guids, null);
+    do_check_neq(error, null);
+    do_check_eq(error.name, "SyntaxError");
+    do_check_eq(error.message, "JSON.parse: unexpected keyword");
+    server.stop(run_next_test);
+  });
+});
+
 add_test(function test_fetchSince() {
   let [repo, server] = setup_fixtures();
   let expected = ["123456789012", "charliesheen", "trololololol"];
@@ -66,6 +104,67 @@ add_test(function test_fetchSince() {
     // We've reached the end of the list, so we must be done.
     do_check_eq(record, DONE);
     calledDone = true;
+    server.stop(run_next_test);
+  });
+});
+
+add_test(function test_fetchSince_networkError() {
+  let repo = new ServerRepository("http://localhost:8080/collection");
+  repo.fetchSince(2000, function fetchCallback(error, record) {
+    do_check_eq(record, DONE);
+    do_check_neq(error, null);
+    do_check_eq(error.result, Cr.NS_ERROR_CONNECTION_REFUSED);
+    run_next_test();
+  });
+});
+
+// TODO test is disabled because we can't implement the desired behaviour
+// yet in ServerRepository.
+function DISABLED_add_test() {}
+DISABLED_add_test(function test_fetchSince_httpError() {
+  let server = httpd_setup({
+    "/collection": httpd_handler(404, "Not Found", "Cannae\nfind\nit")
+  });
+  let repo = new ServerRepository("http://localhost:8080/collection");
+  let calledDone = false;
+  repo.fetchSince(2000, function fetchCallback(error, record) {
+    if (calledDone) {
+      do_throw("Did not expect any more items after DONE!");
+    }
+
+    do_check_eq(record, DONE);
+    calledDone = true;
+    do_check_neq(error, null);
+    do_check_eq(error.status, 404);
+    do_check_eq(error, "Cannae\nfind\nit");
+    server.stop(run_next_test);
+  });
+});
+
+add_test(function test_fetchSince_invalidJSON() {
+  let server = httpd_setup({
+    "/collection": httpd_handler(200, "OK", "this is invalid JSON")
+  });
+  let repo = new ServerRepository("http://localhost:8080/collection");
+  let calledDone = false;
+  repo.fetchSince(2000, function fetchCallback(error, record) {
+    if (calledDone) {
+      do_throw("Did not expect any more items after DONE!");
+    }
+
+    // We're going to first be called for the invalid JSON error.
+    if (record != DONE) {
+      do_check_eq(record, null);
+      do_check_neq(error, null);
+      do_check_eq(error.name, "SyntaxError");
+      do_check_eq(error.message, "JSON.parse: unexpected keyword");
+      return;
+    }
+
+    // Finally we're called with DONE.
+    calledDone = true;
+    do_check_eq(record, DONE);
+    do_check_eq(error, null);
     server.stop(run_next_test);
   });
 });
@@ -92,6 +191,66 @@ add_test(function test_fetch() {
     // We've reached the end of the list, so we must be done.
     do_check_eq(record, DONE);
     calledDone = true;
+    server.stop(run_next_test);
+  });
+});
+
+add_test(function test_fetch_networkError() {
+  let repo = new ServerRepository("http://localhost:8080/collection");
+  repo.fetch(["trololololol"], function fetchCallback(error, record) {
+    do_check_eq(record, DONE);
+    do_check_neq(error, null);
+    do_check_eq(error.result, Cr.NS_ERROR_CONNECTION_REFUSED);
+    run_next_test();
+  });
+});
+
+// TODO test is disabled because we can't implement the desired behaviour
+// yet in ServerRepository.
+DISABLED_add_test(function test_fetch_httpError() {
+  let server = httpd_setup({
+    "/collection": httpd_handler(404, "Not Found", "Cannae\nfind\nit")
+  });
+  let repo = new ServerRepository("http://localhost:8080/collection");
+  let calledDone = false;
+  repo.fetch(["trololololol"], function fetchCallback(error, record) {
+    if (calledDone) {
+      do_throw("Did not expect any more items after DONE!");
+    }
+
+    do_check_eq(record, DONE);
+    calledDone = true;
+    do_check_neq(error, null);
+    do_check_eq(error.status, 404);
+    do_check_eq(error, "Cannae\nfind\nit");
+    server.stop(run_next_test);
+  });
+});
+
+add_test(function test_fetch_invalidJSON() {
+  let server = httpd_setup({
+    "/collection": httpd_handler(200, "OK", "this is invalid JSON")
+  });
+  let repo = new ServerRepository("http://localhost:8080/collection");
+  let calledDone = false;
+  repo.fetch(["trololololol"], function fetchCallback(error, record) {
+    if (calledDone) {
+      do_throw("Did not expect any more items after DONE!");
+    }
+
+    // We're going to first be called for the invalid JSON error.
+    if (record != DONE) {
+      do_check_eq(record, null);
+      do_check_neq(error, null);
+      do_check_eq(error.name, "SyntaxError");
+      do_check_eq(error.message, "JSON.parse: unexpected keyword");
+      return;
+    }
+
+    // Finally we're called with DONE.
+    calledDone = true;
+    do_check_eq(record, DONE);
+    do_check_eq(error, null);
     server.stop(run_next_test);
   });
 });
@@ -137,6 +296,98 @@ add_test(function test_store() {
     do_check_eq("Bar4", collection.wbos["123412341234"].payload);
     do_check_eq("Bar5", collection.wbos["123412341235"].payload);
     do_check_eq(undefined, collection.wbos["123412341230"]);
+    server.stop(run_next_test);
+  });
+
+  for each (record in items) {
+    session.store(record);
+  }
+  session.store(DONE);
+});
+
+add_test(function test_store_networkError() {
+  let repo = new ServerRepository("http://localhost:8080/collection");
+  let items = [{id: "123412341234", payload: "Bar4"},
+               {id: "123412341235", payload: "Bar5"}];
+
+  let calledDone = false;
+  let session = repo.newStoreSession(function storeCallback(error) {
+    if (calledDone) {
+      do_throw("Did not expect any more items after DONE!");
+    }
+
+    if (error != DONE) {
+      do_check_eq(error.info.result, Cr.NS_ERROR_CONNECTION_REFUSED);
+      do_check_eq(error.guids, "123412341234,123412341235");
+      return;
+    }
+
+    calledDone = true;
+    do_check_eq(error, DONE);
+    run_next_test();
+  });
+
+  for each (record in items) {
+    session.store(record);
+  }
+  session.store(DONE);
+});
+
+add_test(function test_store_httpError() {
+  let server = httpd_setup({
+    "/collection": httpd_handler(404, "Not Found", "Cannae\nfind\nit")
+  });
+  let repo = new ServerRepository("http://localhost:8080/collection");
+
+  let items = [{id: "123412341234", payload: "Bar4"},
+               {id: "123412341235", payload: "Bar5"}];
+  let calledDone = false;
+  let session = repo.newStoreSession(function storeCallback(error) {
+    if (calledDone) {
+      do_throw("Did not expect any more items after DONE!");
+    }
+
+    if (error != DONE) {
+      do_check_eq(error.info, "Cannae\nfind\nit");
+      do_check_eq(error.info.status, 404);
+      do_check_eq(error.guids, "123412341234,123412341235");
+      return;
+    }
+
+    calledDone = true;
+    do_check_eq(error, DONE);
+    server.stop(run_next_test);
+  });
+
+  for each (record in items) {
+    session.store(record);
+  }
+  session.store(DONE);
+});
+
+add_test(function test_store_invalidResponse() {
+  let server = httpd_setup({
+    "/collection": httpd_handler(200, "OK", "this is invalid JSON")
+  });
+  let repo = new ServerRepository("http://localhost:8080/collection");
+
+  let items = [{id: "123412341234", payload: "Bar4"},
+               {id: "123412341235", payload: "Bar5"}];
+  let calledDone = false;
+  let session = repo.newStoreSession(function storeCallback(error) {
+    if (calledDone) {
+      do_throw("Did not expect any more items after DONE!");
+    }
+
+    if (error != DONE) {
+      do_check_eq(error.info.name, "SyntaxError");
+      do_check_eq(error.info.message, "JSON.parse: unexpected keyword");
+      do_check_eq(error.guids, "123412341234,123412341235");
+      return;
+    }
+
+    calledDone = true;
+    do_check_eq(error, DONE);
     server.stop(run_next_test);
   });
 

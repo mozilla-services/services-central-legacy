@@ -116,8 +116,9 @@ Repository.prototype = {
    *        times with error objects. It will be always called with the DONE
    *        value when the store operation has been completed.
    *        @param error is an error object (where `error.guids` is an array
-   *                     of the records' GUIDs that couldn't be stored) or
-   *                     the DONE value.
+   *                     of the records' GUIDs that couldn't be stored and
+   *                     `error.info` describes the error, e.g. an exception)
+   *                     or the DONE value.
    *        @return STOP if the store session should be aborted.
    *
    * @return an object with the following interface:
@@ -133,9 +134,14 @@ Repository.prototype = {
 
 };
 
+//TODO question:
+// how do we deal with http failures, like 400 (e.g. over quota), 401, 503, etc?
+// probably best to decouple them from the synchronizer and notify the service
+// via observer notification. synchronizer probably only needs to know that it
+// failed, not why.
 
 /**
- * Implement the Sync 1.1 API
+ * Repository that talks to an HTTP server that implements the Sync 1.1 API.
  */
 function ServerRepository(uri) {
   Repository.call(this);
@@ -145,7 +151,14 @@ ServerRepository.prototype = {
 
   __proto__: Repository.prototype,
 
+  /**
+   * The URI of the current repository (string or nsIURI object)
+   */
   uri: null,
+
+  /**
+   * TODO implement + document this
+   */
   downloadLimit: null,
 
   /**
@@ -155,14 +168,22 @@ ServerRepository.prototype = {
   guidsSince: function guidsSince(timestamp, guidsCallback) {
     let resource = new AsyncResource(this.uri + "?newer=" + timestamp);
     resource.get(function (error, result) {
+      // Network error of sorts.
       if (error) {
         guidsCallback(error);
         return;
       }
+
+      // HTTP error (could be a mis-configured server, wrong password, etc.)
+      if (result.status != 200) {
+        guidsCallback(result);
+        return;
+      }
+
+      // Convert the result to JSON. Invalid JSON is sadfaces.
       try {
         result = JSON.parse(result);
       } catch (ex) {
-        //TODO
         guidsCallback(ex);
         return;
       }
@@ -199,24 +220,42 @@ ServerRepository.prototype = {
     // ('this' is the ChannelListener, not the resource!)
     // need a better streaming api for resource
 
+    //TODO when we do refactor the onProgress stuff, we should make the http
+    // status code, headers, success flag, etc. available as well.
+
+    function maybeAbort(rv) {
+      if (rv == STOP) {
+        //TODO resource should have a way to abort
+      }
+    }
+
     resource._onProgress = function onProgress() {
+      // TODO we should really bail all of this if the HTTP status code is
+      // anything but 200 and Content-Type is anything but application/newlines.
+      // But the resource API won't allow us to do this :(((
       let newline;
       while ((newline = this._data.indexOf("\n")) > 0) {
         let json = this._data.slice(0, newline);
         this._data = this._data.slice(newline + 1);
-        let rv, record;
+        let record;
         try {
           record = JSON.parse(json);
         } catch(ex) {
-          //TODO
-          rv = fetchCallback(ex);
+          // Notify the caller of genuine parsing errors.
+          maybeAbort(fetchCallback(ex));
+          continue;
         }
-        rv = fetchCallback(null, record);
-        // TODO process rv, abort on STOP
+        maybeAbort(fetchCallback(null, record));
       }
     };
     resource.get(function onGet(error, result) {
-      fetchCallback(error, DONE);
+      // HTTP error ... TODO what about the onProgress stuff on a 404?!?
+      // 'result.success' exposes nsIHttpChannel::requestSucceeded.
+      if (error || result.success) {
+        fetchCallback(error, DONE);
+      } else {
+        fetchCallback(result, DONE);
+      }
     });
   }
 
@@ -233,7 +272,14 @@ ServerStoreSession.prototype = {
   storeCallback: null,
   batch: null,
 
+  /**
+   * Upload batch size
+   */
   batchSize: 100,
+
+  /**
+   * Store Session API
+   */
 
   store: function store(record) {
     if (record == DONE) {
@@ -250,19 +296,59 @@ ServerStoreSession.prototype = {
     }
   },
 
+  /**
+   * Private stuff
+   */
+
   flush: function flush(last) {
     let batch = this.batch;
     this.batch = [];
     let resource = new AsyncResource(this.repository.uri);
     let storeCallback = this.storeCallback;
-    resource.post(batch, function onPost(error, result) {
-      if (error) {
-        storeCallback(error);
-      }
-      //TODO process result, may contain errors about individual records
+
+    function batchGUIDs() {
+      return [record.id for each (record in batch)];
+    }
+
+    function finalmente() {
       if (last) {
         storeCallback(DONE);
       }
+    }
+    resource.post(batch, function onPost(error, result) {
+      // Network error of sorts.
+      if (error) {
+        storeCallback({info: error, guids: batchGUIDs()});
+        return finalmente();
+      }
+
+      // HTTP error (could be a mis-configured server, over quota, etc.)
+      // 'result.success' exposes nsIHttpChannel::requestSucceeded.
+      if (!result.success) {
+        storeCallback({info: result, guids: batchGUIDs()});
+        return finalmente();
+      }
+
+      // Analyze return value for whether some objects couldn't be saved.
+      let result_obj;
+      try {
+        result_obj = JSON.parse(result);
+      } catch (ex) {
+        // Server return value did not parse as JSON. We must assume it's not
+        // a valid implementation.
+        storeCallback({info: ex, guids: batchGUIDs()});
+        return finalmente();
+      }
+      let failed_ids = Object.keys(result_obj.failed);
+      if (failed_ids.length) {
+        storeCallback({info: result_obj, guids: result_obj.failed_ids});
+        return finalmente();
+      }
+
+      // TODO should we also process `result_obj.success` and verify it matches
+      // all items in our batch?
+
+      return finalmente();
     });
   }
 };
@@ -398,9 +484,9 @@ Crypto5StoreSession.prototype = {
     let wbo;
     try {
       wbo = this.repository.encrypt(record);
-    } catch(ex) {
-      //TODO this feels weird.
-      this.storeCallback({error: ex, guids: [record.id]});
+    } catch (ex) {
+      //TODO this feels weird and somewhat inefficient.
+      this.storeCallback({exception: ex, guids: [record.id]});
       return;
     }
     this.session.store(wbo);

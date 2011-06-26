@@ -42,7 +42,7 @@ Cu.import("resource://services-sync/resource.js");
 Cu.import("resource://services-sync/util.js");
 
 const EXPORTED_SYMBOLS = ["Repository",
-                          "ServerRepository",
+                          "Server11Repository",
                           "Crypto5Middleware"];
 
 const DONE = {};
@@ -141,18 +141,32 @@ Repository.prototype = {
 // failed, not why.
 
 /**
- * Repository that talks to an HTTP server that implements the Sync 1.1 API.
+ * Sync 1.1 server repository
+ *
+ * Retrieves from and stores to a collection on an HTTP server that implements
+ * the Sync 1.1 API.
+ *
+ * @param serverURI
+ *        URI of the Sync 1.1 server (string)
+ * @param username
+ *        Username on the server (string)
+ * @param collection
+ *        Name of the collection (string)
  */
-function ServerRepository(uri) {
+function Server11Repository(serverURI, username, collection) {
   Repository.call(this);
-  this.uri = uri;
+
+  if (serverURI[serverURI.length - 1] != "/") {
+    serverURI += "/";
+  }
+  this.uri = serverURI + "1.1/" + username + "/storage/" + collection;
 }
-ServerRepository.prototype = {
+Server11Repository.prototype = {
 
   __proto__: Repository.prototype,
 
   /**
-   * The URI of the current repository (string or nsIURI object)
+   * The complete URI (string) of the repository
    */
   uri: null,
 
@@ -286,6 +300,8 @@ ServerStoreSession.prototype = {
       if (this.batch.length) {
         this.flush(true);
       } else {
+        // TODO a flush might still be in progress, should wait for that to finish
+        // before calling back with DONE.
         this.storeCallback(DONE);
       }
       return;
@@ -300,7 +316,7 @@ ServerStoreSession.prototype = {
    * Private stuff
    */
 
-  flush: function flush(last) {
+  flush: function flush(done) {
     let batch = this.batch;
     this.batch = [];
     let resource = new AsyncResource(this.repository.uri);
@@ -311,7 +327,7 @@ ServerStoreSession.prototype = {
     }
 
     function finalmente() {
-      if (last) {
+      if (done) {
         storeCallback(DONE);
       }
     }

@@ -10,7 +10,7 @@ const DONE = Repository.prototype.DONE;
  * Create five fake records on the server with timestamps 1000, ..., 5000
  * in a collection that can be accessed at http://localhost:8080/collection.
  *
- * @return [nsHttpServer obj, ServerRepository obj, ServerCollection obj]
+ * @return [nsHttpServer obj, Server11Repository obj, ServerCollection obj]
  */
 function setup_fixtures() {
   let guids = ["0000deadbeef", "abcdefghijkl", "charliesheen",
@@ -23,9 +23,9 @@ function setup_fixtures() {
   }
   let collection = new ServerCollection(wbos, true);
   let server = httpd_setup({
-    "/collection": collection.handler()
+    "/1.1/john/storage/marbles": collection.handler()
   });
-  let repo = new ServerRepository("http://localhost:8080/collection");
+  let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
   return [repo, server, collection];
 }
 
@@ -34,6 +34,17 @@ function run_test() {
   Log4Moz.repository.getLogger("Net.Resource").level = Log4Moz.Trace;
   run_next_test();
 }
+
+add_test(function test_uri() {
+  let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
+  do_check_eq(repo.uri, "http://localhost:8080/1.1/john/storage/marbles");
+
+  // Trailing slash in the server URL is OK.
+  repo = new Server11Repository("http://localhost:8080/", "john", "marbles");
+  do_check_eq(repo.uri, "http://localhost:8080/1.1/john/storage/marbles");
+
+  run_next_test();
+});
 
 add_test(function test_guidsSince() {
   let [repo, server] = setup_fixtures();
@@ -46,7 +57,7 @@ add_test(function test_guidsSince() {
 });
 
 add_test(function test_guidsSince_networkError() {
-  let repo = new ServerRepository("http://localhost:8080/collection");
+  let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
   repo.guidsSince(2000, function guidsCallback(error, guids) {
     do_check_eq(guids, null);
     do_check_neq(error, null);
@@ -57,9 +68,9 @@ add_test(function test_guidsSince_networkError() {
 
 add_test(function test_guidsSince_httpError() {
   let server = httpd_setup({
-    "/collection": httpd_handler(404, "Not Found", "Cannae\nfind\nit")
+    "/1.1/john/storage/marbles": httpd_handler(404, "Not Found", "Cannae\nfind\nit")
   });
-  let repo = new ServerRepository("http://localhost:8080/collection");
+  let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
   repo.guidsSince(2000, function guidsCallback(error, guids) {
     do_check_eq(guids, null);
     do_check_neq(error, null);
@@ -71,9 +82,9 @@ add_test(function test_guidsSince_httpError() {
 
 add_test(function test_guidsSince_invalidJSON() {
   let server = httpd_setup({
-    "/collection": httpd_handler(200, "OK", "this is invalid JSON")
+    "/1.1/john/storage/marbles": httpd_handler(200, "OK", "this is invalid JSON")
   });
-  let repo = new ServerRepository("http://localhost:8080/collection");
+  let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
   repo.guidsSince(2000, function guidsCallback(error, guids) {
     do_check_eq(guids, null);
     do_check_neq(error, null);
@@ -109,7 +120,7 @@ add_test(function test_fetchSince() {
 });
 
 add_test(function test_fetchSince_networkError() {
-  let repo = new ServerRepository("http://localhost:8080/collection");
+  let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
   repo.fetchSince(2000, function fetchCallback(error, record) {
     do_check_eq(record, DONE);
     do_check_neq(error, null);
@@ -119,13 +130,13 @@ add_test(function test_fetchSince_networkError() {
 });
 
 // TODO test is disabled because we can't implement the desired behaviour
-// yet in ServerRepository.
+// yet in Server11Repository.
 function DISABLED_add_test() {}
 DISABLED_add_test(function test_fetchSince_httpError() {
   let server = httpd_setup({
-    "/collection": httpd_handler(404, "Not Found", "Cannae\nfind\nit")
+    "/1.1/john/storage/marbles": httpd_handler(404, "Not Found", "Cannae\nfind\nit")
   });
-  let repo = new ServerRepository("http://localhost:8080/collection");
+  let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
   let calledDone = false;
   repo.fetchSince(2000, function fetchCallback(error, record) {
     if (calledDone) {
@@ -143,9 +154,9 @@ DISABLED_add_test(function test_fetchSince_httpError() {
 
 add_test(function test_fetchSince_invalidJSON() {
   let server = httpd_setup({
-    "/collection": httpd_handler(200, "OK", "this is invalid JSON")
+    "/1.1/john/storage/marbles": httpd_handler(200, "OK", "this is invalid JSON")
   });
-  let repo = new ServerRepository("http://localhost:8080/collection");
+  let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
   let calledDone = false;
   repo.fetchSince(2000, function fetchCallback(error, record) {
     if (calledDone) {
@@ -196,7 +207,7 @@ add_test(function test_fetch() {
 });
 
 add_test(function test_fetch_networkError() {
-  let repo = new ServerRepository("http://localhost:8080/collection");
+  let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
   repo.fetch(["trololololol"], function fetchCallback(error, record) {
     do_check_eq(record, DONE);
     do_check_neq(error, null);
@@ -206,12 +217,12 @@ add_test(function test_fetch_networkError() {
 });
 
 // TODO test is disabled because we can't implement the desired behaviour
-// yet in ServerRepository.
+// yet in Server11Repository.
 DISABLED_add_test(function test_fetch_httpError() {
   let server = httpd_setup({
-    "/collection": httpd_handler(404, "Not Found", "Cannae\nfind\nit")
+    "/1.1/john/storage/marbles": httpd_handler(404, "Not Found", "Cannae\nfind\nit")
   });
-  let repo = new ServerRepository("http://localhost:8080/collection");
+  let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
   let calledDone = false;
   repo.fetch(["trololololol"], function fetchCallback(error, record) {
     if (calledDone) {
@@ -229,9 +240,9 @@ DISABLED_add_test(function test_fetch_httpError() {
 
 add_test(function test_fetch_invalidJSON() {
   let server = httpd_setup({
-    "/collection": httpd_handler(200, "OK", "this is invalid JSON")
+    "/1.1/john/storage/marbles": httpd_handler(200, "OK", "this is invalid JSON")
   });
-  let repo = new ServerRepository("http://localhost:8080/collection");
+  let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
   let calledDone = false;
   repo.fetch(["trololololol"], function fetchCallback(error, record) {
     if (calledDone) {
@@ -259,9 +270,9 @@ add_test(function test_store_empty() {
   _("Test adding no items to an empty repository.");
   let collection = new ServerCollection({}, true);
   let server = httpd_setup({
-    "/collection": collection.handler()
+    "/1.1/john/storage/marbles": collection.handler()
   });
-  let repo = new ServerRepository("http://localhost:8080/collection");
+  let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
   let calledDone = false;
   let session = repo.newStoreSession(function storeCallback(error) {
     if (calledDone) {
@@ -279,9 +290,9 @@ add_test(function test_store() {
   _("Test adding items to repository.");
   let collection = new ServerCollection({}, true);
   let server = httpd_setup({
-    "/collection": collection.handler()
+    "/1.1/john/storage/marbles": collection.handler()
   });
-  let repo = new ServerRepository("http://localhost:8080/collection");
+  let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
   let items = [{id: "123412341234", payload: "Bar4"},
                {id: "123412341235", payload: "Bar5"}];
 
@@ -305,8 +316,16 @@ add_test(function test_store() {
   session.store(DONE);
 });
 
+add_test(function test_store_batching_incompleteLastBatch() {
+  run_next_test(); //TODO
+});
+
+add_test(function test_store_batching_completeLastBatch() {
+  run_next_test(); //TODO
+});
+
 add_test(function test_store_networkError() {
-  let repo = new ServerRepository("http://localhost:8080/collection");
+  let repo = new Server11Repository("http://localhost:8080/collection");
   let items = [{id: "123412341234", payload: "Bar4"},
                {id: "123412341235", payload: "Bar5"}];
 
@@ -335,9 +354,9 @@ add_test(function test_store_networkError() {
 
 add_test(function test_store_httpError() {
   let server = httpd_setup({
-    "/collection": httpd_handler(404, "Not Found", "Cannae\nfind\nit")
+    "/1.1/john/storage/marbles": httpd_handler(404, "Not Found", "Cannae\nfind\nit")
   });
-  let repo = new ServerRepository("http://localhost:8080/collection");
+  let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
 
   let items = [{id: "123412341234", payload: "Bar4"},
                {id: "123412341235", payload: "Bar5"}];
@@ -367,9 +386,9 @@ add_test(function test_store_httpError() {
 
 add_test(function test_store_invalidResponse() {
   let server = httpd_setup({
-    "/collection": httpd_handler(200, "OK", "this is invalid JSON")
+    "/1.1/john/storage/marbles": httpd_handler(200, "OK", "this is invalid JSON")
   });
-  let repo = new ServerRepository("http://localhost:8080/collection");
+  let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
 
   let items = [{id: "123412341234", payload: "Bar4"},
                {id: "123412341235", payload: "Bar5"}];

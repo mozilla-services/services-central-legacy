@@ -130,6 +130,13 @@ Repository.prototype = {
    */
   newStoreSession: function newStoreSession(storeCallback) {
     throw "Repository must implement 'newStoreSession'";
+  },
+
+  /**
+   * Delete all items stored in the repository.
+   */
+  wipe: function wipe(wipeCallback) {
+    throw "Repository must implement 'wipe'";
   }
 
 };

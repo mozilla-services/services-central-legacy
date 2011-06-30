@@ -284,9 +284,10 @@ Server11Repository.prototype = {
 };
 
 function ServerStoreSession(repository, storeCallback) {
-  this.repository = repository;
+  this.repository    = repository;
   this.storeCallback = storeCallback;
-  this.batch = [];
+  this.batch         = [];   // Holds items until we have enough for a batch.
+  this.flushQueue    = [];   // Holds completed batches to be flushed.
 
   let level = Svc.Prefs.get("log.logger.repository.server.store");
   this._log = Log4Moz.repository.getLogger("Sync.ServerStoreSession");
@@ -294,9 +295,16 @@ function ServerStoreSession(repository, storeCallback) {
 }
 ServerStoreSession.prototype = {
 
-  repository: null,
+  batch:         null,
+  flushQueue:    null,
+  repository:    null,
   storeCallback: null,
-  batch: null,
+
+  /*
+   * Flushing control.
+   */
+  done: false,
+  flushing: 0,
 
   /**
    * Upload batch size
@@ -307,77 +315,175 @@ ServerStoreSession.prototype = {
    * Store Session API
    */
 
+  /*
+   * All other invocations of store should have returned prior to store being
+   * invoked with DONE. It is best if you invoke store serially.
+   */
   store: function store(record) {
-    if (record == DONE) {
-      if (this.batch.length) {
-        this.flush(true);
-      } else {
-        // TODO a flush might still be in progress, should wait for that to finish
-        // before calling back with DONE.
-        this.storeCallback(DONE);
+    // Ensure that we can't be finished more than once.
+    if (this.done) {
+      throw "Store session already marked as DONE.";
+    }
+
+    if (record != DONE) {
+      this.batch.push(record);
+      if (this.rollBatch(false)) {
+        this.flush();
       }
       return;
     }
-    this.batch.push(record);
-    if (this.batch.length == this.batchSize) {
-      this.flush();
-    }
+
+    this.done = true;
+    this.rollBatch(true);
+    this.flush();
   },
 
   /**
-   * Private stuff
+   * Private stuff.
    */
 
-  flush: function flush(done) {
-    let batch = this.batch;
-    this.batch = [];
-    let resource = new AsyncResource(this.repository.uri);
-    let storeCallback = this.storeCallback;
+  /*
+   * Work through the flush queue, flushing each batch. If an existing
+   * flush is in progress, return. Ensure that if `done` is true, the
+   * storeCallback is invoked once all items have been flushed.
+   *
+   * flush is invoked once per queued batch, and at least once (for DONE).
+   *
+   * Because store is specified to invoke the callback on error, rather than
+   * aborting, we can flush each batch either in parallel or serially.
+   */
+  flush: function flush() {
+    // Don't have more than one flush pending at once.
+    if (this.flushing) {
+      this._log.trace("Already flushing: returning.");
+      return;
+    }
 
-    function batchGUIDs() {
+    /**
+     * Ensure that storeCallback is called with DONE when all of our batch
+     * operations have completed, there are no more batches coming, and we've
+     * been signaled.
+     * This is safe to call repeatedly.
+     */
+    function finalmente() {
+      this._log.trace("finalmente: " + this.flushing + ", " + this.flushQueue.length);
+      if (this.flushing) {
+        // There are outstanding fetches. Let them call finalmente when they're
+        // done.
+        this._log.trace("Outstanding flushes: leaving finalmente.");
+        return;
+      }
+      if (this.flushQueue.length) {
+        // There are outstanding batches, but nobody working on them. We should
+        // kick off a flush.
+        this._log.debug("Outstanding batches: scheduling flush.");
+        Utils.nextTick(this.flush, this);
+        return;
+      }
+      if (!this.done) {
+        // We're not done yet, but we have nothing left to work on. Return
+        // quietly; flush will be invoked again when the next batch arrives.
+        this._log.trace("Not done: awaiting more data.");
+        return;
+      }
+      if (!this.storeCallback) {
+        // Uh oh. We're done, but the callback is gone. That should only happen
+        // if we raced to the finish.
+        this._log.warn("No store callback in flush!");
+        return;
+      }
+
+      // Invoke the callback and prevent it being called again.
+      this.storeCallback(DONE);
+      this.storeCallback = null;
+    }
+    finalmente = finalmente.bind(this);
+
+    function batchGUIDs(batch) {
       return [record.id for each (record in batch)];
     }
 
-    function finalmente() {
-      if (done) {
-        storeCallback(DONE);
-      }
-    }
-    resource.post(batch, function onPost(error, result) {
-      // Network error of sorts.
-      if (error) {
-        storeCallback({info: error, guids: batchGUIDs()});
-        return finalmente();
-      }
+    this._log.debug("Flush queue length: " + this.flushQueue.length);
+    this._log.trace("Already flushing: " + this.flushing);
+    while (this.flushQueue.length) {
+      ++this.flushing;
+      let batch = this.flushQueue.pop();
 
-      // HTTP error (could be a mis-configured server, over quota, etc.)
-      // 'result.success' exposes nsIHttpChannel::requestSucceeded.
-      if (!result.success) {
-        storeCallback({info: result, guids: batchGUIDs()});
-        return finalmente();
-      }
-
-      // Analyze return value for whether some objects couldn't be saved.
-      let result_obj;
+      let resource;
       try {
-        result_obj = JSON.parse(result);
+        resource = new AsyncResource(this.repository.uri);
       } catch (ex) {
-        // Server return value did not parse as JSON. We must assume it's not
-        // a valid implementation.
-        storeCallback({info: ex, guids: batchGUIDs()});
-        return finalmente();
-      }
-      let failed_ids = Object.keys(result_obj.failed);
-      if (failed_ids.length) {
-        storeCallback({info: result_obj, guids: result_obj.failed_ids});
-        return finalmente();
+        this.storeCallback({info: ex, guids: batchGUIDs(batch)});
+        this.flushing--;
+        continue;
       }
 
-      // TODO should we also process `result_obj.success` and verify it matches
-      // all items in our batch?
+      resource.post(batch, function onPost(error, result) {
+        // Network error of sorts.
+        if (error) {
+          this.storeCallback({info: error, guids: batchGUIDs(batch)});
+          this.flushing--;
+          return finalmente();
+        }
 
-      return finalmente();
-    });
+        // HTTP error (could be a mis-configured server, over quota, etc.)
+        // 'result.success' exposes nsIHttpChannel::requestSucceeded.
+        if (!result.success) {
+          this.storeCallback({info: result, guids: batchGUIDs(batch)});
+          this.flushing--;
+          return finalmente();
+        }
+
+        // Analyze return value for whether some objects couldn't be saved.
+        let resultObj;
+        try {
+          resultObj = JSON.parse(result);
+        } catch (ex) {
+          this._log.warn("Caught JSON parse exception: " + Utils.exceptionStr(ex));
+          // Server return value did not parse as JSON. We must assume it's not
+          // a valid implementation.
+          this.storeCallback({info: ex, guids: batchGUIDs(batch)});
+          this.flushing--;
+          return finalmente();
+        }
+        let failedIDs = Object.keys(resultObj.failed);
+        if (failedIDs.length) {
+          this.storeCallback({info: resultObj, guids: resultObj.failedIDs});
+          this.flushing--;
+          return finalmente();
+        }
+
+        // TODO should we also process `resultObj.success` and verify it matches
+        // all items in our batch?
+
+        this.flushing--;
+        return finalmente();
+      }.bind(this));
+    }
+
+    // At the end of batch processing, finish up. This will catch empty batch
+    // queues, or multiple consecutive constructor errors.
+    this._log.trace("Running end-of-loop finalmente...");
+    finalmente();
+  },
+
+  /*
+   * Push the current batch into the queue for flushing, and
+   * set us up for more items.
+   * Returns true if a new batch was pushed.
+   */
+  rollBatch: function rollBatch(done) {
+    let batch = this.batch;
+    if (batch.length &&
+        (batch.length == this.batchSize ||
+         done)) {
+      this.batch = [];
+      this.flushQueue.push(batch);
+      this._log.trace("Rolled batch.");
+      return true;
+    }
+    this._log.trace("Not rolling batch.");
+    return false;
   }
 };
 

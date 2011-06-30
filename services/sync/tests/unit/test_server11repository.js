@@ -316,6 +316,31 @@ add_test(function test_store() {
   session.store(DONE);
 });
 
+add_test(function test_store_finish_once_only() {
+  let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
+  let session;
+
+  session = repo.newStoreSession(function storeCallback(error) {
+    let threw;
+    try {
+      session.store(DONE);
+    } catch (ex) {
+      threw = ex;
+    }
+    do_check_eq("Store session already marked as DONE.", threw);
+    threw = undefined;
+    try {
+      session.store({id: "1234567890ab"});
+    } catch (ex) {
+      threw = ex;
+    }
+    do_check_eq("Store session already marked as DONE.", threw);
+
+    run_next_test();
+  });
+  session.store(DONE);
+});
+
 add_test(function test_store_batching_incompleteLastBatch() {
   run_next_test(); //TODO
 });

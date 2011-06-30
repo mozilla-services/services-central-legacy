@@ -49,4 +49,5 @@ pref("services.sync.log.logger.engine.history", "Debug");
 pref("services.sync.log.logger.engine.passwords", "Debug");
 pref("services.sync.log.logger.engine.prefs", "Debug");
 pref("services.sync.log.logger.engine.tabs", "Debug");
+pref("services.sync.log.logger.repository.server.store", "Debug");
 pref("services.sync.log.cryptoDebug", false);

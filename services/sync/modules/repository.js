@@ -38,6 +38,7 @@
 
 const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
+Cu.import("resource://services-sync/log4moz.js");
 Cu.import("resource://services-sync/resource.js");
 Cu.import("resource://services-sync/util.js");
 
@@ -286,6 +287,10 @@ function ServerStoreSession(repository, storeCallback) {
   this.repository = repository;
   this.storeCallback = storeCallback;
   this.batch = [];
+
+  let level = Svc.Prefs.get("log.logger.repository.server.store");
+  this._log = Log4Moz.repository.getLogger("Sync.ServerStoreSession");
+  this._log.level = Log4Moz.Level[level];
 }
 ServerStoreSession.prototype = {
 

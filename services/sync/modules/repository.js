@@ -45,8 +45,8 @@ const EXPORTED_SYMBOLS = ["Repository",
                           "Server11Repository",
                           "Crypto5Middleware"];
 
-const DONE = {};
-const STOP = {};
+const DONE = { toString: function() "<DONE>" };
+const STOP = { toString: function() "<STOP>" };
 
 /**
  * Base repository

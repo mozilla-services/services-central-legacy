@@ -317,10 +317,10 @@ add_test(function test_store() {
 });
 
 add_test(function test_store_finish_once_only() {
-  let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
-  let session;
+  _("Test that calling store after a DONE will raise an error.");
 
-  session = repo.newStoreSession(function storeCallback(error) {
+  let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
+  let session = repo.newStoreSession(function storeCallback(error) {
     let threw;
     try {
       session.store(DONE);
@@ -341,12 +341,82 @@ add_test(function test_store_finish_once_only() {
   session.store(DONE);
 });
 
-add_test(function test_store_batching_incompleteLastBatch() {
-  run_next_test(); //TODO
+add_test(function test_store_batching_completeLastBatch() {
+  _("Test batching within a store session.");
+
+  let invoked = 0;
+  let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
+  let session = repo.newStoreSession(function storeCallback(error) {
+    do_check_eq(invoked, 3);
+    do_check_eq(session.flushQueue.length, 2);
+    do_check_true(session.done);
+    run_next_test();
+  });
+  do_check_eq(session.flushQueue.length, 0);
+
+  session.flush = function () {
+    invoked++;
+    let batchCount = session.flushQueue.length;
+    let lastBatchSize = session.flushQueue[batchCount - 1].length;
+
+    if (session.done) {
+      session.storeCallback();
+      return;
+    }
+    do_check_eq(batchCount, invoked);
+    do_check_eq(lastBatchSize, session.batchSize);
+  };
+
+  session.batchSize = 2;
+  do_check_false(session.done);
+  session.store({id: "123412341234", payload: "Bar4"});
+  do_check_eq(invoked, 0);
+  session.store({id: "123412341235", payload: "Bar5"});
+  do_check_eq(invoked, 1);
+  session.store({id: "123412341236", payload: "Bar6"});
+  do_check_eq(invoked, 1);
+  session.store({id: "123412341237", payload: "Bar7"});
+  do_check_eq(invoked, 2);
+  session.store(DONE);
 });
 
-add_test(function test_store_batching_completeLastBatch() {
-  run_next_test(); //TODO
+add_test(function test_store_batching_incompleteLastBatch() {
+  _("Test batching within a store session, where the last batch is incomplete.");
+
+  let invoked = 0;
+  let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
+  let session = repo.newStoreSession(function storeCallback(error) {
+    do_check_eq(invoked, 2);
+    do_check_eq(session.flushQueue.length, 2);
+    do_check_eq(session.flushQueue[0].length, 2);
+    do_check_eq(session.flushQueue[1].length, 1);
+    do_check_true(session.done);
+    run_next_test();
+  });
+  do_check_eq(session.flushQueue.length, 0);
+
+  session.flush = function () {
+    invoked++;
+    let batchCount = session.flushQueue.length;
+    let lastBatchSize = session.flushQueue[batchCount - 1].length;
+
+    if (session.done) {
+      session.storeCallback();
+      return;
+    }
+    do_check_eq(batchCount, invoked);
+    do_check_eq(lastBatchSize, session.batchSize);
+  };
+
+  session.batchSize = 2;
+  do_check_false(session.done);
+  session.store({id: "123412341234", payload: "Bar4"});
+  do_check_eq(invoked, 0);
+  session.store({id: "123412341235", payload: "Bar5"});
+  do_check_eq(invoked, 1);
+  session.store({id: "123412341236", payload: "Bar6"});
+  do_check_eq(invoked, 1);
+  session.store(DONE);
 });
 
 add_test(function test_store_networkError() {

@@ -279,8 +279,12 @@ Server11Repository.prototype = {
         fetchCallback(result, DONE);
       }
     });
-  }
+  },
 
+  wipe: function wipe(wipeCallback) {
+    let resource = new AsyncResource(this.uri);
+    resource.delete(wipeCallback);
+  }
 };
 
 function ServerStoreSession(repository, storeCallback) {

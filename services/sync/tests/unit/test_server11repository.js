@@ -129,6 +129,60 @@ add_test(function test_fetchSince_networkError() {
   });
 });
 
+add_test(function test_wipe() {
+  _("Test wiping a server repository.");
+  let items = [{id: "123412341234", payload: "Bar4"},
+               {id: "123412341235", payload: "Bar5"}];
+  let collection = new ServerCollection({}, true);
+  collection.post(JSON.stringify(items));
+  let server = httpd_setup({
+    "/1.1/john/storage/marbles": collection.handler()
+  });
+  let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
+
+  repo.guidsSince(0, function (error, guids) {
+    _("Check preconditions: 2 GUIDs.");
+    do_check_false(!!error);
+    do_check_eq(2, guids.length);
+
+    _("Wiping removes items.");
+    repo.wipe(function (error) {
+      do_check_false(!!error);
+      repo.guidsSince(0, function (error, guids) {
+        _("Check postconditions: 0 GUIDs.");
+        do_check_false(!!error);
+        do_check_eq(0, guids.length);
+        server.stop(run_next_test);
+      });
+    });
+  });
+});
+
+add_test(function test_wipe_empty() {
+  _("Test wiping an empty server repository.");
+  let collection = new ServerCollection({}, true);
+  let server = httpd_setup({
+    "/1.1/john/storage/marbles": collection.handler()
+  });
+  let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
+
+  repo.guidsSince(0, function (error, guids) {
+    _("Check preconditions: 0 GUIDs.");
+    do_check_false(!!error);
+    do_check_eq(0, guids.length);
+
+    repo.wipe(function (error) {
+      do_check_false(!!error);
+      repo.guidsSince(0, function (error, guids) {
+        _("Check postconditions: 0 GUIDs.");
+        do_check_false(!!error);
+        do_check_eq(0, guids.length);
+        server.stop(run_next_test);
+      });
+    });
+  });
+});
+
 // TODO test is disabled because we can't implement the desired behaviour
 // yet in Server11Repository.
 function DISABLED_add_test() {}

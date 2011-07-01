@@ -359,6 +359,8 @@ ServerStoreSession.prototype = {
       return;
     }
 
+    this.flushing = true;
+
     /**
      * Ensure that storeCallback is called with DONE when all of our batch
      * operations have completed, there are no more batches coming, and we've
@@ -367,12 +369,8 @@ ServerStoreSession.prototype = {
      */
     function finalmente() {
       this._log.trace("finalmente: " + this.flushing + ", " + this.flushQueue.length);
-      if (this.flushing) {
-        // There are outstanding fetches. Let them call finalmente when they're
-        // done.
-        this._log.trace("Outstanding flushes: leaving finalmente.");
-        return;
-      }
+      this.flushing = false;
+
       if (this.flushQueue.length) {
         // There are outstanding batches, but nobody working on them. We should
         // kick off a flush.
@@ -399,72 +397,63 @@ ServerStoreSession.prototype = {
     }
     finalmente = finalmente.bind(this);
 
+    //TODO should factor this helper out instead of redefining it all the time.
     function batchGUIDs(batch) {
       return [record.id for each (record in batch)];
     }
 
     this._log.debug("Flush queue length: " + this.flushQueue.length);
-    this._log.trace("Already flushing: " + this.flushing);
-    while (this.flushQueue.length) {
-      ++this.flushing;
-      let batch = this.flushQueue.pop();
 
-      let resource;
-      try {
-        resource = new AsyncResource(this.repository.uri);
-      } catch (ex) {
-        this.storeCallback({info: ex, guids: batchGUIDs(batch)});
-        this.flushing--;
-        continue;
-      }
-
-      resource.post(batch, function onPost(error, result) {
-        // Network error of sorts.
-        if (error) {
-          this.storeCallback({info: error, guids: batchGUIDs(batch)});
-          this.flushing--;
-          return finalmente();
-        }
-
-        // HTTP error (could be a mis-configured server, over quota, etc.)
-        // 'result.success' exposes nsIHttpChannel::requestSucceeded.
-        if (!result.success) {
-          this.storeCallback({info: result, guids: batchGUIDs(batch)});
-          this.flushing--;
-          return finalmente();
-        }
-
-        // Analyze return value for whether some objects couldn't be saved.
-        let resultObj;
-        try {
-          resultObj = JSON.parse(result);
-        } catch (ex) {
-          this._log.warn("Caught JSON parse exception: " + Utils.exceptionStr(ex));
-          // Server return value did not parse as JSON. We must assume it's not
-          // a valid implementation.
-          this.storeCallback({info: ex, guids: batchGUIDs(batch)});
-          this.flushing--;
-          return finalmente();
-        }
-        let failedIDs = Object.keys(resultObj.failed);
-        if (failedIDs.length) {
-          this.storeCallback({info: resultObj, guids: resultObj.failedIDs});
-          this.flushing--;
-          return finalmente();
-        }
-
-        // TODO should we also process `resultObj.success` and verify it matches
-        // all items in our batch?
-
-        this.flushing--;
-        return finalmente();
-      }.bind(this));
+    // Finish up if we have an empty batch left.
+    if (!this.flushQueue.length) {
+      return finalmente();
     }
 
-    // At the end of batch processing, finish up. This will catch empty batch
-    // queues, or multiple consecutive constructor errors.
-    this._log.trace("Running end-of-loop finalmente...");
-    finalmente();
+    let batch = this.flushQueue.pop();
+    let resource;
+    try {
+      resource = new AsyncResource(this.repository.uri);
+    } catch (ex) {
+      this.storeCallback({info: ex, guids: batchGUIDs(batch)});
+      return finalmente();
+    }
+
+    resource.post(batch, function onPost(error, result) {
+      // Network error of sorts.
+      if (error) {
+        this.storeCallback({info: error, guids: batchGUIDs(batch)});
+        return finalmente();
+      }
+
+      // HTTP error (could be a mis-configured server, over quota, etc.)
+      // 'result.success' exposes nsIHttpChannel::requestSucceeded.
+      if (!result.success) {
+        this.storeCallback({info: result, guids: batchGUIDs(batch)});
+        return finalmente();
+      }
+
+      // Analyze return value for whether some objects couldn't be saved.
+      let resultObj;
+      try {
+        resultObj = JSON.parse(result);
+      } catch (ex) {
+        this._log.warn("Caught JSON parse exception: " + Utils.exceptionStr(ex));
+        // Server return value did not parse as JSON. We must assume it's not
+        // a valid implementation.
+        this.storeCallback({info: ex, guids: batchGUIDs(batch)});
+        return finalmente();
+      }
+      let failedIDs = Object.keys(resultObj.failed);
+      if (failedIDs.length) {
+        this.storeCallback({info: resultObj, guids: resultObj.failedIDs});
+        return finalmente();
+      }
+
+      // TODO should we also process `resultObj.success` and verify it matches
+      // all items in our batch?
+
+      return finalmente();
+    }.bind(this));
   },
 
   /*

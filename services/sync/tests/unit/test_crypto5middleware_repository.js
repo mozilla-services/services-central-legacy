@@ -6,68 +6,6 @@ Cu.import("resource://services-sync/record.js");
 
 const DONE = Repository.prototype.DONE;
 
-/**
- * A repository based on a simple map of GUID -> WBO.
- */
-function WBORepository(wbos) {
-  this.wbos = wbos || {};
-  Repository.call(this);
-}
-WBORepository.prototype = {
-
-  __proto__: Repository.prototype,
-
-  /**
-   * Repository API
-   */
-
-  guidsSince: function guidsSince(timestamp, guidsCallback) {
-    guidsCallback(null, [guid for ([guid, wbo] in Iterator(this.wbos))
-                              if (wbo.modified > timestamp)]);
-  },
-
-  fetchSince: function fetchSince(timestamp, fetchCallback) {
-    for (let [guid, wbo] in Iterator(this.wbos)) {
-      if (wbo.modified > timestamp) {
-        fetchCallback(null, wbo);
-      }
-    }
-    fetchCallback(null, DONE);
-  },
-
-  fetch: function fetch(guids, fetchCallback) {
-    for (let i = 0; i < guids.length; i++) {
-      let wbo = this.wbos[guids[i]];
-      if (wbo) {
-        fetchCallback(null, wbo);
-      }
-    }
-    fetchCallback(null, DONE);
-  },
-
-  newStoreSession: function newStoreSession(storeCallback) {
-    let repo = this;
-    return {
-      store: function store(record) {
-        if (record == DONE) {
-          storeCallback(DONE);
-          return;
-        }
-        repo.wbos[record.id] = record;
-      }
-    };
-  },
-
-  /**
-   * Helpers
-   */
-
-  get count() {
-    return Object.keys(this.wbos).length;
-  }
-};
-
-
 function run_test() {
   // Monkey-patch fake crypto in place.
   let fakeCrypto = new FakeCryptoService(); // Installs itself as Svc.Crypto.

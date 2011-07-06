@@ -88,18 +88,25 @@ Synchronizer.prototype = {
 
 /**
  * Synchronize a Firefox engine to a Server11Collection.
+ *
+ * N.B., this class layers two accessors -- local and remote -- on top of the
+ * undiscriminated pair of repositories exposed by Synchronizer.
  */
-function EngineCollectionSynchronizer(name) {
+function EngineCollectionSynchronizer(name, local, remote) {
   Synchronizer.call(this);
   this.Name = name;
   this.name = name.toLowerCase();
-
-  this.repositoryA = new Server11Collection(Service.clusterURL, Service.username,
-                                            this.name);
-  this.repositoryB = SomehowMakeANewRepositoryWith(name); //TODO STUB
+  this.repositoryA = local;
+  this.repositoryB = remote;
 }
 EngineCollectionSynchronizer.prototype = {
   __proto__: Synchronizer.prototype,
+
+  /**
+   * Convention.
+   */
+  get localRepository()  this.repositoryA,
+  get serverRepository() this.repositoryB,
 
   /**
    * lastSync is a timestamp in server time.

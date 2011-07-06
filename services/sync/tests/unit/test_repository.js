@@ -4,6 +4,7 @@
 Cu.import("resource://services-sync/repository.js");
 
 const DONE = Repository.prototype.DONE;
+const STOP = Repository.prototype.STOP;
 
 function setup_fixtures() {
   let repo = new WBORepository();
@@ -25,6 +26,28 @@ function setup_fixtures() {
 function run_test() {
   run_next_test();
 }
+
+add_test(function wbo_repository_stop() {
+  _("Test returning STOP from a fetchCallback.");
+  let repo = setup_fixtures();
+  let counter = 0;
+  let stopped = false;
+  function fetchCallback(error, record) {
+    if (stopped) {
+      do_throw("fetchCallback should not be invoked after returning STOP!");
+    }
+    counter++;
+    if (counter == 2) {
+      stopped = true;
+      Utils.nextTick(function () {
+        do_check_eq(2, counter);
+        run_next_test();
+      });
+      return STOP;
+    }
+  }
+  repo.fetchSince(2000, fetchCallback);
+});
 
 add_test(function test_guidsSince() {
   let repo = setup_fixtures();

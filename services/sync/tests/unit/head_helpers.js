@@ -317,3 +317,65 @@ RotaryEngine.prototype = {
     }
   }
 };
+
+/**
+ * A repository based on a simple map of GUID -> WBO.
+ */
+Cu.import("resource://services-sync/repository.js");
+function WBORepository(wbos) {
+  this.wbos = wbos || {};
+  Repository.call(this);
+}
+WBORepository.prototype = {
+
+  __proto__: Repository.prototype,
+
+  /**
+   * Repository API
+   */
+
+  guidsSince: function guidsSince(timestamp, guidsCallback) {
+    guidsCallback(null, [guid for ([guid, wbo] in Iterator(this.wbos))
+                              if (wbo.modified > timestamp)]);
+  },
+
+  fetchSince: function fetchSince(timestamp, fetchCallback) {
+    for (let [guid, wbo] in Iterator(this.wbos)) {
+      if (wbo.modified > timestamp) {
+        fetchCallback(null, wbo);
+      }
+    }
+    fetchCallback(null, Repository.prototype.DONE);
+  },
+
+  fetch: function fetch(guids, fetchCallback) {
+    for (let i = 0; i < guids.length; i++) {
+      let wbo = this.wbos[guids[i]];
+      if (wbo) {
+        fetchCallback(null, wbo);
+      }
+    }
+    fetchCallback(null, Repository.prototype.DONE);
+  },
+
+  newStoreSession: function newStoreSession(storeCallback) {
+    let repo = this;
+    return {
+      store: function store(record) {
+        if (record == Repository.prototype.DONE) {
+          storeCallback(Repository.prototype.DONE);
+          return;
+        }
+        repo.wbos[record.id] = record;
+      }
+    };
+  },
+
+  /**
+   * Helpers
+   */
+
+  get count() {
+    return Object.keys(this.wbos).length;
+  }
+};

@@ -342,17 +342,22 @@ WBORepository.prototype = {
   fetchSince: function fetchSince(timestamp, fetchCallback) {
     for (let [guid, wbo] in Iterator(this.wbos)) {
       if (wbo.modified > timestamp) {
-        fetchCallback(null, wbo);
+        if (fetchCallback(null, wbo) == STOP) {
+          return;
+        }
       }
     }
     fetchCallback(null, Repository.prototype.DONE);
   },
 
   fetch: function fetch(guids, fetchCallback) {
+    const STOP = Repository.prototype.STOP;
     for (let i = 0; i < guids.length; i++) {
       let wbo = this.wbos[guids[i]];
       if (wbo) {
-        fetchCallback(null, wbo);
+        if (fetchCallback(null, wbo) == STOP) {
+          return;
+        }
       }
     }
     fetchCallback(null, Repository.prototype.DONE);

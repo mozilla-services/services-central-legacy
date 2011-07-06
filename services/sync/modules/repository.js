@@ -86,7 +86,7 @@ Repository.prototype = {
    *        Callback function with the signature (error, record).
    *        @param error is null for a successful operation.
    *        @param record will be the DONE value on the last invocation.
-   *        @return STOP if the fetch operation should be aborted,
+   *        @return STOP if the fetch operation should be aborted.
    */
   fetchSince: function fetchSince(timestamp, fetchCallback) {
     throw "Repository must implement 'fetchSince'";

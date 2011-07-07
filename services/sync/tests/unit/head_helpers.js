@@ -339,6 +339,9 @@ WBORepository.prototype = {
     sessionCallback(null, {
       __proto__: RepositorySession.prototype,
 
+      // Equivalent to modifying lastSyncLocal in Engine._syncStartup.
+      timestamp: Date.now(),
+
       guidsSince: function guidsSince(timestamp, guidsCallback) {
         guidsCallback(null, [guid for ([guid, wbo] in Iterator(repo.wbos))
                                   if (wbo.modified > timestamp)]);

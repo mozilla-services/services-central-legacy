@@ -95,7 +95,6 @@ function RepositorySession() {
 }
 RepositorySession.prototype = {
 
-
   /**
    * Retrieve a sequence of GUIDs corresponding to records that have been
    * modified since timestamp. The callback is invoked exactly once.
@@ -147,6 +146,7 @@ RepositorySession.prototype = {
   /**
    * Store an individual record in such a way that it won't be unnecessarily
    * returned by a fetch operation.
+   *
    * Implementations may choose to flush records to the data store in batches.
    * Callers must therefore call store with the DONE value after the last item.
    *
@@ -159,6 +159,10 @@ RepositorySession.prototype = {
 
   /**
    * Delete all items stored in the repository.
+   *
+   * @param wipeCallback
+   *        Callback function with the signature (error).
+   *        @param error is null for a successful operation.
    */
   wipe: function wipe(wipeCallback) {
     throw "RepositorySession must implement 'wipe'";
@@ -301,72 +305,12 @@ Server11Session.prototype = {
     this._fetchRecords(uri, fetchCallback);
   },
 
-  createSession: function createSession(storeCallback, sessionCallback) {
-    let session = new Server11Session(this, storeCallback);
-    sessionCallback(null, session);
-  },
-
-  /**
-   * Private stuff
-   */
-
-  _fetchRecords: function(uri, fetchCallback) {
-    let request = new SyncStorageRequest(uri);
-    request.setHeader("Accept", "application/newlines");
-
-    function maybeAbort(rv) {
-      if (rv == STOP) {
-        request.abort();
-        //XXX TODO should we call fetchCallback once more with DONE?
-        // or should we assume that since fetchCallback returned STOP
-        // that it knows it's not going to be called again ever.
-      }
-    }
-
-    request.onProgress = function onProgress() {
-      let response = request.response;
-      if (!response.success) {
-        request.abort();
-        fetchCallback(response, DONE);
-        return;
-      }
-      let newline;
-      while ((newline = response.body.indexOf("\n")) > 0) {
-        let json = response.body.slice(0, newline);
-        response.body = response.body.slice(newline + 1);
-        let record;
-        try {
-          record = JSON.parse(json);
-        } catch(ex) {
-          // Notify the caller of genuine parsing errors.
-          maybeAbort(fetchCallback(ex));
-          continue;
-        }
-        maybeAbort(fetchCallback(null, record));
-      }
-    };
-    request.onComplete = function onComplete(error) {
-      let response = request.response;
-      // 'response.success' exposes nsIHttpChannel::requestSucceeded.
-      if (error || response.success) {
-        fetchCallback(error, DONE);
-      } else {
-        // We had an HTTP error, pass the HTTP response as the error.
-        fetchCallback(response, DONE);
-      }
-    };
-    request.get();
-  },
-
   wipe: function wipe(wipeCallback) {
+    //TODO this doesn't deal HTTP errors correctly.
     let request = new SyncStorageRequest(this.repository.uri);
     request.delete(wipeCallback);
   },
 
-  /*
-   * All other invocations of store should have returned prior to store being
-   * invoked with DONE. It is best if you invoke store serially.
-   */
   store: function store(record) {
     // Ensure that we can't be finished more than once.
     if (this.done) {
@@ -390,7 +334,51 @@ Server11Session.prototype = {
    * Private stuff.
    */
 
-  /*
+  /**
+   * Perform a fetch and call fetchCallback appropriately.
+   */
+  _fetchRecords: function(uri, fetchCallback) {
+    let request = new SyncStorageRequest(uri);
+    request.setHeader("Accept", "application/newlines");
+
+    request.onProgress = function onProgress() {
+      let response = request.response;
+      if (!response.success) {
+        request.abort();
+        fetchCallback(response, DONE);
+        return;
+      }
+      let newline;
+      while ((newline = response.body.indexOf("\n")) > 0) {
+        let json = response.body.slice(0, newline);
+        response.body = response.body.slice(newline + 1);
+        let error, record;
+        try {
+          record = JSON.parse(json);
+        } catch(ex) {
+          // Notify the caller of genuine parsing errors.
+          error = ex;
+        }
+        if (fetchCallback(error, record) == STOP) {
+          request.abort();
+          return;
+        }
+      }
+    };
+    request.onComplete = function onComplete(error) {
+      let response = request.response;
+      // 'response.success' exposes nsIHttpChannel::requestSucceeded.
+      if (error || response.success) {
+        fetchCallback(error, DONE);
+      } else {
+        // We had an HTTP error, pass the HTTP response as the error.
+        fetchCallback(response, DONE);
+      }
+    };
+    request.get();
+  },
+
+  /**
    * Work through the flush queue, flushing each batch. If an existing
    * flush is in progress, return. Ensure that if `done` is true, the
    * storeCallback is invoked once all items have been flushed.

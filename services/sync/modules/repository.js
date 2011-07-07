@@ -43,6 +43,7 @@ Cu.import("resource://services-sync/rest.js");
 Cu.import("resource://services-sync/util.js");
 
 const EXPORTED_SYMBOLS = ["Repository",
+                          "RepositorySession",
                           "Server11Repository",
                           "Crypto5Middleware"];
 
@@ -50,7 +51,7 @@ const DONE = { toString: function() "<DONE>" };
 const STOP = { toString: function() "<STOP>" };
 
 /**
- * Base repository
+ * Base repository.
  */
 function Repository() {}
 Repository.prototype = {
@@ -60,6 +61,40 @@ Repository.prototype = {
    */
   DONE: DONE,
   STOP: STOP,
+
+  /**
+   * Create a new session object.
+   *
+   * @param storeCallback
+   *        Callback with the signature (error). It may be called multiple
+   *        times with error objects. It will be always called with the DONE
+   *        value when the store operation has been completed.
+   *        @param error is an error object (where `error.guids` is an array
+   *                     of the records' GUIDs that couldn't be stored and
+   *                     `error.info` describes the error, e.g. an exception)
+   *                     or the DONE value.
+   *        @return STOP if the store session should be aborted.
+   *
+   * @param sessionCallback
+   *        Callback with the signature (error, session). Invoked once a
+   *        session object has been instantiated.
+   *
+   * @return an object which implements the RepositorySession interface.
+   */
+  createSession: function createSession(storeCallback, sessionCallback) {
+    sessionCallback("Repository must implement 'createSession'");
+  }
+};
+
+/**
+ * A session for working with a Repository.
+ *
+ * TODO: can we make more than one of these at a time?
+ */
+function RepositorySession() {
+}
+RepositorySession.prototype = {
+
 
   /**
    * Retrieve a sequence of GUIDs corresponding to records that have been
@@ -72,7 +107,7 @@ Repository.prototype = {
    *        @param error is null for a successful operation.
    */
   guidsSince: function guidsSince(timestamp, guidsCallback) {
-    throw "Repository must implement 'guidsSince'";
+    throw "RepositorySession must implement 'guidsSince'";
   },
 
   /**
@@ -89,7 +124,7 @@ Repository.prototype = {
    *        @return STOP if the fetch operation should be aborted.
    */
   fetchSince: function fetchSince(timestamp, fetchCallback) {
-    throw "Repository must implement 'fetchSince'";
+    throw "RepositorySession must implement 'fetchSince'";
   },
 
   /**
@@ -106,40 +141,36 @@ Repository.prototype = {
    *        @return STOP if the fetch operation should be aborted.
    */
   fetch: function fetch(guids, fetchCallback) {
-    throw "Repository must implement 'fetch'";
+    throw "RepositorySession must implement 'fetch'";
   },
 
   /**
-   * Create and return a new store session object.
+   * Store an individual record in such a way that it won't be unnecessarily
+   * returned by a fetch operation.
+   * Implementations may choose to flush records to the data store in batches.
+   * Callers must therefore call store with the DONE value after the last item.
    *
-   * @param storeCallback
-   *        Callback with the signature (error). It may be called multiple
-   *        times with error objects. It will be always called with the DONE
-   *        value when the store operation has been completed.
-   *        @param error is an error object (where `error.guids` is an array
-   *                     of the records' GUIDs that couldn't be stored and
-   *                     `error.info` describes the error, e.g. an exception)
-   *                     or the DONE value.
-   *        @return STOP if the store session should be aborted.
-   *
-   * @return an object with the following interface:
-   *
-   *   store(record) -- Store an individual record. Implementations may
-   *                    choose to flush records to the data store in batches.
-   *                    Callers must therefore call it with the DONE value
-   *                    after the last item.
+   * @param record
+   *        A record to store, or the value DONE.
    */
-  newStoreSession: function newStoreSession(storeCallback) {
-    throw "Repository must implement 'newStoreSession'";
+  store: function store(record) {
+    throw "RepositorySession must implement 'store'";
   },
 
   /**
    * Delete all items stored in the repository.
    */
   wipe: function wipe(wipeCallback) {
-    throw "Repository must implement 'wipe'";
-  }
+    throw "RepositorySession must implement 'wipe'";
+  },
 
+  /**
+   * Perform any necessary cleanup, invoking callback when it's safe to
+   * proceed.
+   */
+  dispose: function dispose(callback) {
+    callback();
+  },
 };
 
 //TODO question:
@@ -183,12 +214,54 @@ Server11Repository.prototype = {
    */
   downloadLimit: null,
 
-  /**
-   * Repository API
-   */
+  createSession: function createSession(storeCallback, sessionCallback) {
+    let session = new Server11Session(this, storeCallback);
+    sessionCallback(null, session);
+  }
+};
 
+/**
+ * N.B., Server11Session does not currently implement the necessary
+ * transactionality to be the second pair in a sync exchange: that is, if
+ * stores are performed prior to reads, the reads will include records added by
+ * the store operation.
+ *
+ * TODO: change this?
+ */
+function Server11Session(repository, storeCallback) {
+  this.repository    = repository;
+  this.storeCallback = storeCallback;
+  this.batch         = [];   // Holds items until we have enough for a batch.
+  this.flushQueue    = [];   // Holds completed batches to be flushed.
+
+  let level = Svc.Prefs.get("log.logger.repository.server.store");
+  this._log = Log4Moz.repository.getLogger("Sync.Server11Session");
+  this._log.level = Log4Moz.Level[level];
+}
+Server11Session.prototype = {
+  __proto__: RepositorySession.prototype,
+
+  batch:         null,
+  flushQueue:    null,
+  repository:    null,
+  storeCallback: null,
+
+  /*
+   * Flushing control.
+   */
+  done: false,
+  flushing: 0,
+
+  /**
+   * Upload batch size.
+   */
+  batchSize: 100,
+
+  /**
+   * Session API.
+   */
   guidsSince: function guidsSince(timestamp, guidsCallback) {
-    let request = new SyncStorageRequest(this.uri + "?newer=" + timestamp);
+    let request = new SyncStorageRequest(this.repository.uri + "?newer=" + timestamp);
     request.get(function (error) {
       // Network error of sorts.
       if (error) {
@@ -216,20 +289,21 @@ Server11Repository.prototype = {
   },
 
   fetchSince: function fetchSince(timestamp, fetchCallback) {
-    let uri = this.uri + "?full=1&newer=" + timestamp;
-    if (this.downloadLimit) {
-      uri += "&limit=" + this.downloadLimit + "&sort=index";
+    let uri = this.repository.uri + "?full=1&newer=" + timestamp;
+    if (this.repository.downloadLimit) {
+      uri += "&limit=" + this.repository.downloadLimit + "&sort=index";
     }
     this._fetchRecords(uri, fetchCallback);
   },
 
   fetch: function fetch(guids, fetchCallback) {
-    let uri = this.uri + "?full=1&ids=" + guids;
+    let uri = this.repository.uri + "?full=1&ids=" + guids;
     this._fetchRecords(uri, fetchCallback);
   },
 
-  newStoreSession: function newStoreSession(storeCallback) {
-    return new ServerStoreSession(this, storeCallback);
+  createSession: function createSession(storeCallback, sessionCallback) {
+    let session = new Server11Session(this, storeCallback);
+    sessionCallback(null, session);
   },
 
   /**
@@ -285,42 +359,9 @@ Server11Repository.prototype = {
   },
 
   wipe: function wipe(wipeCallback) {
-    let request = new SyncStorageRequest(this.uri);
+    let request = new SyncStorageRequest(this.repository.uri);
     request.delete(wipeCallback);
-  }
-};
-
-function ServerStoreSession(repository, storeCallback) {
-  this.repository    = repository;
-  this.storeCallback = storeCallback;
-  this.batch         = [];   // Holds items until we have enough for a batch.
-  this.flushQueue    = [];   // Holds completed batches to be flushed.
-
-  let level = Svc.Prefs.get("log.logger.repository.server.store");
-  this._log = Log4Moz.repository.getLogger("Sync.ServerStoreSession");
-  this._log.level = Log4Moz.Level[level];
-}
-ServerStoreSession.prototype = {
-
-  batch:         null,
-  flushQueue:    null,
-  repository:    null,
-  storeCallback: null,
-
-  /*
-   * Flushing control.
-   */
-  done: false,
-  flushing: 0,
-
-  /**
-   * Upload batch size
-   */
-  batchSize: 100,
-
-  /**
-   * Store Session API
-   */
+  },
 
   /*
    * All other invocations of store should have returned prior to store being
@@ -502,20 +543,11 @@ Crypto5Middleware.prototype = {
    * Repository API
    */
 
-  guidsSince: function guidsSince(timestamp, guidsCallback) {
-    this.repository.guidsSince(timestamp, guidsCallback);
-  },
-
-  fetchSince: function fetchSince(timestamp, fetchCallback) {
-    this.repository.fetchSince(timestamp, this.makeDecryptCb(fetchCallback));
-  },
-
-  fetch: function fetch(guids, fetchCallback) {
-    this.repository.fetch(guids, this.makeDecryptCb(fetchCallback));
-  },
-
-  newStoreSession: function newStoreSession(storeCallback) {
-    return new Crypto5StoreSession(this, storeCallback);
+  createSession: function createSession(storeCallback, sessionCallback) {
+    // Constructor takes care of invoking sessionCallback on our behalf.
+    // TODO: do we have any GC issues here? Setting to this.session just in
+    // case...
+    this.session = new Crypto5StoreSession(this, storeCallback, sessionCallback);
   },
 
   /**
@@ -594,16 +626,36 @@ Crypto5Middleware.prototype = {
 
 };
 
-function Crypto5StoreSession(repository, storeCallback) {
-  this.repository = repository;
+function Crypto5StoreSession(repository, storeCallback, sessionCallback) {
+  this.repository    = repository;
   this.storeCallback = storeCallback;
-  this.session = repository.repository.newStoreSession(storeCallback);
+  this.session       = undefined;
+  // TODO: do we need to wrap storeCallback at all?
+  repository.repository.createSession(storeCallback,
+    function (error, session) {
+      this.session = session;
+      sessionCallback(error, this);
+    }.bind(this));
+  return this;
 }
 Crypto5StoreSession.prototype = {
+  __proto__: RepositorySession.prototype,
 
   repository: null,
   storeCallback: null,
   session: null,
+
+  guidsSince: function guidsSince(timestamp, guidsCallback) {
+    this.session.guidsSince(timestamp, guidsCallback);
+  },
+
+  fetchSince: function fetchSince(timestamp, fetchCallback) {
+    this.session.fetchSince(timestamp, this.repository.makeDecryptCb(fetchCallback));
+  },
+
+  fetch: function fetch(guids, fetchCallback) {
+    this.session.fetch(guids, this.repository.makeDecryptCb(fetchCallback));
+  },
 
   store: function store(record) {
     if (record == DONE) {
@@ -620,6 +672,17 @@ Crypto5StoreSession.prototype = {
       return;
     }
     this.session.store(wbo);
-  }
+  },
 
+  wipe: function wipe(wipeCallback) {
+    this.session.wipe(wipeCallback);
+  },
+
+  dispose: function dispose(callback) {
+    // Clean up GC hack.
+    if (this.repository.session == this) {
+      this.repository.session = undefined;
+    }
+    callback();
+  }
 };

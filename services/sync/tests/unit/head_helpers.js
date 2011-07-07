@@ -334,38 +334,40 @@ WBORepository.prototype = {
    * Repository API
    */
 
-  guidsSince: function guidsSince(timestamp, guidsCallback) {
-    guidsCallback(null, [guid for ([guid, wbo] in Iterator(this.wbos))
-                              if (wbo.modified > timestamp)]);
-  },
-
-  fetchSince: function fetchSince(timestamp, fetchCallback) {
-    for (let [guid, wbo] in Iterator(this.wbos)) {
-      if (wbo.modified > timestamp) {
-        if (fetchCallback(null, wbo) == STOP) {
-          return;
-        }
-      }
-    }
-    fetchCallback(null, Repository.prototype.DONE);
-  },
-
-  fetch: function fetch(guids, fetchCallback) {
-    const STOP = Repository.prototype.STOP;
-    for (let i = 0; i < guids.length; i++) {
-      let wbo = this.wbos[guids[i]];
-      if (wbo) {
-        if (fetchCallback(null, wbo) == STOP) {
-          return;
-        }
-      }
-    }
-    fetchCallback(null, Repository.prototype.DONE);
-  },
-
-  newStoreSession: function newStoreSession(storeCallback) {
+  createSession: function createSession(storeCallback, sessionCallback) {
     let repo = this;
-    return {
+    sessionCallback(null, {
+      __proto__: RepositorySession.prototype,
+
+      guidsSince: function guidsSince(timestamp, guidsCallback) {
+        guidsCallback(null, [guid for ([guid, wbo] in Iterator(repo.wbos))
+                                  if (wbo.modified > timestamp)]);
+      },
+
+      fetchSince: function fetchSince(timestamp, fetchCallback) {
+        for (let [guid, wbo] in Iterator(repo.wbos)) {
+          if (wbo.modified > timestamp) {
+            if (fetchCallback(null, wbo) == STOP) {
+              return;
+            }
+          }
+        }
+        fetchCallback(null, Repository.prototype.DONE);
+      },
+
+      fetch: function fetch(guids, fetchCallback) {
+        const STOP = Repository.prototype.STOP;
+        for (let i = 0; i < guids.length; i++) {
+          let wbo = repo.wbos[guids[i]];
+          if (wbo) {
+            if (fetchCallback(null, wbo) == STOP) {
+              return;
+            }
+          }
+        }
+        fetchCallback(null, Repository.prototype.DONE);
+      },
+
       store: function store(record) {
         if (record == Repository.prototype.DONE) {
           storeCallback(Repository.prototype.DONE);
@@ -373,7 +375,7 @@ WBORepository.prototype = {
         }
         repo.wbos[record.id] = record;
       }
-    };
+    });
   },
 
   /**

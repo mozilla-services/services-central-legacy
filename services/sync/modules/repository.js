@@ -554,21 +554,6 @@ Crypto5Middleware.prototype = {
    * Crypto + storage format stuff
    */
 
-  //XXX TODO this doesn't handle key refetches yet
-  makeDecryptCb: function makeDecryptCb(fetchCallback) {
-    return (function decryptCallback(error, record) {
-      if (!error && record != DONE) {
-        try {
-          record = this.decrypt(record);
-        } catch (ex) {
-          record = null;
-          error = ex;
-        }
-      }
-      return fetchCallback(error, record);
-    }).bind(this);
-  },
-
   encrypt: function encrypt(record) {
     // 'sortindex' and 'ttl' are properties on the outer WBO.
     let sortindex = record.sortindex;
@@ -650,11 +635,11 @@ Crypto5StoreSession.prototype = {
   },
 
   fetchSince: function fetchSince(timestamp, fetchCallback) {
-    this.session.fetchSince(timestamp, this.repository.makeDecryptCb(fetchCallback));
+    this.session.fetchSince(timestamp, this.makeDecryptCb(fetchCallback));
   },
 
   fetch: function fetch(guids, fetchCallback) {
-    this.session.fetch(guids, this.repository.makeDecryptCb(fetchCallback));
+    this.session.fetch(guids, this.makeDecryptCb(fetchCallback));
   },
 
   store: function store(record) {
@@ -684,5 +669,23 @@ Crypto5StoreSession.prototype = {
       this.repository.session = undefined;
     }
     callback();
+  },
+
+  //XXX TODO this doesn't handle key refetches yet
+  // Idea: consumers should deal with this. If this passes an HMAC error back
+  // to them, and this was the first time they've encountered one, they can
+  // abort with STOP and then restart the fetch.
+  makeDecryptCb: function makeDecryptCb(fetchCallback) {
+    return (function decryptCallback(error, record) {
+      if (!error && record != DONE) {
+        try {
+          record = this.repository.decrypt(record);
+        } catch (ex) {
+          record = null;
+          error = ex;
+        }
+      }
+      return fetchCallback(error, record);
+    }).bind(this);
   }
 };

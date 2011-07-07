@@ -92,8 +92,14 @@ Repository.prototype = {
  * TODO: can we make more than one of these at a time?
  */
 function RepositorySession() {
+  this.timestamp = 0;
 }
 RepositorySession.prototype = {
+  /**
+   * Used for tracking changes. The timestamp can be set with an initial value,
+   * and will be reported in the dispose callback.
+   */
+  timestamp: 0,
 
   /**
    * Retrieve a sequence of GUIDs corresponding to records that have been
@@ -173,7 +179,7 @@ RepositorySession.prototype = {
    * proceed.
    */
   dispose: function dispose(callback) {
-    callback();
+    callback(this.timestamp);
   },
 };
 
@@ -231,6 +237,7 @@ Server11Repository.prototype = {
  * the store operation.
  *
  * TODO: change this?
+ * TODO: update Server11Session to track timestamps for records passing through.
  */
 function Server11Session(repository, storeCallback) {
   this.repository    = repository;
@@ -656,7 +663,7 @@ Crypto5StoreSession.prototype = {
     if (this.repository.session == this) {
       this.repository.session = undefined;
     }
-    callback();
+    RepositorySession.prototype.dispose.call(this, callback);
   },
 
   //XXX TODO this doesn't handle key refetches yet

@@ -102,6 +102,18 @@ add_test(function test_fetchSince() {
   });
 });
 
+add_test(function test_timestamp() {
+  let repo = setup_fixtures();
+  function sessionCallback(error, session) {
+    session.timestamp = 12345;
+    session.dispose(function (ts) {
+      do_check_eq(ts, 12345);
+      run_next_test();
+    });
+  }
+  repo.createSession(null, sessionCallback);
+});
+
 add_test(function test_fetch() {
   let repo = setup_fixtures();
   let guids = ["123456789012", "non-existent", "charliesheen", "trololololol"];

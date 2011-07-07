@@ -65,11 +65,11 @@ SyncStorageRequest.prototype = {
   /**
    * The string to use as the base User-Agent in Sync requests.
    * These strings will look something like
-   * 
+   *
    *   Firefox/4.0 FxSync/1.8.0.20100101.mobile
-   * 
+   *
    * or
-   * 
+   *
    *   Firefox Aurora/5.0a1 FxSync/1.9.0.20110409.desktop
    */
   userAgent:

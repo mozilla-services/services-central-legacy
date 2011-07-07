@@ -31,7 +31,7 @@ function setup_fixtures() {
 
 function run_test() {
   initTestLogging();
-  Log4Moz.repository.getLogger("Net.Resource").level = Log4Moz.Trace;
+  Log4Moz.repository.getLogger("Sync.StorageRequest").level = Log4Moz.Trace;
   run_next_test();
 }
 
@@ -75,7 +75,7 @@ add_test(function test_guidsSince_httpError() {
     do_check_eq(guids, null);
     do_check_neq(error, null);
     do_check_eq(error.status, 404);
-    do_check_eq(error, "Cannae\nfind\nit");
+    do_check_eq(error.body, "Cannae\nfind\nit");
     server.stop(run_next_test);
   });
 });
@@ -183,10 +183,7 @@ add_test(function test_wipe_empty() {
   });
 });
 
-// TODO test is disabled because we can't implement the desired behaviour
-// yet in Server11Repository.
-function DISABLED_add_test() {}
-DISABLED_add_test(function test_fetchSince_httpError() {
+add_test(function test_fetchSince_httpError() {
   let server = httpd_setup({
     "/1.1/john/storage/marbles": httpd_handler(404, "Not Found", "Cannae\nfind\nit")
   });
@@ -201,7 +198,7 @@ DISABLED_add_test(function test_fetchSince_httpError() {
     calledDone = true;
     do_check_neq(error, null);
     do_check_eq(error.status, 404);
-    do_check_eq(error, "Cannae\nfind\nit");
+    do_check_eq(error.body, "Cannae\nfind\nit");
     server.stop(run_next_test);
   });
 });
@@ -270,9 +267,7 @@ add_test(function test_fetch_networkError() {
   });
 });
 
-// TODO test is disabled because we can't implement the desired behaviour
-// yet in Server11Repository.
-DISABLED_add_test(function test_fetch_httpError() {
+add_test(function test_fetch_httpError() {
   let server = httpd_setup({
     "/1.1/john/storage/marbles": httpd_handler(404, "Not Found", "Cannae\nfind\nit")
   });
@@ -287,7 +282,7 @@ DISABLED_add_test(function test_fetch_httpError() {
     calledDone = true;
     do_check_neq(error, null);
     do_check_eq(error.status, 404);
-    do_check_eq(error, "Cannae\nfind\nit");
+    do_check_eq(error.body, "Cannae\nfind\nit");
     server.stop(run_next_test);
   });
 });
@@ -516,7 +511,7 @@ add_test(function test_store_httpError() {
     }
 
     if (error != DONE) {
-      do_check_eq(error.info, "Cannae\nfind\nit");
+      do_check_eq(error.info.body, "Cannae\nfind\nit");
       do_check_eq(error.info.status, 404);
       do_check_eq(error.guids, "123412341234,123412341235");
       return;

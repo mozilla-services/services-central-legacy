@@ -39,7 +39,7 @@
 const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
 Cu.import("resource://services-sync/log4moz.js");
-Cu.import("resource://services-sync/resource.js");
+Cu.import("resource://services-sync/rest.js");
 Cu.import("resource://services-sync/util.js");
 
 const EXPORTED_SYMBOLS = ["Repository",
@@ -145,8 +145,8 @@ Repository.prototype = {
 //TODO question:
 // how do we deal with http failures, like 400 (e.g. over quota), 401, 503, etc?
 // probably best to decouple them from the synchronizer and notify the service
-// via observer notification. synchronizer probably only needs to know that it
-// failed, not why.
+// or engine via observer notification directly from SyncStorageRequest.
+// synchronizer probably only needs to know that it failed, not why.
 
 /**
  * Sync 1.1 server repository
@@ -188,8 +188,8 @@ Server11Repository.prototype = {
    */
 
   guidsSince: function guidsSince(timestamp, guidsCallback) {
-    let resource = new AsyncResource(this.uri + "?newer=" + timestamp);
-    resource.get(function (error, result) {
+    let request = new SyncStorageRequest(this.uri + "?newer=" + timestamp);
+    request.get(function (error) {
       // Network error of sorts.
       if (error) {
         guidsCallback(error);
@@ -197,14 +197,16 @@ Server11Repository.prototype = {
       }
 
       // HTTP error (could be a mis-configured server, wrong password, etc.)
-      if (result.status != 200) {
-        guidsCallback(result);
+      let response = request.response;
+      if (response.status != 200) {
+        guidsCallback(response);
         return;
       }
 
       // Convert the result to JSON. Invalid JSON is sadfaces.
+      let result;
       try {
-        result = JSON.parse(result);
+        result = JSON.parse(response.body);
       } catch (ex) {
         guidsCallback(ex);
         return;
@@ -235,30 +237,29 @@ Server11Repository.prototype = {
    */
 
   _fetchRecords: function(uri, fetchCallback) {
-    let resource = new AsyncResource(uri);
-    resource.setHeader("Accept", "application/newlines");
-
-    //TODO XXX resource._data and resouce._onProgress are so retarded,
-    // ('this' is the ChannelListener, not the resource!)
-    // need a better streaming api for resource
-
-    //TODO when we do refactor the onProgress stuff, we should make the http
-    // status code, headers, success flag, etc. available as well.
+    let request = new SyncStorageRequest(uri);
+    request.setHeader("Accept", "application/newlines");
 
     function maybeAbort(rv) {
       if (rv == STOP) {
-        //TODO resource should have a way to abort
+        request.abort();
+        //XXX TODO should we call fetchCallback once more with DONE?
+        // or should we assume that since fetchCallback returned STOP
+        // that it knows it's not going to be called again ever.
       }
     }
 
-    resource._onProgress = function onProgress() {
-      // TODO we should really bail all of this if the HTTP status code is
-      // anything but 200 and Content-Type is anything but application/newlines.
-      // But the resource API won't allow us to do this :(((
+    request.onProgress = function onProgress() {
+      let response = request.response;
+      if (!response.success) {
+        request.abort();
+        fetchCallback(response, DONE);
+        return;
+      }
       let newline;
-      while ((newline = this._data.indexOf("\n")) > 0) {
-        let json = this._data.slice(0, newline);
-        this._data = this._data.slice(newline + 1);
+      while ((newline = response.body.indexOf("\n")) > 0) {
+        let json = response.body.slice(0, newline);
+        response.body = response.body.slice(newline + 1);
         let record;
         try {
           record = JSON.parse(json);
@@ -270,20 +271,22 @@ Server11Repository.prototype = {
         maybeAbort(fetchCallback(null, record));
       }
     };
-    resource.get(function onGet(error, result) {
-      // HTTP error ... TODO what about the onProgress stuff on a 404?!?
-      // 'result.success' exposes nsIHttpChannel::requestSucceeded.
-      if (error || result.success) {
+    request.onComplete = function onComplete(error) {
+      let response = request.response;
+      // 'response.success' exposes nsIHttpChannel::requestSucceeded.
+      if (error || response.success) {
         fetchCallback(error, DONE);
       } else {
-        fetchCallback(result, DONE);
+        // We had an HTTP error, pass the HTTP response as the error.
+        fetchCallback(response, DONE);
       }
-    });
+    };
+    request.get();
   },
 
   wipe: function wipe(wipeCallback) {
-    let resource = new AsyncResource(this.uri);
-    resource.delete(wipeCallback);
+    let request = new SyncStorageRequest(this.uri);
+    request.delete(wipeCallback);
   }
 };
 
@@ -414,15 +417,15 @@ ServerStoreSession.prototype = {
     }
 
     let batch = this.flushQueue.pop();
-    let resource;
+    let request;
     try {
-      resource = new AsyncResource(this.repository.uri);
+      request = new SyncStorageRequest(this.repository.uri);
     } catch (ex) {
       this.storeCallback({info: ex, guids: batchGUIDs(batch)});
       return finalmente();
     }
 
-    resource.post(batch, function onPost(error, result) {
+    request.post(batch, function onPost(error) {
       // Network error of sorts.
       if (error) {
         this.storeCallback({info: error, guids: batchGUIDs(batch)});
@@ -431,15 +434,15 @@ ServerStoreSession.prototype = {
 
       // HTTP error (could be a mis-configured server, over quota, etc.)
       // 'result.success' exposes nsIHttpChannel::requestSucceeded.
-      if (!result.success) {
-        this.storeCallback({info: result, guids: batchGUIDs(batch)});
+      if (!request.response.success) {
+        this.storeCallback({info: request.response, guids: batchGUIDs(batch)});
         return finalmente();
       }
 
       // Analyze return value for whether some objects couldn't be saved.
       let resultObj;
       try {
-        resultObj = JSON.parse(result);
+        resultObj = JSON.parse(request.response.body);
       } catch (ex) {
         this._log.warn("Caught JSON parse exception: " + Utils.exceptionStr(ex));
         // Server return value did not parse as JSON. We must assume it's not

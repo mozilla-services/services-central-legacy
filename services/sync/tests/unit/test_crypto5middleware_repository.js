@@ -87,9 +87,7 @@ add_test(function test_guidsSince() {
     session.guidsSince(2000, function guidsCallback(error, guids) {
       do_check_eq(error, null);
       do_check_eq(expected + "", guids.sort());
-      session.dispose(function () {
-        run_next_test();
-      });
+      session.dispose(run_next_test);
     });
   }
   setup_session(sessionCallback);
@@ -125,9 +123,7 @@ add_test(function test_fetchSince() {
       // We've reached the end of the list, so we must be done.
       do_check_eq(record, DONE);
       calledDone = true;
-      session.dispose(function () {
-        run_next_test();
-      });
+      session.dispose(run_next_test);
     });
   }
   setup_session(sessionCallback);
@@ -164,9 +160,7 @@ add_test(function test_fetch() {
       // We've reached the end of the list, so we must be done.
       do_check_eq(record, DONE);
       calledDone = true;
-      session.dispose(function () {
-        run_next_test();
-      });
+      session.dispose(run_next_test);
     });
   }
   setup_session(sessionCallback);
@@ -192,9 +186,7 @@ add_test(function test_store_empty() {
     do_check_eq(error, DONE);
     calledDone = true;
     do_check_eq(0, repo.count);
-    session.dispose(function () {
-      run_next_test();
-    });
+    session.dispose(run_next_test);
   }
   crypto5.createSession(storeCallback, sessionCallback);
 });
@@ -261,9 +253,7 @@ add_test(function test_store() {
       do_check_eq(wbo_payload.hmac, expected_payload.hmac);
     }
 
-    session.dispose(function () {
-      run_next_test();
-    });
+    session.dispose(run_next_test);
   }
   crypto5.createSession(storeCallback, sessionCallback);
 });

@@ -67,12 +67,35 @@ Synchronizer.prototype = {
    * Do the stuff to the thing.
    */
   synchronize: function synchronize(callback) {
-    // * Look at meta/global (storage version, syncID, possibly wipe, etc.)
-    //   Should Server11Repository (or middleware around it) incorporate this
-    //   logic? That way the Synchronizer wouldn't have to know about it.
-    // * Sync A to B
-    // * Sync B to A
-    // * Profit.
+    function storeCallbackA(error) {
+    }
+    function storeCallbackB(error) {
+    }
+
+    /**
+     * We have two sessions. Now we can exchange records between the two.
+     */
+    function synchronizeSessions(sessionA, sessionB) {
+      // TODO
+      callback();
+    }
+
+    function sessionCallbackA(error, sessionA) {
+      if (error) {
+        return callback(error);
+      }
+      function sessionCallbackB(error, sessionB) {
+        if (error) {
+          return sessionA.dispose(function () {
+            callback(error);
+          });
+        }
+        synchronizeSessions(sessionA, sessionB);
+      }
+      this.repositoryB.createSession(storeCallbackB, sessionCallbackB.bind(this));
+    }
+
+    this.repositoryA.createSession(storeCallbackA, sessionCallbackA.bind(this));
   },
 
   /**

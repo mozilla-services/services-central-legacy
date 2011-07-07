@@ -32,100 +32,135 @@ add_test(function wbo_repository_stop() {
   let repo = setup_fixtures();
   let counter = 0;
   let stopped = false;
-  function fetchCallback(error, record) {
-    if (stopped) {
-      do_throw("fetchCallback should not be invoked after returning STOP!");
+  repo.createSession(null, function (err, session) {
+    function fetchCallback(error, record) {
+      if (stopped) {
+        do_throw("fetchCallback should not be invoked after returning STOP!");
+      }
+      counter++;
+      if (counter == 2) {
+        stopped = true;
+        Utils.nextTick(function () {
+          do_check_eq(2, counter);
+          session.dispose(function () {
+            run_next_test();
+          });
+        });
+        return STOP;
+      }
     }
-    counter++;
-    if (counter == 2) {
-      stopped = true;
-      Utils.nextTick(function () {
-        do_check_eq(2, counter);
-        run_next_test();
-      });
-      return STOP;
-    }
-  }
-  repo.fetchSince(2000, fetchCallback);
+    do_check_true(!err);
+    session.fetchSince(2000, fetchCallback);
+  });
 });
 
 add_test(function test_guidsSince() {
   let repo = setup_fixtures();
   let expected = ["123456789012", "charliesheen", "trololololol"];
-  repo.guidsSince(2000, function guidsCallback(error, guids) {
-    do_check_eq(error, null);
-    do_check_eq(expected + "", guids.sort());
-    run_next_test();
-  });
-});
+  function sessionCallback(err, session) {
+    function guidsCallback(error, guids) {
+      do_check_eq(error, null);
+      do_check_eq(expected + "", guids.sort());
+      session.dispose(function () {
+        run_next_test();
+      });
+    }
 
+    do_check_true(!err);
+    session.guidsSince(2000, guidsCallback);
+  }
+  repo.createSession(null, sessionCallback);
+});
 
 add_test(function test_fetchSince() {
   let repo = setup_fixtures();
   let expected = ["123456789012", "charliesheen", "trololololol"];
   let calledDone = false;
-  repo.fetchSince(2000, function fetchCallback(error, record) {
-    if (calledDone) {
-      do_throw("Did not expect any more items after DONE!");
-    }
+  repo.createSession(null, function (err, session) {
+    do_check_true(!err);
+    session.fetchSince(2000, function fetchCallback(error, record) {
+      if (calledDone) {
+        do_throw("Did not expect any more items after DONE!");
+      }
 
-    do_check_eq(error, null);
-    // Verify that the record is one of the ones we expect.
-    if (expected.length) {
-      let index = expected.indexOf(record.id);
-      do_check_neq(index, -1);
-      expected.splice(index, 1);
-      return;
-    }
+      do_check_eq(error, null);
+      // Verify that the record is one of the ones we expect.
+      if (expected.length) {
+        let index = expected.indexOf(record.id);
+        do_check_neq(index, -1);
+        expected.splice(index, 1);
+        return;
+      }
 
-    // We've reached the end of the list, so we must be done.
-    do_check_eq(record, DONE);
-    calledDone = true;
-    run_next_test();
+      // We've reached the end of the list, so we must be done.
+      do_check_eq(record, DONE);
+      calledDone = true;
+      session.dispose(function () {
+        run_next_test();
+      });
+    });
   });
 });
-
 
 add_test(function test_fetch() {
   let repo = setup_fixtures();
   let guids = ["123456789012", "non-existent", "charliesheen", "trololololol"];
   let expected = ["123456789012", "charliesheen", "trololololol"];
   let calledDone = false;
-  repo.fetch(guids, function fetchCallback(error, record) {
-    if (calledDone) {
-      do_throw("Did not expect any more items after DONE!");
-    }
 
-    do_check_eq(error, null);
-    // Verify that the record is one of the ones we expect.
-    if (expected.length) {
-      let index = expected.indexOf(record.id);
-      do_check_neq(index, -1);
-      expected.splice(index, 1);
-      return;
-    }
+  function sessionCallback(error, session) {
+    do_check_true(!error);
+    session.fetch(guids, function fetchCallback(error, record) {
+      if (calledDone) {
+        do_throw("Did not expect any more items after DONE!");
+      }
 
-    // We've reached the end of the list, so we must be done.
-    do_check_eq(record, DONE);
-    calledDone = true;
-    run_next_test();
-  });
+      do_check_false(!!error);
+      // Verify that the record is one of the ones we expect.
+      if (expected.length) {
+        let index = expected.indexOf(record.id);
+        do_check_neq(index, -1);
+        expected.splice(index, 1);
+        return;
+      }
+
+      // We've reached the end of the list, so we must be done.
+      do_check_eq(record, DONE);
+      calledDone = true;
+      session.dispose(function () {
+        run_next_test();
+      });
+    });
+  }
+
+  repo.createSession(null, sessionCallback);
 });
 
 add_test(function test_store_empty() {
   _("Test adding no items to an empty WBORepository.");
   let repo = new WBORepository();
   let calledDone = false;
-  let session = repo.newStoreSession(function storeCallback(error) {
+  let session;
+
+  function sessionCallback(error, sess) {
+    do_check_false(!!error);
+    session = sess;
+    sess.store(DONE);
+  }
+
+  function storeCallback(error) {
     if (calledDone) {
       do_throw("Did not expect any more items after DONE!");
     }
     do_check_eq(error, DONE);
     calledDone = true;
     do_check_eq(0, repo.count);
-    run_next_test();
-  });
-  session.store(DONE);
+    session.dispose(function () {
+      run_next_test();
+    });
+  }
+
+  repo.createSession(storeCallback, sessionCallback);
 });
 
 add_test(function test_store() {
@@ -133,9 +168,18 @@ add_test(function test_store() {
   let items = [{id: "123412341234", payload: "Bar4"},
                {id: "123412341235", payload: "Bar5"}];
   let repo = new WBORepository();
-
   let calledDone = false;
-  let session = repo.newStoreSession(function storeCallback(error) {
+  let session;
+
+  function sessionCallback(error, sess) {
+    session = sess;
+    for each (record in items) {
+      sess.store(record);
+    }
+    sess.store(DONE);
+  }
+
+  function storeCallback(error) {
     if (calledDone) {
       do_throw("Did not expect any more items after DONE!");
     }
@@ -145,11 +189,10 @@ add_test(function test_store() {
     do_check_eq("Bar4", repo.wbos["123412341234"].payload);
     do_check_eq("Bar5", repo.wbos["123412341235"].payload);
     do_check_eq(undefined, repo.wbos["123412341230"]);
-    run_next_test();
-  });
-
-  for each (record in items) {
-    session.store(record);
+    session.dispose(function () {
+      run_next_test();
+    });
   }
-  session.store(DONE);
+
+  repo.createSession(storeCallback, sessionCallback);
 });

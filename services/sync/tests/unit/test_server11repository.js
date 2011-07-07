@@ -35,6 +35,23 @@ function run_test() {
   run_next_test();
 }
 
+function withSession(repo, f) {
+  repo.createSession(null, function (err, session) {
+    do_check_true(!err);
+    f(session);
+  });
+}
+
+function dispose(session, server) {
+  session.dispose(function () {
+    if (server) {
+      server.stop(run_next_test);
+    } else {
+      run_next_test();
+    }
+  });
+}
+
 add_test(function test_uri() {
   let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
   do_check_eq(repo.uri, "http://localhost:8080/1.1/john/storage/marbles");
@@ -49,20 +66,24 @@ add_test(function test_uri() {
 add_test(function test_guidsSince() {
   let [repo, server] = setup_fixtures();
   let expected = ["123456789012", "charliesheen", "trololololol"];
-  repo.guidsSince(2000, function guidsCallback(error, guids) {
-    do_check_eq(error, null);
-    do_check_eq(expected + "", guids.sort());
-    server.stop(run_next_test);
+  withSession(repo, function (session) {
+    session.guidsSince(2000, function guidsCallback(error, guids) {
+      do_check_eq(error, null);
+      do_check_eq(expected + "", guids.sort());
+      dispose(session, server);
+    });
   });
 });
 
 add_test(function test_guidsSince_networkError() {
   let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
-  repo.guidsSince(2000, function guidsCallback(error, guids) {
-    do_check_eq(guids, null);
-    do_check_neq(error, null);
-    do_check_eq(error.result, Cr.NS_ERROR_CONNECTION_REFUSED);
-    run_next_test();
+  withSession(repo, function (session) {
+    session.guidsSince(2000, function guidsCallback(error, guids) {
+      do_check_eq(guids, null);
+      do_check_neq(error, null);
+      do_check_eq(error.result, Cr.NS_ERROR_CONNECTION_REFUSED);
+      dispose(session);
+    });
   });
 });
 
@@ -71,12 +92,14 @@ add_test(function test_guidsSince_httpError() {
     "/1.1/john/storage/marbles": httpd_handler(404, "Not Found", "Cannae\nfind\nit")
   });
   let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
-  repo.guidsSince(2000, function guidsCallback(error, guids) {
-    do_check_eq(guids, null);
-    do_check_neq(error, null);
-    do_check_eq(error.status, 404);
-    do_check_eq(error.body, "Cannae\nfind\nit");
-    server.stop(run_next_test);
+  withSession(repo, function (session) {
+    session.guidsSince(2000, function guidsCallback(error, guids) {
+      do_check_eq(guids, null);
+      do_check_neq(error, null);
+      do_check_eq(error.status, 404);
+      do_check_eq(error.body, "Cannae\nfind\nit");
+      dispose(session, server);
+    });
   });
 });
 
@@ -85,12 +108,14 @@ add_test(function test_guidsSince_invalidJSON() {
     "/1.1/john/storage/marbles": httpd_handler(200, "OK", "this is invalid JSON")
   });
   let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
-  repo.guidsSince(2000, function guidsCallback(error, guids) {
-    do_check_eq(guids, null);
-    do_check_neq(error, null);
-    do_check_eq(error.name, "SyntaxError");
-    do_check_eq(error.message, "JSON.parse: unexpected keyword");
-    server.stop(run_next_test);
+  withSession(repo, function (session) {
+    session.guidsSince(2000, function guidsCallback(error, guids) {
+      do_check_eq(guids, null);
+      do_check_neq(error, null);
+      do_check_eq(error.name, "SyntaxError");
+      do_check_eq(error.message, "JSON.parse: unexpected keyword");
+      dispose(session, server);
+    });
   });
 });
 
@@ -98,34 +123,38 @@ add_test(function test_fetchSince() {
   let [repo, server] = setup_fixtures();
   let expected = ["123456789012", "charliesheen", "trololololol"];
   let calledDone = false;
-  repo.fetchSince(2000, function fetchCallback(error, record) {
-    if (calledDone) {
-      do_throw("Did not expect any more items after DONE!");
-    }
+  withSession(repo, function (session) {
+    session.fetchSince(2000, function fetchCallback(error, record) {
+      if (calledDone) {
+        do_throw("Did not expect any more items after DONE!");
+      }
 
-    do_check_eq(error, null);
-    // Verify that the record is one of the ones we expect.
-    if (expected.length) {
-      let index = expected.indexOf(record.id);
-      do_check_neq(index, -1);
-      expected.splice(index, 1);
-      return;
-    }
+      do_check_eq(error, null);
+      // Verify that the record is one of the ones we expect.
+      if (expected.length) {
+        let index = expected.indexOf(record.id);
+        do_check_neq(index, -1);
+        expected.splice(index, 1);
+        return;
+      }
 
-    // We've reached the end of the list, so we must be done.
-    do_check_eq(record, DONE);
-    calledDone = true;
-    server.stop(run_next_test);
+      // We've reached the end of the list, so we must be done.
+      do_check_eq(record, DONE);
+      calledDone = true;
+      dispose(session, server);
+    });
   });
 });
 
 add_test(function test_fetchSince_networkError() {
   let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
-  repo.fetchSince(2000, function fetchCallback(error, record) {
-    do_check_eq(record, DONE);
-    do_check_neq(error, null);
-    do_check_eq(error.result, Cr.NS_ERROR_CONNECTION_REFUSED);
-    run_next_test();
+  withSession(repo, function (session) {
+    session.fetchSince(2000, function fetchCallback(error, record) {
+      do_check_eq(record, DONE);
+      do_check_neq(error, null);
+      do_check_eq(error.result, Cr.NS_ERROR_CONNECTION_REFUSED);
+      dispose(session);
+    });
   });
 });
 
@@ -140,19 +169,21 @@ add_test(function test_wipe() {
   });
   let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
 
-  repo.guidsSince(0, function (error, guids) {
-    _("Check preconditions: 2 GUIDs.");
-    do_check_false(!!error);
-    do_check_eq(2, guids.length);
-
-    _("Wiping removes items.");
-    repo.wipe(function (error) {
+  withSession(repo, function (session) {
+    session.guidsSince(0, function (error, guids) {
+      _("Check preconditions: 2 GUIDs.");
       do_check_false(!!error);
-      repo.guidsSince(0, function (error, guids) {
-        _("Check postconditions: 0 GUIDs.");
+      do_check_eq(2, guids.length);
+
+      _("Wiping removes items.");
+      session.wipe(function (error) {
         do_check_false(!!error);
-        do_check_eq(0, guids.length);
-        server.stop(run_next_test);
+        session.guidsSince(0, function (error, guids) {
+          _("Check postconditions: 0 GUIDs.");
+          do_check_false(!!error);
+          do_check_eq(0, guids.length);
+          dispose(session, server);
+        });
       });
     });
   });
@@ -166,18 +197,20 @@ add_test(function test_wipe_empty() {
   });
   let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
 
-  repo.guidsSince(0, function (error, guids) {
-    _("Check preconditions: 0 GUIDs.");
-    do_check_false(!!error);
-    do_check_eq(0, guids.length);
-
-    repo.wipe(function (error) {
+  withSession(repo, function (session) {
+    session.guidsSince(0, function (error, guids) {
+      _("Check preconditions: 0 GUIDs.");
       do_check_false(!!error);
-      repo.guidsSince(0, function (error, guids) {
-        _("Check postconditions: 0 GUIDs.");
+      do_check_eq(0, guids.length);
+
+      session.wipe(function (error) {
         do_check_false(!!error);
-        do_check_eq(0, guids.length);
-        server.stop(run_next_test);
+        session.guidsSince(0, function (error, guids) {
+          _("Check postconditions: 0 GUIDs.");
+          do_check_false(!!error);
+          do_check_eq(0, guids.length);
+          dispose(session, server);
+        });
       });
     });
   });
@@ -189,17 +222,19 @@ add_test(function test_fetchSince_httpError() {
   });
   let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
   let calledDone = false;
-  repo.fetchSince(2000, function fetchCallback(error, record) {
-    if (calledDone) {
-      do_throw("Did not expect any more items after DONE!");
-    }
+  withSession(repo, function (session) {
+    session.fetchSince(2000, function fetchCallback(error, record) {
+      if (calledDone) {
+        do_throw("Did not expect any more items after DONE!");
+      }
 
-    do_check_eq(record, DONE);
-    calledDone = true;
-    do_check_neq(error, null);
-    do_check_eq(error.status, 404);
-    do_check_eq(error.body, "Cannae\nfind\nit");
-    server.stop(run_next_test);
+      do_check_eq(record, DONE);
+      calledDone = true;
+      do_check_neq(error, null);
+      do_check_eq(error.status, 404);
+      do_check_eq(error.body, "Cannae\nfind\nit");
+      dispose(session, server);
+    });
   });
 });
 
@@ -209,25 +244,27 @@ add_test(function test_fetchSince_invalidJSON() {
   });
   let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
   let calledDone = false;
-  repo.fetchSince(2000, function fetchCallback(error, record) {
-    if (calledDone) {
-      do_throw("Did not expect any more items after DONE!");
-    }
+  withSession(repo, function (session) {
+    session.fetchSince(2000, function fetchCallback(error, record) {
+      if (calledDone) {
+        do_throw("Did not expect any more items after DONE!");
+      }
 
-    // We're going to first be called for the invalid JSON error.
-    if (record != DONE) {
-      do_check_eq(record, null);
-      do_check_neq(error, null);
-      do_check_eq(error.name, "SyntaxError");
-      do_check_eq(error.message, "JSON.parse: unexpected keyword");
-      return;
-    }
+      // We're going to first be called for the invalid JSON error.
+      if (record != DONE) {
+        do_check_eq(record, null);
+        do_check_neq(error, null);
+        do_check_eq(error.name, "SyntaxError");
+        do_check_eq(error.message, "JSON.parse: unexpected keyword");
+        return;
+      }
 
-    // Finally we're called with DONE.
-    calledDone = true;
-    do_check_eq(record, DONE);
-    do_check_eq(error, null);
-    server.stop(run_next_test);
+      // Finally we're called with DONE.
+      calledDone = true;
+      do_check_eq(record, DONE);
+      do_check_eq(error, null);
+      dispose(session, server);
+    });
   });
 });
 
@@ -236,34 +273,38 @@ add_test(function test_fetch() {
   let guids = ["123456789012", "non-existent", "charliesheen", "trololololol"];
   let expected = ["123456789012", "charliesheen", "trololololol"];
   let calledDone = false;
-  repo.fetch(guids, function fetchCallback(error, record) {
-    if (calledDone) {
-      do_throw("Did not expect any more items after DONE!");
-    }
+  withSession(repo, function (session) {
+    session.fetch(guids, function fetchCallback(error, record) {
+      if (calledDone) {
+        do_throw("Did not expect any more items after DONE!");
+      }
 
-    do_check_eq(error, null);
-    // Verify that the record is one of the ones we expect.
-    if (expected.length) {
-      let index = expected.indexOf(record.id);
-      do_check_neq(index, -1);
-      expected.splice(index, 1);
-      return;
-    }
+      do_check_eq(error, null);
+      // Verify that the record is one of the ones we expect.
+      if (expected.length) {
+        let index = expected.indexOf(record.id);
+        do_check_neq(index, -1);
+        expected.splice(index, 1);
+        return;
+      }
 
-    // We've reached the end of the list, so we must be done.
-    do_check_eq(record, DONE);
-    calledDone = true;
-    server.stop(run_next_test);
+      // We've reached the end of the list, so we must be done.
+      do_check_eq(record, DONE);
+      calledDone = true;
+      dispose(session, server);
+    });
   });
 });
 
 add_test(function test_fetch_networkError() {
   let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
-  repo.fetch(["trololololol"], function fetchCallback(error, record) {
-    do_check_eq(record, DONE);
-    do_check_neq(error, null);
-    do_check_eq(error.result, Cr.NS_ERROR_CONNECTION_REFUSED);
-    run_next_test();
+  withSession(repo, function (session) {
+    session.fetch(["trololololol"], function fetchCallback(error, record) {
+      do_check_eq(record, DONE);
+      do_check_neq(error, null);
+      do_check_eq(error.result, Cr.NS_ERROR_CONNECTION_REFUSED);
+      dispose(session);
+    });
   });
 });
 
@@ -273,17 +314,19 @@ add_test(function test_fetch_httpError() {
   });
   let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
   let calledDone = false;
-  repo.fetch(["trololololol"], function fetchCallback(error, record) {
-    if (calledDone) {
-      do_throw("Did not expect any more items after DONE!");
-    }
+  withSession(repo, function (session) {
+    session.fetch(["trololololol"], function fetchCallback(error, record) {
+      if (calledDone) {
+        do_throw("Did not expect any more items after DONE!");
+      }
 
-    do_check_eq(record, DONE);
-    calledDone = true;
-    do_check_neq(error, null);
-    do_check_eq(error.status, 404);
-    do_check_eq(error.body, "Cannae\nfind\nit");
-    server.stop(run_next_test);
+      do_check_eq(record, DONE);
+      calledDone = true;
+      do_check_neq(error, null);
+      do_check_eq(error.status, 404);
+      do_check_eq(error.body, "Cannae\nfind\nit");
+      dispose(session, server);
+    });
   });
 });
 
@@ -293,25 +336,27 @@ add_test(function test_fetch_invalidJSON() {
   });
   let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
   let calledDone = false;
-  repo.fetch(["trololololol"], function fetchCallback(error, record) {
-    if (calledDone) {
-      do_throw("Did not expect any more items after DONE!");
-    }
+  withSession(repo, function (session) {
+    session.fetch(["trololololol"], function fetchCallback(error, record) {
+      if (calledDone) {
+        do_throw("Did not expect any more items after DONE!");
+      }
 
-    // We're going to first be called for the invalid JSON error.
-    if (record != DONE) {
-      do_check_eq(record, null);
-      do_check_neq(error, null);
-      do_check_eq(error.name, "SyntaxError");
-      do_check_eq(error.message, "JSON.parse: unexpected keyword");
-      return;
-    }
+      // We're going to first be called for the invalid JSON error.
+      if (record != DONE) {
+        do_check_eq(record, null);
+        do_check_neq(error, null);
+        do_check_eq(error.name, "SyntaxError");
+        do_check_eq(error.message, "JSON.parse: unexpected keyword");
+        return;
+      }
 
-    // Finally we're called with DONE.
-    calledDone = true;
-    do_check_eq(record, DONE);
-    do_check_eq(error, null);
-    server.stop(run_next_test);
+      // Finally we're called with DONE.
+      calledDone = true;
+      do_check_eq(record, DONE);
+      do_check_eq(error, null);
+      dispose(session, server);
+    });
   });
 });
 
@@ -323,16 +368,22 @@ add_test(function test_store_empty() {
   });
   let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
   let calledDone = false;
-  let session = repo.newStoreSession(function storeCallback(error) {
+  let session;
+  function storeCallback(error) {
     if (calledDone) {
       do_throw("Did not expect any more items after DONE!");
     }
     do_check_eq(error, DONE);
     calledDone = true;
     do_check_eq(0, collection.count());
-    server.stop(run_next_test);
-  });
-  session.store(DONE);
+    dispose(session, server);
+  }
+  function sessionCallback(err, sess) {
+    do_check_false(!!err);
+    session = sess;
+    session.store(DONE);
+  }
+  repo.createSession(storeCallback, sessionCallback);
 });
 
 add_test(function test_store() {
@@ -346,7 +397,8 @@ add_test(function test_store() {
                {id: "123412341235", payload: "Bar5"}];
 
   let calledDone = false;
-  let session = repo.newStoreSession(function storeCallback(error) {
+  let session;
+  function storeCallback(error) {
     if (calledDone) {
       do_throw("Did not expect any more items after DONE!");
     }
@@ -356,20 +408,25 @@ add_test(function test_store() {
     do_check_eq("Bar4", collection.wbos["123412341234"].payload);
     do_check_eq("Bar5", collection.wbos["123412341235"].payload);
     do_check_eq(undefined, collection.wbos["123412341230"]);
-    server.stop(run_next_test);
-  });
-
-  for each (record in items) {
-    session.store(record);
+    dispose(session, server);
   }
-  session.store(DONE);
+  function sessionCallback(err, sess) {
+    do_check_false(!!err);
+    session = sess;
+    for each (record in items) {
+      session.store(record);
+    }
+    session.store(DONE);
+  }
+  repo.createSession(storeCallback, sessionCallback);
 });
 
 add_test(function test_store_finish_once_only() {
   _("Test that calling store after a DONE will raise an error.");
 
   let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
-  let session = repo.newStoreSession(function storeCallback(error) {
+  let session;
+  function storeCallback(error) {
     let threw;
     try {
       session.store(DONE);
@@ -384,10 +441,14 @@ add_test(function test_store_finish_once_only() {
       threw = ex;
     }
     do_check_eq("Store session already marked as DONE.", threw);
-
-    run_next_test();
-  });
-  session.store(DONE);
+    dispose(session);
+  }
+  function sessionCallback(err, sess) {
+    do_check_false(!!err);
+    session = sess;
+    session.store(DONE);
+  }
+  repo.createSession(storeCallback, sessionCallback);
 });
 
 add_test(function test_store_batching_completeLastBatch() {
@@ -395,38 +456,44 @@ add_test(function test_store_batching_completeLastBatch() {
 
   let invoked = 0;
   let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
-  let session = repo.newStoreSession(function storeCallback(error) {
+  let session;
+  function storeCallback(error) {
     do_check_eq(invoked, 3);
     do_check_eq(session.flushQueue.length, 2);
     do_check_true(session.done);
-    run_next_test();
-  });
-  do_check_eq(session.flushQueue.length, 0);
+    dispose(session);
+  }
+  function sessionCallback(err, sess) {
+    session = sess;
+    do_check_false(!!err);
+    do_check_eq(session.flushQueue.length, 0);
 
-  session.flush = function () {
-    invoked++;
-    let batchCount = session.flushQueue.length;
-    let lastBatchSize = session.flushQueue[batchCount - 1].length;
+    session.flush = function () {
+      invoked++;
+      let batchCount = session.flushQueue.length;
+      let lastBatchSize = session.flushQueue[batchCount - 1].length;
 
-    if (session.done) {
-      session.storeCallback();
-      return;
-    }
-    do_check_eq(batchCount, invoked);
-    do_check_eq(lastBatchSize, session.batchSize);
-  };
+      if (session.done) {
+        session.storeCallback();
+        return;
+      }
+      do_check_eq(batchCount, invoked);
+      do_check_eq(lastBatchSize, session.batchSize);
+    };
 
-  session.batchSize = 2;
-  do_check_false(session.done);
-  session.store({id: "123412341234", payload: "Bar4"});
-  do_check_eq(invoked, 0);
-  session.store({id: "123412341235", payload: "Bar5"});
-  do_check_eq(invoked, 1);
-  session.store({id: "123412341236", payload: "Bar6"});
-  do_check_eq(invoked, 1);
-  session.store({id: "123412341237", payload: "Bar7"});
-  do_check_eq(invoked, 2);
-  session.store(DONE);
+    session.batchSize = 2;
+    do_check_false(session.done);
+    session.store({id: "123412341234", payload: "Bar4"});
+    do_check_eq(invoked, 0);
+    session.store({id: "123412341235", payload: "Bar5"});
+    do_check_eq(invoked, 1);
+    session.store({id: "123412341236", payload: "Bar6"});
+    do_check_eq(invoked, 1);
+    session.store({id: "123412341237", payload: "Bar7"});
+    do_check_eq(invoked, 2);
+    session.store(DONE);
+  }
+  repo.createSession(storeCallback, sessionCallback);
 });
 
 add_test(function test_store_batching_incompleteLastBatch() {
@@ -434,38 +501,44 @@ add_test(function test_store_batching_incompleteLastBatch() {
 
   let invoked = 0;
   let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
-  let session = repo.newStoreSession(function storeCallback(error) {
+  let session;
+  function storeCallback(error) {
     do_check_eq(invoked, 2);
     do_check_eq(session.flushQueue.length, 2);
     do_check_eq(session.flushQueue[0].length, 2);
     do_check_eq(session.flushQueue[1].length, 1);
     do_check_true(session.done);
-    run_next_test();
-  });
-  do_check_eq(session.flushQueue.length, 0);
+    dispose(session);
+  }
+  function sessionCallback(err, sess) {
+    session = sess;
+    do_check_false(!!err);
+    do_check_eq(session.flushQueue.length, 0);
 
-  session.flush = function () {
-    invoked++;
-    let batchCount = session.flushQueue.length;
-    let lastBatchSize = session.flushQueue[batchCount - 1].length;
+    session.flush = function () {
+      invoked++;
+      let batchCount = session.flushQueue.length;
+      let lastBatchSize = session.flushQueue[batchCount - 1].length;
 
-    if (session.done) {
-      session.storeCallback();
-      return;
-    }
-    do_check_eq(batchCount, invoked);
-    do_check_eq(lastBatchSize, session.batchSize);
-  };
+      if (session.done) {
+        session.storeCallback();
+        return;
+      }
+      do_check_eq(batchCount, invoked);
+      do_check_eq(lastBatchSize, session.batchSize);
+    };
 
-  session.batchSize = 2;
-  do_check_false(session.done);
-  session.store({id: "123412341234", payload: "Bar4"});
-  do_check_eq(invoked, 0);
-  session.store({id: "123412341235", payload: "Bar5"});
-  do_check_eq(invoked, 1);
-  session.store({id: "123412341236", payload: "Bar6"});
-  do_check_eq(invoked, 1);
-  session.store(DONE);
+    session.batchSize = 2;
+    do_check_false(session.done);
+    session.store({id: "123412341234", payload: "Bar4"});
+    do_check_eq(invoked, 0);
+    session.store({id: "123412341235", payload: "Bar5"});
+    do_check_eq(invoked, 1);
+    session.store({id: "123412341236", payload: "Bar6"});
+    do_check_eq(invoked, 1);
+    session.store(DONE);
+  }
+  repo.createSession(storeCallback, sessionCallback);
 });
 
 add_test(function test_store_networkError() {
@@ -474,7 +547,8 @@ add_test(function test_store_networkError() {
                {id: "123412341235", payload: "Bar5"}];
 
   let calledDone = false;
-  let session = repo.newStoreSession(function storeCallback(error) {
+  let session;
+  function storeCallback(error) {
     if (calledDone) {
       do_throw("Did not expect any more items after DONE!");
     }
@@ -487,13 +561,17 @@ add_test(function test_store_networkError() {
 
     calledDone = true;
     do_check_eq(error, DONE);
-    run_next_test();
-  });
-
-  for each (record in items) {
-    session.store(record);
+    dispose(session);
   }
-  session.store(DONE);
+  function sessionCallback(err, sess) {
+    do_check_false(!!err);
+    session = sess;
+    for each (record in items) {
+      session.store(record);
+    }
+    session.store(DONE);
+  }
+  repo.createSession(storeCallback, sessionCallback);
 });
 
 add_test(function test_store_httpError() {
@@ -505,7 +583,8 @@ add_test(function test_store_httpError() {
   let items = [{id: "123412341234", payload: "Bar4"},
                {id: "123412341235", payload: "Bar5"}];
   let calledDone = false;
-  let session = repo.newStoreSession(function storeCallback(error) {
+  let session;
+  function storeCallback(error) {
     if (calledDone) {
       do_throw("Did not expect any more items after DONE!");
     }
@@ -519,13 +598,17 @@ add_test(function test_store_httpError() {
 
     calledDone = true;
     do_check_eq(error, DONE);
-    server.stop(run_next_test);
-  });
-
-  for each (record in items) {
-    session.store(record);
+    dispose(session, server);
   }
-  session.store(DONE);
+  function sessionCallback(err, sess) {
+    do_check_false(!!err);
+    session = sess;
+    for each (record in items) {
+      session.store(record);
+    }
+    session.store(DONE);
+  }
+  repo.createSession(storeCallback, sessionCallback);
 });
 
 add_test(function test_store_invalidResponse() {
@@ -537,7 +620,8 @@ add_test(function test_store_invalidResponse() {
   let items = [{id: "123412341234", payload: "Bar4"},
                {id: "123412341235", payload: "Bar5"}];
   let calledDone = false;
-  let session = repo.newStoreSession(function storeCallback(error) {
+  let session;
+  function storeCallback(error) {
     if (calledDone) {
       do_throw("Did not expect any more items after DONE!");
     }
@@ -551,11 +635,15 @@ add_test(function test_store_invalidResponse() {
 
     calledDone = true;
     do_check_eq(error, DONE);
-    server.stop(run_next_test);
-  });
-
-  for each (record in items) {
-    session.store(record);
+    dispose(session, server);
   }
-  session.store(DONE);
+  function sessionCallback(err, sess) {
+    do_check_false(!!err);
+    session = sess;
+    for each (record in items) {
+      session.store(record);
+    }
+    session.store(DONE);
+  }
+  repo.createSession(storeCallback, sessionCallback);
 });

@@ -51,7 +51,7 @@ const STORAGE_REQUEST_TIMEOUT = 5 * 60; // 5 minutes
 
 /**
  * Single use HTTP requests to RESTish resources.
- * 
+ *
  * @param uri
  *        URI for the request. This can be an nsIURI object or a string
  *        that can be used to create one. An exception will be thrown if
@@ -180,7 +180,7 @@ RESTRequest.prototype = {
   /**
    * Called when the request has been completed, including failures and
    * timeouts.
-   * 
+   *
    * @param error
    *        Error that occurred while making the request, null if there
    *        was no error.
@@ -609,11 +609,11 @@ SyncStorageRequest.prototype = {
   /**
    * The string to use as the base User-Agent in Sync requests.
    * These strings will look something like
-   * 
+   *
    *   Firefox/4.0 FxSync/1.8.0.20100101.mobile
-   * 
+   *
    * or
-   * 
+   *
    *   Firefox Aurora/5.0a1 FxSync/1.9.0.20110409.desktop
    */
   userAgent:

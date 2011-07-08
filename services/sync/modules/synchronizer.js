@@ -49,11 +49,18 @@ const EXPORTED_SYMBOLS = ["Synchronizer"];
  * It tracks whatever information is necessary to reify the syncing
  * relationship between these two sources/sinks: e.g., last sync time.
  */
-function Synchronizer() {}
+function Synchronizer() {
+  let level = Svc.Prefs.get("log.logger.synchronizer");
+  this._log = Log4Moz.repository.getLogger("Sync.Synchronizer");
+  this._log.level = Log4Moz.Level[level];
+}
 Synchronizer.prototype = {
 
-  lastSync: 0,
-  lastSyncLocal: 0,
+  /**
+   * Keep track of timestamps. These need to be persisted.
+   */
+  lastSyncA: 0,
+  lastSyncB: 0,
 
   /**
    * Repositories to sync.
@@ -67,35 +74,91 @@ Synchronizer.prototype = {
    * Do the stuff to the thing.
    */
   synchronize: function synchronize(callback) {
-    function storeCallbackA(error) {
-    }
+    this._log.debug("Entering synchronize().");
+
+    let sessionA;
+    let sessionB;
+
+    /**
+     * Called when sessionB has stored an item.
+     * This happens first.
+     */
     function storeCallbackB(error) {
+      this._log.debug("In storeCallbackB().");
+      if (error == Repository.prototype.DONE) {
+        this._log.debug("Done with records in storeCallbackB.");
+        this._log.debug("Fetching from B into A.");
+        // On to the next!
+        sessionB.fetchSince(this.lastSyncB, makeFetchCallback(sessionA));
+      } else {
+        // TODO
+      }
     }
+
+    /**
+     * Called when sessionA has stored an item.
+     * This happens second.
+     */
+    function storeCallbackA(error) {
+      this._log.debug("In storeCallbackA().");
+      if (error == Repository.prototype.DONE) {
+        this._log.debug("Done with records in storeCallbackA.");
+        // We're done!
+        sessionA.dispose(function (timestamp) {
+          this._log.debug("A disposed. Fast-forwarding to " + timestamp);
+          this.lastSyncA = timestamp;
+          sessionB.dispose(function (timestamp) {
+            this._log.debug("B disposed. Fast-forwarding to " + timestamp);
+            this.lastSyncB = timestamp;
+            callback();
+          }.bind(this));
+        }.bind(this));
+      } else {
+        // TODO
+      }
+    }
+    function makeFetchCallback(session) {
+      return function (error, record) {
+        if (error) {
+          this._log.warn("Got error " + Utils.exceptionStr(error) +
+                         " fetching.");
+          // TODO: handle this.
+        }
+        session.store(record);
+      }.bind(this);
+    }
+
+    storeCallbackA = storeCallbackA.bind(this);
+    storeCallbackB = storeCallbackB.bind(this);
+    makeFetchCallback = makeFetchCallback.bind(this);
 
     /**
      * We have two sessions. Now we can exchange records between the two.
      */
-    function synchronizeSessions(sessionA, sessionB) {
-      // TODO
-      callback();
-    }
 
-    function sessionCallbackA(error, sessionA) {
+    function sessionCallbackA(error, sessA) {
+      sessionA = sessA;
+      //sessionA.timestamp = this.lastSyncA;
       if (error) {
         return callback(error);
       }
-      function sessionCallbackB(error, sessionB) {
+
+      function sessionCallbackB(error, sessB) {
+        sessionB = sessB;
+        //sessionB.timestamp = this.lastSyncB;
+        this._log.info("Timestamps: " + sessionA.timestamp + ", " + sessionB.timestamp);
         if (error) {
-          return sessionA.dispose(function () {
+          return sessA.dispose(function () {
             callback(error);
           });
         }
-        synchronizeSessions(sessionA, sessionB);
+        sessionA.fetchSince(this.lastSyncA, makeFetchCallback(sessB));
       }
-      this.repositoryB.createSession(storeCallbackB, sessionCallbackB.bind(this));
+      this.repositoryB.createSession(storeCallbackB,
+                                     sessionCallbackB.bind(this));
     }
-
-    this.repositoryA.createSession(storeCallbackA, sessionCallbackA.bind(this));
+    this.repositoryA.createSession(storeCallbackA,
+                                   sessionCallbackA.bind(this));
   },
 
   /**

@@ -106,14 +106,14 @@ Synchronizer.prototype = {
      */
     function storeCallbackB(error) {
       this._log.debug("In storeCallbackB().");
-      if (error == Repository.prototype.DONE) {
-        this._log.debug("Done with records in storeCallbackB.");
-        this._log.debug("Fetching from B into A.");
-        // On to the next!
-        sessionB.fetchSince(this.lastSyncB, makeFetchCallback(sessionA));
-      } else {
+      if (error != Repository.prototype.DONE) {
         // TODO
+        return;
       }
+      this._log.debug("Done with records in storeCallbackB.");
+      this._log.debug("Fetching from B into A.");
+      // On to the next!
+      sessionB.fetchSince(this.lastSyncB, makeFetchCallback(sessionA));
     }
 
     /**
@@ -124,24 +124,24 @@ Synchronizer.prototype = {
      */
     function storeCallbackA(error) {
       this._log.debug("In storeCallbackA().");
-      if (error == Repository.prototype.DONE) {
-        this._log.debug("Done with records in storeCallbackA.");
-        // We're done!
-        sessionA.dispose(function (timestamp) {
-          this._log.debug("A disposed. Fast-forwarding to " + timestamp);
-          this.lastSyncA = timestamp;
-          sessionB.dispose(function (timestamp) {
-            this._log.debug("B disposed. Fast-forwarding to " + timestamp);
-            this.lastSyncB = timestamp;
-
-            // Finally invoke the output callback.
-            callback();
-            callback = null;
-          }.bind(this));
-        }.bind(this));
-      } else {
+      if (error != Repository.prototype.DONE) {
         // TODO
+        return;
       }
+      this._log.debug("Done with records in storeCallbackA.");
+      // We're done!
+      sessionA.dispose(function (timestamp) {
+        this._log.debug("A disposed. Fast-forwarding to " + timestamp);
+        this.lastSyncA = timestamp;
+        sessionB.dispose(function (timestamp) {
+          this._log.debug("B disposed. Fast-forwarding to " + timestamp);
+          this.lastSyncB = timestamp;
+
+          // Finally invoke the output callback.
+          callback();
+          callback = null;
+        }.bind(this));
+      }.bind(this));
     }
 
     function sessionCallbackA(error, sessA) {

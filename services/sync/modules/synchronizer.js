@@ -72,6 +72,11 @@ Synchronizer.prototype = {
 
   /**
    * Do the stuff to the thing.
+   *
+   * Grab a session for each of our repositories. Once both sessions are set
+   * up, we pair invocations of fetchSince and store callbacks, switching
+   * places once the first stream is done. Then we dispose of each session and
+   * invoke our callback.
    */
   synchronize: function synchronize(callback) {
     this._log.debug("Entering synchronize().");
@@ -80,8 +85,24 @@ Synchronizer.prototype = {
     let sessionB;
 
     /**
+     * Return a fetchCallback that stores in the provided session.
+     */
+    function makeFetchCallback(session) {
+      return function (error, record) {
+        if (error) {
+          this._log.warn("Got error " + Utils.exceptionStr(error) +
+                         " fetching.");
+          // TODO: handle this.
+        }
+        session.store(record);
+      }.bind(this);
+    }
+    makeFetchCallback = makeFetchCallback.bind(this);
+
+    /**
      * Called when sessionB has stored an item.
-     * This happens first.
+     * This happens first, once per error, then again for DONE.
+     * Once this is DONE, we switch to calling fetchSince on the second session.
      */
     function storeCallbackB(error) {
       this._log.debug("In storeCallbackB().");
@@ -97,7 +118,9 @@ Synchronizer.prototype = {
 
     /**
      * Called when sessionA has stored an item.
-     * This happens second.
+     * This happens second, once we're done storing to sessionB. Once this
+     * receives DONE, we dispose of each session and fast-forward our
+     * timestamps.
      */
     function storeCallbackA(error) {
       this._log.debug("In storeCallbackA().");
@@ -110,54 +133,46 @@ Synchronizer.prototype = {
           sessionB.dispose(function (timestamp) {
             this._log.debug("B disposed. Fast-forwarding to " + timestamp);
             this.lastSyncB = timestamp;
+
+            // Finally invoke the output callback.
             callback();
+            callback = null;
           }.bind(this));
         }.bind(this));
       } else {
         // TODO
       }
     }
-    function makeFetchCallback(session) {
-      return function (error, record) {
-        if (error) {
-          this._log.warn("Got error " + Utils.exceptionStr(error) +
-                         " fetching.");
-          // TODO: handle this.
-        }
-        session.store(record);
-      }.bind(this);
-    }
-
-    storeCallbackA = storeCallbackA.bind(this);
-    storeCallbackB = storeCallbackB.bind(this);
-    makeFetchCallback = makeFetchCallback.bind(this);
-
-    /**
-     * We have two sessions. Now we can exchange records between the two.
-     */
 
     function sessionCallbackA(error, sessA) {
       sessionA = sessA;
+
+      // TODO: we actually *don't* set the initial timestamp here, because
+      // otherwise we need logic here to generate the first one! Oh dear.
       //sessionA.timestamp = this.lastSyncA;
       if (error) {
-        return callback(error);
+        callback(error);
+        callback = null;
+        return;
       }
 
       function sessionCallbackB(error, sessB) {
         sessionB = sessB;
         //sessionB.timestamp = this.lastSyncB;
-        this._log.info("Timestamps: " + sessionA.timestamp + ", " + sessionB.timestamp);
+        this._log.debug("Session timestamps: A = " + sessionA.timestamp +
+                        ", B = " + sessionB.timestamp);
         if (error) {
           return sessA.dispose(function () {
             callback(error);
+            callback = null;
           });
         }
         sessionA.fetchSince(this.lastSyncA, makeFetchCallback(sessB));
       }
-      this.repositoryB.createSession(storeCallbackB,
+      this.repositoryB.createSession(storeCallbackB.bind(this),
                                      sessionCallbackB.bind(this));
     }
-    this.repositoryA.createSession(storeCallbackA,
+    this.repositoryA.createSession(storeCallbackA.bind(this),
                                    sessionCallbackA.bind(this));
   },
 

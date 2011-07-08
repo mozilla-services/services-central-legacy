@@ -327,65 +327,72 @@ function WBORepository(wbos) {
   Repository.call(this);
 }
 WBORepository.prototype = {
-
   __proto__: Repository.prototype,
 
   /**
    * Repository API
    */
-
   createSession: function createSession(storeCallback, sessionCallback) {
-    let repo = this;
-    sessionCallback(null, {
-      __proto__: RepositorySession.prototype,
-
-      // Equivalent to modifying lastSyncLocal in Engine._syncStartup.
-      timestamp: Date.now(),
-
-      guidsSince: function guidsSince(timestamp, guidsCallback) {
-        guidsCallback(null, [guid for ([guid, wbo] in Iterator(repo.wbos))
-                                  if (wbo.modified > timestamp)]);
-      },
-
-      fetchSince: function fetchSince(timestamp, fetchCallback) {
-        for (let [guid, wbo] in Iterator(repo.wbos)) {
-          if (wbo.modified > timestamp) {
-            if (fetchCallback(null, wbo) == STOP) {
-              return;
-            }
-          }
-        }
-        fetchCallback(null, Repository.prototype.DONE);
-      },
-
-      fetch: function fetch(guids, fetchCallback) {
-        const STOP = Repository.prototype.STOP;
-        for (let i = 0; i < guids.length; i++) {
-          let wbo = repo.wbos[guids[i]];
-          if (wbo) {
-            if (fetchCallback(null, wbo) == STOP) {
-              return;
-            }
-          }
-        }
-        fetchCallback(null, Repository.prototype.DONE);
-      },
-
-      store: function store(record) {
-        if (record == Repository.prototype.DONE) {
-          storeCallback(Repository.prototype.DONE);
-          return;
-        }
-        repo.wbos[record.id] = record;
-      }
-    });
+    sessionCallback(null, new WBORepositorySession(this, storeCallback));
   },
 
   /**
    * Helpers
    */
-
   get count() {
     return Object.keys(this.wbos).length;
+  }
+};
+
+function WBORepositorySession(repository, storeCallback) {
+  RepositorySession.call(this, repository);
+  this.storeCallback = storeCallback;
+
+  let level = Svc.Prefs.get("log.logger.test.wborepositorysession");
+  this._log = Log4Moz.repository.getLogger("Sync.WBORepositorySession");
+  this._log.level = Log4Moz.Level[level];
+
+  // Equivalent to modifying lastSyncLocal in Engine._syncStartup.
+  this.timestamp = Date.now();
+  this._log.info("Timestamp: " + this.timestamp);
+}
+WBORepositorySession.prototype = {
+  __proto__: RepositorySession.prototype,
+
+  guidsSince: function guidsSince(timestamp, guidsCallback) {
+    guidsCallback(null, [guid for ([guid, wbo] in Iterator(this.repository.wbos))
+                              if (wbo.modified > timestamp)]);
+  },
+
+  fetchSince: function fetchSince(timestamp, fetchCallback) {
+    for (let [guid, wbo] in Iterator(this.repository.wbos)) {
+      if (wbo.modified > timestamp) {
+        if (fetchCallback(null, wbo) == Repository.prototype.STOP) {
+          return;
+        }
+      }
+    }
+    fetchCallback(null, Repository.prototype.DONE);
+  },
+
+  fetch: function fetch(guids, fetchCallback) {
+    const STOP = Repository.prototype.STOP;
+    for (let i = 0; i < guids.length; i++) {
+      let wbo = this.repository.wbos[guids[i]];
+      if (wbo) {
+        if (fetchCallback(null, wbo) == STOP) {
+          return;
+        }
+      }
+    }
+    fetchCallback(null, Repository.prototype.DONE);
+  },
+
+  store: function store(record) {
+    if (record == Repository.prototype.DONE) {
+      this.storeCallback(Repository.prototype.DONE);
+      return;
+    }
+    this.repository.wbos[record.id] = record;
   }
 };

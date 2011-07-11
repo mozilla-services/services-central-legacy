@@ -93,3 +93,12 @@ add_test(function test_full_to_empty() {
   s1.synchronize(synchronizeCallback);
   run_next_test();
 });
+
+// TODO:
+// * Exchanging items, verifying contents of each repository afterwards
+// * Implement and verify store/time in-session tracking, verifying that store
+//   isn't being called for items that we just uploaded
+// * Error handling
+// * Synchronizing through middleware
+// * Multiple synchronize() calls, both with and without new items, and
+//   modifying one or both ends

@@ -96,11 +96,20 @@ function RepositorySession(repository) {
   this.repository = repository;
 }
 RepositorySession.prototype = {
+
   /**
    * Used for tracking changes. The timestamp can be set with an initial value,
    * and will be reported in the dispose callback.
    */
   timestamp: 0,
+
+  /**
+   * Used to persist tracking data between sessions.
+   *
+   * The bundle is included in the dispose callback.
+   */
+  unbundle: function unbundle(bundle) {
+  },
 
   /**
    * Retrieve a sequence of GUIDs corresponding to records that have been
@@ -178,9 +187,11 @@ RepositorySession.prototype = {
   /**
    * Perform any necessary cleanup, invoking callback when it's safe to
    * proceed.
+   * The callback is invoked with the session timestamp and a 'bundle' object,
+   * which can be used for persisting tracking data between sessions.
    */
   dispose: function dispose(callback) {
-    callback(this.timestamp);
+    callback(this.timestamp, {});
   },
 };
 

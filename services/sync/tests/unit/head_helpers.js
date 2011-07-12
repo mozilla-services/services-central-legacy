@@ -352,24 +352,69 @@ function WBORepositorySession(repository, storeCallback) {
   this._log = Log4Moz.repository.getLogger("Sync.WBORepositorySession");
   this._log.level = Log4Moz.Level[level];
 
+  // Track stored GUIDs so we don't reupload.
+  this.stored = {};
+
+  // Track non-uploaded items so that we can later stop tracking them!
+  this.forgotten = {};
+
   // Equivalent to modifying lastSyncLocal in Engine._syncStartup.
+  // This starts out as the time of the sync.
   this.timestamp = Date.now();
-  this._log.info("Timestamp: " + this.timestamp);
+  this._log.debug("WBORepositorySession timestamp: " + this.timestamp);
 }
 WBORepositorySession.prototype = {
   __proto__: RepositorySession.prototype,
+
+  stored:    null,
+  forgotten: null,
+
   toString: function toString() {
     return "<Session for " + this.repository + ">";
   },
 
+  /**
+   * Used for cross-session persistence. A bundle is returned in the dispose
+   * callback.
+   */
+  unbundle: function unbundle(bundle) {
+    if (bundle && bundle.stored) {
+      this.stored = bundle.stored;
+    }
+  },
+
+  /**
+   * Internal. Decide whether to skip an outgoing item based on stored IDs.
+   * Also maintains the 'to forget' list.
+   */
+  shouldSkip: function shouldSkip(guid) {
+    if (guid in this.stored) {
+      // One we stored in this session. Skip it.
+      // N.B.: this ignores the possibility of records with times in the
+      // future that we might want to skip more than once! Is that something we
+      // care about?
+      this.forgotten[guid] = true;
+      return true;
+    }
+    return false;
+  },
+
   guidsSince: function guidsSince(timestamp, guidsCallback) {
-    guidsCallback(null, [guid for ([guid, wbo] in Iterator(this.repository.wbos))
-                              if (wbo.modified > timestamp)]);
+    let guids = [guid for ([guid, wbo] in Iterator(this.repository.wbos))
+                      if (wbo.modified >= timestamp &&
+                          this.shouldSkip(guid))];
+    guidsCallback(null, guids);
   },
 
   fetchSince: function fetchSince(timestamp, fetchCallback) {
     for (let [guid, wbo] in Iterator(this.repository.wbos)) {
-      if (wbo.modified > timestamp) {
+      // >= covers the case of an immediate store within the same millisecond
+      // as initialization. We want to return that item, even if it's sometimes
+      // redundant.
+      if (wbo.modified >= timestamp) {
+        if (this.shouldSkip(wbo.id)) {
+          continue;
+        }
         if (fetchCallback(null, wbo) == Repository.prototype.STOP) {
           return;
         }
@@ -392,11 +437,62 @@ WBORepositorySession.prototype = {
   },
 
   store: function store(record) {
-    _(this + ".store(" + JSON.stringify(record) + ");");
     if (record == Repository.prototype.DONE) {
       this.storeCallback(Repository.prototype.DONE);
       return;
     }
-    this.repository.wbos[record.id] = record;
+
+    if (!this.reconcile(record)) {
+      return;
+    }
+
+    // Make a copy and update the modified time of the record.
+    let r = Utils.deepCopy(record);
+
+    r.modified                 = Date.now();
+    this.repository.wbos[r.id] = r;
+    this.stored[r.id]          = r.modified;
+
+    // We need to ensure that we don't forget records if we store/fetch/store.
+    // Remove from forgotten.
+    if (r.id in this.forgotten) {
+      delete this.forgotten[r.id];
+    }
+  },
+
+  reconcile: function reconcile(record) {
+    // Non-trivial implementations should do something smart here; we might
+    // want to upload our local copy regardless, for example, or otherwise
+    // merge changes.
+    this._log.trace("Reconciling: " + JSON.stringify(record));
+    let local = this.repository.wbos[record.id];
+    if (!local) {
+      this._log.trace("No local record. Accepting incoming.");
+      return true;
+    }
+    if (local.modified < record.modified) {
+      this._log.trace("Local modified (" + local.modified + ") earlier than " +
+                      "incoming modified (" + record.modified + "). " +
+                      "Accepting incoming.");
+      return true;
+    }
+    this._log.trace("Rejecting incoming.");
+    return false;
+  },
+
+  dispose: function dispose(disposeCallback) {
+    // Forget the items that we've already skipped.
+    for (let [guid, forget] in Iterator(this.forgotten)) {
+      delete this.stored[guid];
+    }
+    delete this.forgotten;
+
+    let cb = function (ts, bundle) {
+      bundle.stored = this.stored;
+      delete this.stored;
+      disposeCallback(ts, bundle);
+    }.bind(this);
+
+    RepositorySession.prototype.dispose.call(this, cb);
   }
 };

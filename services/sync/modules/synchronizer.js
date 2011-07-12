@@ -44,6 +44,159 @@ Cu.import("resource://services-sync/util.js");
 const EXPORTED_SYMBOLS = ["Synchronizer"];
 
 /**
+ * A SynchronizerSession exchanges data between two RepositorySessions.
+ * As with other kinds of session, this is a one-shot object.
+ *
+ * Grab a session for each of our repositories. Once both sessions are set
+ * up, we pair invocations of fetchSince and store callbacks, switching
+ * places once the first stream is done. Then we dispose of each session and
+ * invoke our callback.
+ *
+ * Example usage:
+ *
+ *   let session = new SynchronizerSession(synchronizer);
+ *   session.onInitialized = function (err) {
+ *     // Add error handling here.
+ *     session.synchronize();
+ *   };
+ *   session.onSynchronized = function (err) {
+ *     // Rock on!
+ *     callback(err);
+ *   };
+ *   session.init();
+ */
+function SynchronizerSession(synchronizer) {
+  this.synchronizer = synchronizer;
+
+  let level = Svc.Prefs.get("log.logger.synchronizersession");
+  this._log = Log4Moz.repository.getLogger("Sync.SynchronizerSession");
+  this._log.level = Log4Moz.Level[level];
+}
+SynchronizerSession.prototype = {
+  sessionA:     null,
+  sessionB:     null,
+  synchronizer: null,
+  timestampA:   null,
+  timestampB:   null,
+
+  /**
+   * Override these two methods!
+   */
+  onInitialized: function onInitialized(error) {
+    throw "Override onInitialized.";
+  },
+
+  onSynchronized: function onSynchronized(error) {
+    throw "Override onSynchronized.";
+  },
+
+  /**
+   * Override this if you want to terminate fetching, or apply
+   * other recovery/etc. handling.
+   */
+  onFetchError: function onFetchError(error, record) {
+    // E.g., return Repository.prototype.STOP;
+  },
+
+  /**
+   * storeCallback doesn't admit any kind of control flow, so only bother
+   * overriding this if you want to watch what's happening.
+   */
+  onStoreError: function onStoreError(error) {
+  },
+
+  fetchCallback: function fetchCallback(session, error, record) {
+    if (error) {
+      this._log.warn("Got error " + Utils.exceptionStr(error) +
+                     " fetching. Invoking onFetchError for handling.");
+      // Return the handler value, which allows the caller to do useful things
+      // like abort.
+      return this.onFetchError(error, record);
+    }
+    session.store(record);
+  },
+
+  /**
+   * The two storeCallbacks are instrumental in switching sync direction and
+   * actually finishing the sync. This is where the magic happens.
+   */
+  storeCallbackB: function storeCallbackB(error) {
+    if (error != Repository.prototype.DONE) {
+      // Hook for handling. No response channel yet.
+      this.onStoreError(error);
+      return;
+    }
+    this._log.debug("Done with records in storeCallbackB.");
+    this._log.debug("Fetching from B into A.");
+    // On to the next!
+    this.sessionB.fetchSince(this.synchronizer.lastSyncB, this.fetchCallback.bind(this, this.sessionA));
+  },
+
+  storeCallbackA: function storeCallbackA(error) {
+    this._log.debug("In storeCallbackA().");
+    if (error != Repository.prototype.DONE) {
+      this.onStoreError(error);
+      return;
+    }
+    this._log.debug("Done with records in storeCallbackA.");
+    this.finishSync();
+  },
+
+  sessionCallbackA: function sessionCallbackA(error, session) {
+    this.sessionA = session;
+    if (error) {
+      this.onInitialized(error);
+      return;
+    }
+    this.synchronizer.repositoryB.createSession(this.storeCallbackB.bind(this),
+                                                this.sessionCallbackB.bind(this));
+  },
+
+  sessionCallbackB: function sessionCallbackB(error, session) {
+    this.sessionB = session;
+    this._log.debug("Session timestamps: A = " + this.sessionA.timestamp +
+                    ", B = " + this.sessionB.timestamp);
+    if (error) {
+      return this.sessionA.dispose(function () {
+        this.onInitialized(error);
+      }.bind(this));
+    }
+    this.onInitialized();
+  },
+
+  /**
+   * Dispose of both sessions and invoke onSynchronized.
+   */
+  finishSync: function finishSync() {
+    this.sessionA.dispose(function (timestampA) {
+      this.timestampA = timestampA;
+      this.sessionB.dispose(function (timestampB) {
+        this.timestampB = timestampB;
+        // Finally invoke the output callback.
+        this.onSynchronized(null);
+      }.bind(this));
+    }.bind(this));
+  },
+
+  /**
+   * Initialize the two repository sessions, then invoke onInitialized.
+   */
+  init: function init() {
+    this.synchronizer.repositoryA.createSession(this.storeCallbackA.bind(this),
+                                                this.sessionCallbackA.bind(this));
+  },
+
+  /**
+   * Assuming that two sessions have been initialized, sync, then clean up and
+   * invoke onSynchronized.
+   */
+  synchronize: function synchronize() {
+    this.sessionA.fetchSince(this.synchronizer.lastSyncA,
+                             this.fetchCallback.bind(this, this.sessionB));
+  }
+};
+
+/**
  * A Synchronizer exchanges data between two Repositories.
  *
  * It tracks whatever information is necessary to reify the syncing
@@ -72,118 +225,42 @@ Synchronizer.prototype = {
 
   /**
    * Do the stuff to the thing.
-   *
-   * Grab a session for each of our repositories. Once both sessions are set
-   * up, we pair invocations of fetchSince and store callbacks, switching
-   * places once the first stream is done. Then we dispose of each session and
-   * invoke our callback.
    */
   synchronize: function synchronize(callback) {
-    this._log.debug("Entering synchronize().");
+    this._log.debug("Entering Synchronizer.synchronize().");
 
-    let sessionA;
-    let sessionB;
-
-    /**
-     * Return a fetchCallback that stores in the provided session.
-     */
-    function makeFetchCallback(session) {
-      return function (error, record) {
-        if (error) {
-          this._log.warn("Got error " + Utils.exceptionStr(error) +
-                         " fetching.");
-          // TODO: handle this.
-        }
-        session.store(record);
-      }.bind(this);
-    }
-    makeFetchCallback = makeFetchCallback.bind(this);
-
-    /**
-     * Called when sessionB has stored an item.
-     * This happens first, once per error, then again for DONE.
-     * Once this is DONE, we switch to calling fetchSince on the second session.
-     */
-    function storeCallbackB(error) {
-      this._log.debug("In storeCallbackB().");
-      if (error != Repository.prototype.DONE) {
-        // TODO
-        return;
-      }
-      this._log.debug("Done with records in storeCallbackB.");
-      this._log.debug("Fetching from B into A.");
-      // On to the next!
-      sessionB.fetchSince(this.lastSyncB, makeFetchCallback(sessionA));
-    }
-
-    /**
-     * Called when sessionA has stored an item.
-     * This happens second, once we're done storing to sessionB. Once this
-     * receives DONE, we dispose of each session and fast-forward our
-     * timestamps.
-     */
-    function storeCallbackA(error) {
-      this._log.debug("In storeCallbackA().");
-      if (error != Repository.prototype.DONE) {
-        // TODO
-        return;
-      }
-      this._log.debug("Done with records in storeCallbackA.");
-      // We're done!
-      sessionA.dispose(function (timestamp) {
-        this._log.debug("A disposed. Fast-forwarding to " + timestamp);
-        this.lastSyncA = timestamp;
-        sessionB.dispose(function (timestamp) {
-          this._log.debug("B disposed. Fast-forwarding to " + timestamp);
-          this.lastSyncB = timestamp;
-
-          // Finally invoke the output callback.
-          callback();
-          callback = null;
-        }.bind(this));
-      }.bind(this));
-    }
-
-    function sessionCallbackA(error, sessA) {
-      sessionA = sessA;
-
-      // TODO: we actually *don't* set the initial timestamp here, because
-      // otherwise we need logic here to generate the first one! Oh dear.
-      //sessionA.timestamp = this.lastSyncA;
+    let session = new SynchronizerSession(this);
+    session.onInitialized = function (error) {
+      // Invoked with session as `this`.
       if (error) {
-        callback(error);
-        callback = null;
-        return;
+        this._log.warn("Error initializing SynchronizerSession: " +
+                       Utils.exceptionStr(error));
+        return callback(error);
       }
-
-      function sessionCallbackB(error, sessB) {
-        sessionB = sessB;
-        //sessionB.timestamp = this.lastSyncB;
-        this._log.debug("Session timestamps: A = " + sessionA.timestamp +
-                        ", B = " + sessionB.timestamp);
-        if (error) {
-          return sessA.dispose(function () {
-            callback(error);
-            callback = null;
-          });
-        }
-        sessionA.fetchSince(this.lastSyncA, makeFetchCallback(sessB));
+      this.synchronize();
+    };
+    session.onSynchronized = function (error) {
+      // Invoked with session as `this`.
+      if (error) {
+        this._log.warn("Error during synchronization: " +
+                       Utils.exceptionStr(error));
+        return callback(error);
       }
-      this.repositoryB.createSession(storeCallbackB.bind(this),
-                                     sessionCallbackB.bind(this));
-    }
-    this.repositoryA.createSession(storeCallbackA.bind(this),
-                                   sessionCallbackA.bind(this));
+      // Copy across the timestamps from within the session.
+      this.synchronizer.lastSyncA = this.timestampA;
+      this.synchronizer.lastSyncB = this.timestampB;
+      callback();
+    };
+    session.init();
   },
 
   /**
    * Synchronize. This method blocks execution of the caller. It is deprecated
-   * and solely kept for backward-compatibility
+   * and solely kept for backward-compatibility.
    */
   sync: function sync() {
     Async.callSpinningly(this, this.synchronize);
   }
-
 };
 
 
@@ -232,5 +309,4 @@ EngineCollectionSynchronizer.prototype = {
     // Store as a string because pref can only store C longs as numbers.
     Svc.Prefs.set(this.name + ".lastSyncLocal", value.toString());
   },
-
 };

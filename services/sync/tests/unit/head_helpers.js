@@ -358,6 +358,9 @@ function WBORepositorySession(repository, storeCallback) {
 }
 WBORepositorySession.prototype = {
   __proto__: RepositorySession.prototype,
+  toString: function toString() {
+    return "<Session for " + this.repository + ">";
+  },
 
   guidsSince: function guidsSince(timestamp, guidsCallback) {
     guidsCallback(null, [guid for ([guid, wbo] in Iterator(this.repository.wbos))
@@ -389,6 +392,7 @@ WBORepositorySession.prototype = {
   },
 
   store: function store(record) {
+    _(this + ".store(" + JSON.stringify(record) + ");");
     if (record == Repository.prototype.DONE) {
       this.storeCallback(Repository.prototype.DONE);
       return;

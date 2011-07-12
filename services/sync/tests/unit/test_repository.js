@@ -209,3 +209,29 @@ add_test(function test_store() {
 
   repo.createSession(storeCallback, sessionCallback);
 });
+
+add_test(function test_session_store_refetching() {
+  _("Ensure that session fetches don't include items we just stored.");
+  let repo = new WBORepository();
+  let session;
+  function sessionCallback(error, sess) {
+    session = sess;
+    sess.store({id: "abcdabcdabc1", payload: "one"});
+    sess.store({id: "abcdabcdabc2", payload: "two"});
+    sess.store(DONE);
+  }
+
+  function storeCallback(error) {
+    do_check_eq(error, DONE);
+    do_check_eq(2, repo.count);
+    session.fetchSince(0, fetchCallback);
+  }
+
+  function fetchCallback(error, record) {
+    do_check_eq(record, DONE);
+    session.dispose(function () {
+      run_next_test();
+    });
+  }
+  repo.createSession(storeCallback, sessionCallback);
+});

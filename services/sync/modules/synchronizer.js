@@ -201,7 +201,35 @@ SynchronizerSession.prototype = {
  *
  * It tracks whatever information is necessary to reify the syncing
  * relationship between these two sources/sinks: e.g., last sync time.
+ *
+ * The synchronizer must keep track of the set of IDs that have been stored and
+ * not modified since the session last fetched new records. That is, a record
+ * which has been received from another source should not be re-uploaded to
+ * that source, regardless of timestamp, unless it is changed locally.
+ *
+ * This is to avoid endless uploads of the same record from repository to
+ * repository. It seems fragile to rely on reconciliation and not modifying
+ * timestamps to eliminate a loop.
+ *
+ * There are two situations in which this might occur:
+ *
+ * * In store-first-fetch-second, this could occur inside the same session.
+ * * In fetch-first-store-second, this could occur in a subsequent session.
+ *
+ * Note that one-session memory is not enough: a fetch could easily be aborted
+ * before the new item has been reached, leaving it open for re-upload later.
+ *
+ * This tracking is obviously specific to a synchronizer, not to the
+ * repository, but it is calculated by the session itself, because the set of
+ * tracked IDs for a given sequence of stores depends on the process of
+ * reconciliation.
+ *
+ * - On store, track the ID.
+ * - On fetch, skip items that have been stored.
+ * - TODO: If a subsequent fetch predates our stored timestamp, do not skip records.
+ * - When an item is modified locally, remove it from the tracker.
  */
+
 function Synchronizer() {
   let level = Svc.Prefs.get("log.logger.synchronizer");
   this._log = Log4Moz.repository.getLogger("Sync.Synchronizer");

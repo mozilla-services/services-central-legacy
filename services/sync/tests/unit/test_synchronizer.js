@@ -5,6 +5,22 @@ Cu.import("resource://services-sync/repository.js");
 Cu.import("resource://services-sync/synchronizer.js");
 Cu.import("resource://services-sync/log4moz.js");
 
+/**
+ * Instrument calls to WBORepositorySession.store.
+ */
+let storeCalls = [];
+WBORepositorySession.prototype.store = (function wrap(f) {
+  return function (record) {
+    _("Calling store: " + JSON.stringify(record));
+    if (record != Repository.prototype.DONE) {
+      storeCalls.push([Utils.deepCopy(this.repository.wbos), record]);
+    }
+    f.call(this, record);
+  };
+})(WBORepositorySession.prototype.store);
+
+
+
 function run_test() {
   initTestLogging();
   run_next_test();
@@ -56,14 +72,19 @@ add_test(function test_empty_repositories() {
 function setup_repositories() {
   let r1 = new WBORepository();
   let r2 = new WBORepository();
+  r1.toString = function () "<Repository 1>";
+  r2.toString = function () "<Repository 2>";
 
   let now = Date.now();
+  // Create items slightly in the past, so we don't end up with our faked items
+  // sometimes having the same timestamp as an immediate sync, throwing off our
+  // counts.
   r1.wbos = {
     "123412341234": {id: "123412341234",
-                     modified: now + 10000,
+                     modified: now - 1,
                      payload: "Bar4"},
     "123412341235": {id: "123412341235",
-                     modified: now + 10002,
+                     modified: now - 2,
                      payload: "Bar5"}
   };
 
@@ -130,20 +151,31 @@ add_test(function test_modify() {
     checkResult(error);
 
     // Modify an item in each.
+    // Deliberately do this immediately, which will exercise handling of very
+    // close timestamps.
     let item1 = r1.wbos["123412341234"];
     let item2 = r2.wbos["123412341235"];
+    _("Item 1: " + JSON.stringify(item1));
+    _("Item 2: " + JSON.stringify(item2));
+    let old1  = item1.modified;
+    let old2  = item2.modified;
     item1.modified = Date.now() + 1;
-    item2.modified = Date.now() + 2;
     item1.payload  = "BarChanged1";
+    _("Modified item 1: was " + old1 + ", now " + item1.modified);
+    item2.modified = Date.now() + 2;
     item2.payload  = "BarChanged2";
+    _("Modified item 2: was " + old2 + ", now " + item2.modified);
 
     Utils.nextTick(function () {
+      storeCalls = [];
       s1.synchronize(secondSyncCallback);
     });
   }
 
   function secondSyncCallback(error) {
     checkResult(error);
+    _("Store calls: " + JSON.stringify(storeCalls));
+    do_check_eq(storeCalls.length, 2);
 
     // Check that each item made it across.
     do_check_eq(r2.wbos["123412341234"].payload, "BarChanged1");
@@ -157,7 +189,6 @@ add_test(function test_modify() {
 
 
 // TODO:
-// * Exchanging items, verifying contents of each repository afterwards
 // * Implement and verify store/time in-session tracking, verifying that store
 //   isn't being called for items that we just uploaded
 // * Error handling

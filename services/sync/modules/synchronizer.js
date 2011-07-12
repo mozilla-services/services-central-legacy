@@ -76,8 +76,14 @@ SynchronizerSession.prototype = {
   sessionA:     null,
   sessionB:     null,
   synchronizer: null,
+
+  /**
+   * Need to persist all of these.
+   */
   timestampA:   null,
   timestampB:   null,
+  storageA:     null,
+  storageB:     null,
 
   /**
    * Override these two methods!
@@ -143,6 +149,7 @@ SynchronizerSession.prototype = {
   },
 
   sessionCallbackA: function sessionCallbackA(error, session) {
+    session.unbundle(this.storageA);
     this.sessionA = session;
     if (error) {
       this.onInitialized(error);
@@ -153,9 +160,8 @@ SynchronizerSession.prototype = {
   },
 
   sessionCallbackB: function sessionCallbackB(error, session) {
+    session.unbundle(this.storageB);
     this.sessionB = session;
-    this._log.debug("Session timestamps: A = " + this.sessionA.timestamp +
-                    ", B = " + this.sessionB.timestamp);
     if (error) {
       return this.sessionA.dispose(function () {
         this.onInitialized(error);
@@ -168,10 +174,12 @@ SynchronizerSession.prototype = {
    * Dispose of both sessions and invoke onSynchronized.
    */
   finishSync: function finishSync() {
-    this.sessionA.dispose(function (timestampA) {
+    this.sessionA.dispose(function (timestampA, bundle) {
       this.timestampA = timestampA;
-      this.sessionB.dispose(function (timestampB) {
+      this.storageA   = bundle;
+      this.sessionB.dispose(function (timestampB, bundle) {
         this.timestampB = timestampB;
+        this.storageB   = bundle;
         // Finally invoke the output callback.
         this.onSynchronized(null);
       }.bind(this));

@@ -345,8 +345,7 @@ WBORepository.prototype = {
 };
 
 function WBORepositorySession(repository, storeCallback) {
-  RepositorySession.call(this, repository);
-  this.storeCallback = storeCallback;
+  RepositorySession.call(this, repository, storeCallback);
 
   let level = Svc.Prefs.get("log.logger.test.wborepositorysession");
   this._log = Log4Moz.repository.getLogger("Sync.WBORepositorySession");

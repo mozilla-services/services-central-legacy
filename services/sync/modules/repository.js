@@ -91,11 +91,16 @@ Repository.prototype = {
  *
  * TODO: can we make more than one of these at a time?
  */
-function RepositorySession(repository) {
-  this.timestamp = 0;
+function RepositorySession(repository, storeCallback) {
   this.repository = repository;
+  this.storeCallback = storeCallback;
 }
 RepositorySession.prototype = {
+
+  /**
+   * Invoked as part of store().
+   */
+  storeCallback: null,
 
   /**
    * Used for tracking changes. The timestamp can be set with an initial value,
@@ -252,9 +257,8 @@ Server11Repository.prototype = {
  * TODO: update Server11Session to track timestamps for records passing through.
  */
 function Server11Session(repository, storeCallback) {
-  RepositorySession.call(this, repository);
+  RepositorySession.call(this, repository, storeCallback);
 
-  this.storeCallback = storeCallback;
   this.batch         = [];   // Holds items until we have enough for a batch.
   this.flushQueue    = [];   // Holds completed batches to be flushed.
 
@@ -267,7 +271,6 @@ Server11Session.prototype = {
 
   batch:         null,
   flushQueue:    null,
-  storeCallback: null,
 
   /*
    * Flushing control.
@@ -619,8 +622,7 @@ Crypto5Middleware.prototype = {
 };
 
 function Crypto5StoreSession(repository, storeCallback, sessionCallback) {
-  RepositorySession.call(this, repository);
-  this.storeCallback = storeCallback;
+  RepositorySession.call(this, repository, storeCallback);
   this.session       = undefined;
   // TODO: do we need to wrap storeCallback at all?
   repository.repository.createSession(storeCallback,
@@ -633,7 +635,6 @@ function Crypto5StoreSession(repository, storeCallback, sessionCallback) {
 Crypto5StoreSession.prototype = {
   __proto__: RepositorySession.prototype,
 
-  storeCallback: null,
   session: null,
 
   guidsSince: function guidsSince(timestamp, guidsCallback) {

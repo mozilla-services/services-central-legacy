@@ -24,6 +24,7 @@ function setup_fixtures() {
 }
 
 function run_test() {
+  initTestLogging();
   run_next_test();
 }
 

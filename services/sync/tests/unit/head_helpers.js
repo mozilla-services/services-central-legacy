@@ -385,8 +385,11 @@ WBORepositorySession.prototype = {
   /**
    * Internal. Decide whether to skip an outgoing item based on stored IDs.
    * Also maintains the 'to forget' list.
+   * MAYBE:
+   * If the timestamp is earlier than our own, don't filter.
+   * timestamp >= this.timestamp &&
    */
-  shouldSkip: function shouldSkip(guid) {
+  shouldSkip: function shouldSkip(guid, timestamp) {
     if (guid in this.stored) {
       // One we stored in this session. Skip it.
       // N.B.: this ignores the possibility of records with times in the
@@ -401,7 +404,7 @@ WBORepositorySession.prototype = {
   guidsSince: function guidsSince(timestamp, guidsCallback) {
     let guids = [guid for ([guid, wbo] in Iterator(this.repository.wbos))
                       if (wbo.modified >= timestamp &&
-                          this.shouldSkip(guid))];
+                          !this.shouldSkip(guid, timestamp))];
     guidsCallback(null, guids);
   },
 
@@ -411,7 +414,7 @@ WBORepositorySession.prototype = {
       // as initialization. We want to return that item, even if it's sometimes
       // redundant.
       if (wbo.modified >= timestamp) {
-        if (this.shouldSkip(wbo.id)) {
+        if (this.shouldSkip(wbo.id, timestamp)) {
           continue;
         }
         if (fetchCallback(null, wbo) == Repository.prototype.STOP) {

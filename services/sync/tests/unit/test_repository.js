@@ -51,13 +51,19 @@ add_test(function wbo_repository_stop() {
       }
     }
     do_check_true(!err);
-    session.fetchSince(2000, fetchCallback);
+    // Note the use of 2001 here. In order to correctly return items that were
+    // modified in the same instant as a sync began, sessions return items
+    // within an inclusive range. To simplify our comparisons, we deliberately
+    // exclude the earlier modification time.
+    session.fetchSince(2001, fetchCallback);
   });
 });
 
+// ... and here we verify that results with the same timestamp are successfully
+// returned.
 add_test(function test_guidsSince() {
   let repo = setup_fixtures();
-  let expected = ["123456789012", "charliesheen", "trololololol"];
+  let expected = ["123456789012", "abcdefghijkl", "charliesheen", "trololololol"];
   function sessionCallback(err, session) {
     function guidsCallback(error, guids) {
       do_check_eq(error, null);
@@ -73,13 +79,31 @@ add_test(function test_guidsSince() {
   repo.createSession(null, sessionCallback);
 });
 
+add_test(function test_guidsSinceIsInclusive() {
+  let repo = setup_fixtures();
+  let expected = ["123456789012", "charliesheen", "trololololol"];
+  function sessionCallback(err, session) {
+    function guidsCallback(error, guids) {
+      do_check_eq(error, null);
+      do_check_eq(expected + "", guids.sort());
+      session.dispose(function () {
+        run_next_test();
+      });
+    }
+
+    do_check_true(!err);
+    session.guidsSince(2001, guidsCallback);
+  }
+  repo.createSession(null, sessionCallback);
+});
+
 add_test(function test_fetchSince() {
   let repo = setup_fixtures();
   let expected = ["123456789012", "charliesheen", "trololololol"];
   let calledDone = false;
   repo.createSession(null, function (err, session) {
     do_check_true(!err);
-    session.fetchSince(2000, function fetchCallback(error, record) {
+    session.fetchSince(2001, function fetchCallback(error, record) {
       if (calledDone) {
         do_throw("Did not expect any more items after DONE!");
       }

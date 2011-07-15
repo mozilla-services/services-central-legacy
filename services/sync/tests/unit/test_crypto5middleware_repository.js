@@ -82,7 +82,7 @@ add_test(function test_setup_session() {
 });
 
 add_test(function test_guidsSince() {
-  let expected = ["123456789012", "charliesheen", "trololololol"];
+  let expected = ["123456789012", "abcdefghijkl", "charliesheen", "trololololol"];
   function sessionCallback(err, session) {
     session.guidsSince(2000, function guidsCallback(error, guids) {
       do_check_eq(error, null);
@@ -98,7 +98,7 @@ add_test(function test_fetchSince() {
   let calledDone = false;
   function sessionCallback(err, session) {
     _("Session callback. err is " + err + ", session is " + session);
-    session.fetchSince(2000, function fetchCallback(error, record) {
+    session.fetchSince(2001, function fetchCallback(error, record) {
       if (calledDone) {
         do_throw("Did not expect any more items after DONE!");
       }

@@ -69,17 +69,20 @@ Repository.prototype = {
    *        Callback with the signature (error). It may be called multiple
    *        times with error objects. It will be always called with the DONE
    *        value when the store operation has been completed.
-   *        @param error is an error object (where `error.guids` is an array
-   *                     of the records' GUIDs that couldn't be stored and
-   *                     `error.info` describes the error, e.g. an exception)
-   *                     or the DONE value.
+   *        @param error
+   *               One of two values: DONE, or an error object.
+   *               `error.guids` is an array of GUIDs of records that couldn't
+   *               be stored.
+   *               `error.info` describes the error, e.g. an exception.
    *        @return STOP if the store session should be aborted.
    *
    * @param sessionCallback
    *        Callback with the signature (error, session). Invoked once a
    *        session object has been instantiated.
+   *        Session will be an object which implements the RepositorySession
+   *        interface.
    *
-   * @return an object which implements the RepositorySession interface.
+   * @return nothing: see `sessionCallback`.
    */
   createSession: function createSession(storeCallback, sessionCallback) {
     sessionCallback("Repository must implement 'createSession'");
@@ -87,9 +90,8 @@ Repository.prototype = {
 };
 
 /**
- * A session for working with a Repository.
- *
- * TODO: can we make more than one of these at a time?
+ * A session for working with a Repository. It is not wise to have more than
+ * one session open at a time for a single Repository.
  */
 function RepositorySession(repository, storeCallback) {
   this.repository = repository;
@@ -132,7 +134,7 @@ RepositorySession.prototype = {
 
   /**
    * Retrieve a sequence of records that have been modified since timestamp.
-   * Invoke the callback once for each retrieved record and finally with
+   * Invoke the callback once for each retrieved record, then finally with
    * the DONE value.
    *
    * @param timestamp
@@ -149,7 +151,7 @@ RepositorySession.prototype = {
 
   /**
    * Retrieve a sequence of records by GUID. guids should be an iterable.
-   * Invoke the callback once for each retrieved record and finally with
+   * Invoke the callback once for each retrieved record, then finally with
    * the DONE value.
    *
    * @param guids

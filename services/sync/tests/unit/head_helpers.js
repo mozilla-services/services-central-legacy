@@ -345,17 +345,11 @@ WBORepository.prototype = {
 };
 
 function WBORepositorySession(repository, storeCallback) {
-  RepositorySession.call(this, repository, storeCallback);
+  TrackingSession.call(this, repository, storeCallback);
 
   let level = Svc.Prefs.get("log.logger.test.wborepositorysession");
   this._log = Log4Moz.repository.getLogger("Sync.WBORepositorySession");
   this._log.level = Log4Moz.Level[level];
-
-  // Track stored GUIDs so we don't reupload.
-  this.stored = {};
-
-  // Track non-uploaded items so that we can later stop tracking them!
-  this.forgotten = {};
 
   // Equivalent to modifying lastSyncLocal in Engine._syncStartup.
   // This starts out as the time of the sync.
@@ -363,42 +357,10 @@ function WBORepositorySession(repository, storeCallback) {
   this._log.debug("WBORepositorySession timestamp: " + this.timestamp);
 }
 WBORepositorySession.prototype = {
-  __proto__: RepositorySession.prototype,
-
-  stored:    null,
-  forgotten: null,
+  __proto__: TrackingSession.prototype,
 
   toString: function toString() {
     return "<Session for " + this.repository + ">";
-  },
-
-  /**
-   * Used for cross-session persistence. A bundle is returned in the dispose
-   * callback.
-   */
-  unbundle: function unbundle(bundle) {
-    if (bundle && bundle.stored) {
-      this.stored = bundle.stored;
-    }
-  },
-
-  /**
-   * Internal. Decide whether to skip an outgoing item based on stored IDs.
-   * Also maintains the 'to forget' list.
-   * MAYBE:
-   * If the timestamp is earlier than our own, don't filter.
-   * timestamp >= this.timestamp &&
-   */
-  shouldSkip: function shouldSkip(guid, timestamp) {
-    if (guid in this.stored) {
-      // One we stored in this session. Skip it.
-      // N.B.: this ignores the possibility of records with times in the
-      // future that we might want to skip more than once! Is that something we
-      // care about?
-      this.forgotten[guid] = true;
-      return true;
-    }
-    return false;
   },
 
   guidsSince: function guidsSince(timestamp, guidsCallback) {
@@ -450,16 +412,10 @@ WBORepositorySession.prototype = {
 
     // Make a copy and update the modified time of the record.
     let r = Utils.deepCopy(record);
+    r.modified = Date.now();
 
-    r.modified                 = Date.now();
     this.repository.wbos[r.id] = r;
-    this.stored[r.id]          = r.modified;
-
-    // We need to ensure that we don't forget records if we store/fetch/store.
-    // Remove from forgotten.
-    if (r.id in this.forgotten) {
-      delete this.forgotten[r.id];
-    }
+    this.trackStore(r.id, r.modified);
   },
 
   reconcile: function reconcile(record) {
@@ -480,21 +436,5 @@ WBORepositorySession.prototype = {
     }
     this._log.trace("Rejecting incoming.");
     return false;
-  },
-
-  dispose: function dispose(disposeCallback) {
-    // Forget the items that we've already skipped.
-    for (let [guid, forget] in Iterator(this.forgotten)) {
-      delete this.stored[guid];
-    }
-    delete this.forgotten;
-
-    let cb = function (ts, bundle) {
-      bundle.stored = this.stored;
-      delete this.stored;
-      disposeCallback(ts, bundle);
-    }.bind(this);
-
-    RepositorySession.prototype.dispose.call(this, cb);
   }
 };

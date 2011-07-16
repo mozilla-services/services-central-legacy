@@ -44,6 +44,7 @@ Cu.import("resource://services-sync/util.js");
 
 const EXPORTED_SYMBOLS = ["Repository",
                           "RepositorySession",
+                          "TrackingSession",
                           "Server11Repository",
                           "Crypto5Middleware"];
 
@@ -696,5 +697,94 @@ Crypto5StoreSession.prototype = {
       }
       return fetchCallback(error, record);
     }).bind(this);
+  }
+};
+
+/**
+ * A partial repository session that provides tracking services to its
+ * subclasses. TrackingSession is not a complete session class; you cannot use
+ * it in isolation.
+ *
+ * TrackingSession implements `unbundle` and `dispose` to persist a set of
+ * stored IDs. These are called for you by Synchronizer.
+ *
+ * Invoke `shouldSkip` to decide whether you should skip an item (e.g., in
+ * fetchSince).
+ *
+ * Invoke `trackStore` once you've stored an item that should be skipped in
+ * future.
+ *
+ * If you implement your own `dispose` or `unbundle` methods, don't forget to
+ * call these!
+ */
+function TrackingSession(repository, storeCallback) {
+  RepositorySession.call(this, repository, storeCallback);
+
+  // Track stored GUIDs so we don't reupload.
+  this.stored = {};
+
+  // Track non-uploaded items so that we can later stop tracking them!
+  this.forgotten = {};
+
+}
+TrackingSession.prototype = {
+  __proto__: RepositorySession.prototype,
+
+  forgotten: null,
+  stored:    null,
+
+  /**
+   * Used for cross-session persistence. A bundle is returned in the dispose
+   * callback.
+   */
+  unbundle: function unbundle(bundle) {
+    if (bundle && bundle.stored) {
+      this.stored = bundle.stored;
+    }
+  },
+
+  /**
+   * Decide whether to skip an outgoing item based on stored IDs.
+   * Also maintains the 'to forget' list.
+   * MAYBE:
+   * If the timestamp is earlier than our own, don't filter.
+   * timestamp >= this.timestamp &&
+   */
+  shouldSkip: function shouldSkip(guid, timestamp) {
+    if (guid in this.stored) {
+      // One we stored in this session. Skip it.
+      // N.B.: this ignores the possibility of records with times in the
+      // future that we might want to skip more than once! Is that something we
+      // care about?
+      this.forgotten[guid] = true;
+      return true;
+    }
+    return false;
+  },
+
+  trackStore: function trackStore(guid, modified) {
+    this.stored[guid] = modified;
+
+    // We need to ensure that we don't forget records if we store/fetch/store.
+    // Remove from forgotten.
+    if (guid in this.forgotten) {
+      delete this.forgotten[guid];
+    }
+  },
+
+  dispose: function dispose(disposeCallback) {
+    // Forget the items that we've already skipped.
+    for (let [guid, forget] in Iterator(this.forgotten)) {
+      delete this.stored[guid];
+    }
+    delete this.forgotten;
+
+    let cb = function (ts, bundle) {
+      bundle.stored = this.stored;
+      delete this.stored;
+      disposeCallback(ts, bundle);
+    }.bind(this);
+
+    RepositorySession.prototype.dispose.call(this, cb);
   }
 };

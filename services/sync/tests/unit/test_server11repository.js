@@ -70,7 +70,7 @@ add_test(function test_guidsSince() {
     session.guidsSince(2000, function guidsCallback(error, guids) {
       do_check_eq(error, null);
       do_check_eq(expected + "", guids.sort());
-      dispose(session, server);
+      finish(session, server);
     });
   });
 });
@@ -82,7 +82,7 @@ add_test(function test_guidsSince_networkError() {
       do_check_eq(guids, null);
       do_check_neq(error, null);
       do_check_eq(error.result, Cr.NS_ERROR_CONNECTION_REFUSED);
-      dispose(session);
+      finish(session);
     });
   });
 });
@@ -98,7 +98,7 @@ add_test(function test_guidsSince_httpError() {
       do_check_neq(error, null);
       do_check_eq(error.status, 404);
       do_check_eq(error.body, "Cannae\nfind\nit");
-      dispose(session, server);
+      finish(session, server);
     });
   });
 });
@@ -114,7 +114,7 @@ add_test(function test_guidsSince_invalidJSON() {
       do_check_neq(error, null);
       do_check_eq(error.name, "SyntaxError");
       do_check_eq(error.message, "JSON.parse: unexpected keyword");
-      dispose(session, server);
+      finish(session, server);
     });
   });
 });
@@ -141,7 +141,7 @@ add_test(function test_fetchSince() {
       // We've reached the end of the list, so we must be done.
       do_check_eq(record, DONE);
       calledDone = true;
-      dispose(session, server);
+      finish(session, server);
     });
   });
 });
@@ -153,7 +153,7 @@ add_test(function test_fetchSince_networkError() {
       do_check_eq(record, DONE);
       do_check_neq(error, null);
       do_check_eq(error.result, Cr.NS_ERROR_CONNECTION_REFUSED);
-      dispose(session);
+      finish(session);
     });
   });
 });
@@ -175,7 +175,7 @@ add_test(function test_fetchSince_httpError() {
       do_check_neq(error, null);
       do_check_eq(error.status, 404);
       do_check_eq(error.body, "Cannae\nfind\nit");
-      dispose(session, server);
+      finish(session, server);
     });
   });
 });
@@ -205,7 +205,7 @@ add_test(function test_fetchSince_invalidJSON() {
       calledDone = true;
       do_check_eq(record, DONE);
       do_check_eq(error, null);
-      dispose(session, server);
+      finish(session, server);
     });
   });
 });
@@ -237,7 +237,7 @@ add_test(function test_fetch() {
       // We've reached the end of the list, so we must be done.
       do_check_eq(record, DONE);
       calledDone = true;
-      dispose(session, server);
+      finish(session, server);
     });
   });
 });
@@ -249,7 +249,7 @@ add_test(function test_fetch_networkError() {
       do_check_eq(record, DONE);
       do_check_neq(error, null);
       do_check_eq(error.result, Cr.NS_ERROR_CONNECTION_REFUSED);
-      dispose(session);
+      finish(session);
     });
   });
 });
@@ -271,7 +271,7 @@ add_test(function test_fetch_httpError() {
       do_check_neq(error, null);
       do_check_eq(error.status, 404);
       do_check_eq(error.body, "Cannae\nfind\nit");
-      dispose(session, server);
+      finish(session, server);
     });
   });
 });
@@ -301,7 +301,7 @@ add_test(function test_fetch_invalidJSON() {
       calledDone = true;
       do_check_eq(record, DONE);
       do_check_eq(error, null);
-      dispose(session, server);
+      finish(session, server);
     });
   });
 });
@@ -326,7 +326,7 @@ add_test(function test_store_empty() {
     do_check_eq(error, DONE);
     calledDone = true;
     do_check_eq(0, collection.count());
-    dispose(session, server);
+    finish(session, server);
   }
   function sessionCallback(err, sess) {
     do_check_false(!!err);
@@ -391,7 +391,7 @@ add_test(function test_store_finish_once_only() {
       threw = ex;
     }
     do_check_eq("Store session already marked as DONE.", threw);
-    dispose(session);
+    finish(session);
   }
   function sessionCallback(err, sess) {
     do_check_false(!!err);
@@ -411,7 +411,7 @@ add_test(function test_store_batching_completeLastBatch() {
     do_check_eq(invoked, 3);
     do_check_eq(session.flushQueue.length, 2);
     do_check_true(session.done);
-    dispose(session);
+    finish(session);
   }
   function sessionCallback(err, sess) {
     session = sess;
@@ -458,7 +458,7 @@ add_test(function test_store_batching_incompleteLastBatch() {
     do_check_eq(session.flushQueue[0].length, 2);
     do_check_eq(session.flushQueue[1].length, 1);
     do_check_true(session.done);
-    dispose(session);
+    finish(session);
   }
   function sessionCallback(err, sess) {
     session = sess;
@@ -511,7 +511,7 @@ add_test(function test_store_networkError() {
 
     calledDone = true;
     do_check_eq(error, DONE);
-    dispose(session);
+    finish(session);
   }
   function sessionCallback(err, sess) {
     do_check_false(!!err);
@@ -548,7 +548,7 @@ add_test(function test_store_httpError() {
 
     calledDone = true;
     do_check_eq(error, DONE);
-    dispose(session, server);
+    finish(session, server);
   }
   function sessionCallback(err, sess) {
     do_check_false(!!err);
@@ -585,7 +585,7 @@ add_test(function test_store_invalidResponse() {
 
     calledDone = true;
     do_check_eq(error, DONE);
-    dispose(session, server);
+    finish(session, server);
   }
   function sessionCallback(err, sess) {
     do_check_false(!!err);
@@ -622,7 +622,7 @@ add_test(function test_wipe() {
           _("Check postconditions: 0 GUIDs.");
           do_check_false(!!error);
           do_check_eq(0, guids.length);
-          dispose(session, server);
+          finish(session, server);
         });
       });
     });
@@ -649,7 +649,7 @@ add_test(function test_wipe_empty() {
           _("Check postconditions: 0 GUIDs.");
           do_check_false(!!error);
           do_check_eq(0, guids.length);
-          dispose(session, server);
+          finish(session, server);
         });
       });
     });

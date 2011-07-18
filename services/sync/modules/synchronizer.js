@@ -49,7 +49,7 @@ const EXPORTED_SYMBOLS = ["Synchronizer"];
  *
  * Grab a session for each of our repositories. Once both sessions are set
  * up, we pair invocations of fetchSince and store callbacks, switching
- * places once the first stream is done. Then we dispose of each session and
+ * places once the first stream is done. Then we finish each session and
  * invoke our callback.
  *
  * Example usage:
@@ -163,7 +163,7 @@ SynchronizerSession.prototype = {
     session.unbundle(this.storageB);
     this.sessionB = session;
     if (error) {
-      return this.sessionA.dispose(function () {
+      return this.sessionA.finish(function () {
         this.onInitialized(error);
       }.bind(this));
     }
@@ -174,10 +174,10 @@ SynchronizerSession.prototype = {
    * Dispose of both sessions and invoke onSynchronized.
    */
   finishSync: function finishSync() {
-    this.sessionA.dispose(function (timestampA, bundle) {
+    this.sessionA.finish(function (timestampA, bundle) {
       this.timestampA = timestampA;
       this.storageA   = bundle;
-      this.sessionB.dispose(function (timestampB, bundle) {
+      this.sessionB.finish(function (timestampB, bundle) {
         this.timestampB = timestampB;
         this.storageB   = bundle;
         // Finally invoke the output callback.

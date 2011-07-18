@@ -43,7 +43,7 @@ add_test(function wbo_repository_stop() {
         stopped = true;
         Utils.nextTick(function () {
           do_check_eq(2, counter);
-          session.dispose(function () {
+          session.finish(function () {
             run_next_test();
           });
         });
@@ -68,7 +68,7 @@ add_test(function test_guidsSince() {
     function guidsCallback(error, guids) {
       do_check_eq(error, null);
       do_check_eq(expected + "", guids.sort());
-      session.dispose(function () {
+      session.finish(function () {
         run_next_test();
       });
     }
@@ -86,7 +86,7 @@ add_test(function test_guidsSinceIsInclusive() {
     function guidsCallback(error, guids) {
       do_check_eq(error, null);
       do_check_eq(expected + "", guids.sort());
-      session.dispose(function () {
+      session.finish(function () {
         run_next_test();
       });
     }
@@ -120,7 +120,7 @@ add_test(function test_fetchSince() {
       // We've reached the end of the list, so we must be done.
       do_check_eq(record, DONE);
       calledDone = true;
-      session.dispose(function () {
+      session.finish(function () {
         run_next_test();
       });
     });
@@ -131,7 +131,7 @@ add_test(function test_timestamp() {
   let repo = setup_fixtures();
   function sessionCallback(error, session) {
     session.timestamp = 12345;
-    session.dispose(function (ts) {
+    session.finish(function (ts) {
       do_check_eq(ts, 12345);
       run_next_test();
     });
@@ -164,7 +164,7 @@ add_test(function test_fetch() {
       // We've reached the end of the list, so we must be done.
       do_check_eq(record, DONE);
       calledDone = true;
-      session.dispose(function () {
+      session.finish(function () {
         run_next_test();
       });
     });
@@ -192,7 +192,7 @@ add_test(function test_store_empty() {
     do_check_eq(error, DONE);
     calledDone = true;
     do_check_eq(0, repo.count);
-    session.dispose(function () {
+    session.finish(function () {
       run_next_test();
     });
   }
@@ -226,7 +226,7 @@ add_test(function test_store() {
     do_check_eq("Bar4", repo.wbos["123412341234"].payload);
     do_check_eq("Bar5", repo.wbos["123412341235"].payload);
     do_check_eq(undefined, repo.wbos["123412341230"]);
-    session.dispose(function () {
+    session.finish(function () {
       run_next_test();
     });
   }
@@ -253,7 +253,7 @@ add_test(function test_session_store_refetching() {
 
   function fetchCallback(error, record) {
     do_check_eq(record, DONE);
-    session.dispose(function () {
+    session.finish(function () {
       run_next_test();
     });
   }

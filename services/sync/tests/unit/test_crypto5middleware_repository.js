@@ -186,7 +186,7 @@ add_test(function test_store_empty() {
     do_check_eq(error, DONE);
     calledDone = true;
     do_check_eq(0, repo.count);
-    session.dispose(run_next_test);
+    session.finish(run_next_test);
   }
   crypto5.createSession(storeCallback, sessionCallback);
 });
@@ -253,7 +253,7 @@ add_test(function test_store() {
       do_check_eq(wbo_payload.hmac, expected_payload.hmac);
     }
 
-    session.dispose(run_next_test);
+    session.finish(run_next_test);
   }
   crypto5.createSession(storeCallback, sessionCallback);
 });

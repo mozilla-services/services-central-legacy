@@ -107,14 +107,14 @@ RepositorySession.prototype = {
 
   /**
    * Used for tracking changes. The timestamp can be set with an initial value,
-   * and will be reported in the dispose callback.
+   * and will be reported in the finish callback.
    */
   timestamp: 0,
 
   /**
    * Used to persist tracking data between sessions.
    *
-   * The bundle is included in the dispose callback.
+   * The bundle is included in the finish callback.
    */
   unbundle: function unbundle(bundle) {
   },
@@ -198,7 +198,7 @@ RepositorySession.prototype = {
    * The callback is invoked with the session timestamp and a 'bundle' object,
    * which can be used for persisting tracking data between sessions.
    */
-  dispose: function dispose(callback) {
+  finish: function finish(callback) {
     callback(this.timestamp, {});
   },
 };
@@ -673,12 +673,12 @@ Crypto5StoreSession.prototype = {
     this.session.wipe(wipeCallback);
   },
 
-  dispose: function dispose(callback) {
+  finish: function finish(callback) {
     // Clean up GC hack.
     if (this.repository.session == this) {
       this.repository.session = undefined;
     }
-    RepositorySession.prototype.dispose.call(this, callback);
+    RepositorySession.prototype.finish.call(this, callback);
   },
 
   //XXX TODO this doesn't handle key refetches yet
@@ -705,7 +705,7 @@ Crypto5StoreSession.prototype = {
  * subclasses. TrackingSession is not a complete session class; you cannot use
  * it in isolation.
  *
- * TrackingSession implements `unbundle` and `dispose` to persist a set of
+ * TrackingSession implements `unbundle` and `finish` to persist a set of
  * stored IDs. These are called for you by Synchronizer.
  *
  * Invoke `shouldSkip` to decide whether you should skip an item (e.g., in
@@ -714,7 +714,7 @@ Crypto5StoreSession.prototype = {
  * Invoke `trackStore` once you've stored an item that should be skipped in
  * future.
  *
- * If you implement your own `dispose` or `unbundle` methods, don't forget to
+ * If you implement your own `finish` or `unbundle` methods, don't forget to
  * call these!
  */
 function TrackingSession(repository, storeCallback) {
@@ -734,7 +734,7 @@ TrackingSession.prototype = {
   stored:    null,
 
   /**
-   * Used for cross-session persistence. A bundle is returned in the dispose
+   * Used for cross-session persistence. A bundle is returned in the finish
    * callback.
    */
   unbundle: function unbundle(bundle) {
@@ -762,6 +762,10 @@ TrackingSession.prototype = {
     return false;
   },
 
+  /**
+   * Track that an item has been stored. This involves adding to the `stored`
+   * map, and removing the item from `forgotten` if necessary.
+   */
   trackStore: function trackStore(guid, modified) {
     this.stored[guid] = modified;
 
@@ -772,7 +776,12 @@ TrackingSession.prototype = {
     }
   },
 
-  dispose: function dispose(disposeCallback) {
+  /**
+   * Clean up. For TrackingSession, this involves removing forgotten items from
+   * `stored`, and invoking the callback with a bundle containing `stored`. The
+   * owner of the session should persist these between sessions.
+   */
+  finish: function finish(finish) {
     // Forget the items that we've already skipped.
     for (let [guid, forget] in Iterator(this.forgotten)) {
       delete this.stored[guid];
@@ -782,9 +791,9 @@ TrackingSession.prototype = {
     let cb = function (ts, bundle) {
       bundle.stored = this.stored;
       delete this.stored;
-      disposeCallback(ts, bundle);
+      finish(ts, bundle);
     }.bind(this);
 
-    RepositorySession.prototype.dispose.call(this, cb);
+    RepositorySession.prototype.finish.call(this, cb);
   }
 };

@@ -453,7 +453,6 @@ function WBORepositorySession(repository, storeCallback) {
 
   // Equivalent to modifying lastSyncLocal in Engine._syncStartup.
   // This starts out as the time of the sync.
-  this.timestamp = Date.now();
   this._log.debug("WBORepositorySession timestamp: " + this.timestamp);
 }
 WBORepositorySession.prototype = {
@@ -536,5 +535,10 @@ WBORepositorySession.prototype = {
     }
     this._log.trace("Rejecting incoming.");
     return false;
+  },
+
+  begin: function begin(callback) {
+    this.timestamp = Date.now();
+    callback();
   }
 };

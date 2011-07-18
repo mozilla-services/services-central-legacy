@@ -135,7 +135,15 @@ SynchronizerSession.prototype = {
     this._log.debug("Done with records in storeCallbackB.");
     this._log.debug("Fetching from B into A.");
     // On to the next!
-    this.sessionB.fetchSince(this.synchronizer.lastSyncB, this.fetchCallback.bind(this, this.sessionA));
+    this.sessionB.begin(function (err) {
+      if (err) {
+        // Hook for handling. No response channel yet.
+        this.onStoreError(error);
+        return;
+      }
+      this.sessionB.fetchSince(this.synchronizer.lastSyncB,
+                               this.fetchCallback.bind(this, this.sessionA));
+    }.bind(this));
   },
 
   storeCallbackA: function storeCallbackA(error) {
@@ -199,8 +207,15 @@ SynchronizerSession.prototype = {
    * invoke onSynchronized.
    */
   synchronize: function synchronize() {
-    this.sessionA.fetchSince(this.synchronizer.lastSyncA,
-                             this.fetchCallback.bind(this, this.sessionB));
+    this.sessionA.begin(function (err) {
+      if (err) {
+        // Hook for handling. No response channel yet.
+        this.onStoreError(error);
+        return;
+      }
+      this.sessionA.fetchSince(this.synchronizer.lastSyncA,
+                               this.fetchCallback.bind(this, this.sessionB));
+    }.bind(this));
   }
 };
 

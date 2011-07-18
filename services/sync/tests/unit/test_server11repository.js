@@ -38,12 +38,15 @@ function run_test() {
 function withSession(repo, f) {
   repo.createSession(null, function (err, session) {
     do_check_true(!err);
-    f(session);
+    session.begin(function (err) {
+      do_check_true(!err);
+      f(session);
+    });
   });
 }
 
-function dispose(session, server) {
-  session.dispose(function () {
+function finish(session, server) {
+  session.finish(function () {
     if (server) {
       server.stop(run_next_test);
     } else {
@@ -329,9 +332,12 @@ add_test(function test_store_empty() {
     finish(session, server);
   }
   function sessionCallback(err, sess) {
-    do_check_false(!!err);
+    do_check_true(!err);
     session = sess;
-    session.store(DONE);
+    session.begin(function (err) {
+      do_check_true(!err);
+      session.store(DONE);
+    });
   }
   repo.createSession(storeCallback, sessionCallback);
 });
@@ -358,15 +364,18 @@ add_test(function test_store() {
     do_check_eq("Bar4", collection.wbos["123412341234"].payload);
     do_check_eq("Bar5", collection.wbos["123412341235"].payload);
     do_check_eq(undefined, collection.wbos["123412341230"]);
-    dispose(session, server);
+    finish(session, server);
   }
   function sessionCallback(err, sess) {
     do_check_false(!!err);
     session = sess;
-    for each (record in items) {
-      session.store(record);
-    }
-    session.store(DONE);
+    session.begin(function (err) {
+      do_check_true(!err);
+      for each (record in items) {
+        session.store(record);
+      }
+      session.store(DONE);
+    });
   }
   repo.createSession(storeCallback, sessionCallback);
 });
@@ -394,9 +403,12 @@ add_test(function test_store_finish_once_only() {
     finish(session);
   }
   function sessionCallback(err, sess) {
-    do_check_false(!!err);
+    do_check_true(!err);
     session = sess;
-    session.store(DONE);
+    session.begin(function (err) {
+      do_check_true(!err);
+      session.store(DONE);
+    });
   }
   repo.createSession(storeCallback, sessionCallback);
 });

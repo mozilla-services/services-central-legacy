@@ -193,6 +193,17 @@ RepositorySession.prototype = {
   },
 
   /**
+   * Perform any necessary startup, such as initializing timestamps, that must
+   * occur before fetching.
+   *
+   * begin is separate from the constructor to allow for delayed
+   * initialization.
+   */
+  begin: function begin(callback) {
+    callback();
+  },
+
+  /**
    * Perform any necessary cleanup, invoking callback when it's safe to
    * proceed.
    * The callback is invoked with the session timestamp and a 'bundle' object,
@@ -671,6 +682,10 @@ Crypto5StoreSession.prototype = {
 
   wipe: function wipe(wipeCallback) {
     this.session.wipe(wipeCallback);
+  },
+
+  begin: function begin(callback) {
+    this.session.begin(callback);
   },
 
   finish: function finish(callback) {

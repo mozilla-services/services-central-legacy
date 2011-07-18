@@ -87,7 +87,7 @@ add_test(function test_guidsSince() {
     session.guidsSince(2000, function guidsCallback(error, guids) {
       do_check_eq(error, null);
       do_check_eq(expected + "", guids.sort());
-      session.dispose(run_next_test);
+      session.finish(run_next_test);
     });
   }
   setup_session(sessionCallback);
@@ -123,7 +123,7 @@ add_test(function test_fetchSince() {
       // We've reached the end of the list, so we must be done.
       do_check_eq(record, DONE);
       calledDone = true;
-      session.dispose(run_next_test);
+      session.finish(run_next_test);
     });
   }
   setup_session(sessionCallback);
@@ -160,7 +160,7 @@ add_test(function test_fetch() {
       // We've reached the end of the list, so we must be done.
       do_check_eq(record, DONE);
       calledDone = true;
-      session.dispose(run_next_test);
+      session.finish(run_next_test);
     });
   }
   setup_session(sessionCallback);

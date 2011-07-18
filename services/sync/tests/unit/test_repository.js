@@ -34,28 +34,31 @@ add_test(function wbo_repository_stop() {
   let counter = 0;
   let stopped = false;
   repo.createSession(null, function (err, session) {
-    function fetchCallback(error, record) {
-      if (stopped) {
-        do_throw("fetchCallback should not be invoked after returning STOP!");
-      }
-      counter++;
-      if (counter == 2) {
-        stopped = true;
-        Utils.nextTick(function () {
-          do_check_eq(2, counter);
-          session.finish(function () {
-            run_next_test();
+    session.begin(function (err) {
+      do_check_true(!err);
+      function fetchCallback(error, record) {
+        if (stopped) {
+          do_throw("fetchCallback should not be invoked after returning STOP!");
+        }
+        counter++;
+        if (counter == 2) {
+          stopped = true;
+          Utils.nextTick(function () {
+            do_check_eq(2, counter);
+            session.finish(function () {
+              run_next_test();
+            });
           });
-        });
-        return STOP;
+          return STOP;
+        }
       }
-    }
-    do_check_true(!err);
-    // Note the use of 2001 here. In order to correctly return items that were
-    // modified in the same instant as a sync began, sessions return items
-    // within an inclusive range. To simplify our comparisons, we deliberately
-    // exclude the earlier modification time.
-    session.fetchSince(2001, fetchCallback);
+      do_check_true(!err);
+      // Note the use of 2001 here. In order to correctly return items that were
+      // modified in the same instant as a sync began, sessions return items
+      // within an inclusive range. To simplify our comparisons, we deliberately
+      // exclude the earlier modification time.
+      session.fetchSince(2001, fetchCallback);
+    });
   });
 });
 
@@ -65,16 +68,18 @@ add_test(function test_guidsSince() {
   let repo = setup_fixtures();
   let expected = ["123456789012", "abcdefghijkl", "charliesheen", "trololololol"];
   function sessionCallback(err, session) {
-    function guidsCallback(error, guids) {
-      do_check_eq(error, null);
-      do_check_eq(expected + "", guids.sort());
-      session.finish(function () {
-        run_next_test();
-      });
-    }
+    session.begin(function (err) {
+      function guidsCallback(error, guids) {
+        do_check_eq(error, null);
+        do_check_eq(expected + "", guids.sort());
+        session.finish(function () {
+          run_next_test();
+        });
+      }
 
-    do_check_true(!err);
-    session.guidsSince(2000, guidsCallback);
+      do_check_true(!err);
+      session.guidsSince(2000, guidsCallback);
+    });
   }
   repo.createSession(null, sessionCallback);
 });
@@ -83,16 +88,19 @@ add_test(function test_guidsSinceIsInclusive() {
   let repo = setup_fixtures();
   let expected = ["123456789012", "charliesheen", "trololololol"];
   function sessionCallback(err, session) {
-    function guidsCallback(error, guids) {
-      do_check_eq(error, null);
-      do_check_eq(expected + "", guids.sort());
-      session.finish(function () {
-        run_next_test();
-      });
-    }
-
     do_check_true(!err);
-    session.guidsSince(2001, guidsCallback);
+    session.begin(function (err) {
+      function guidsCallback(error, guids) {
+        do_check_eq(error, null);
+        do_check_eq(expected + "", guids.sort());
+        session.finish(function () {
+          run_next_test();
+        });
+      }
+
+      do_check_true(!err);
+      session.guidsSince(2001, guidsCallback);
+    });
   }
   repo.createSession(null, sessionCallback);
 });
@@ -103,25 +111,27 @@ add_test(function test_fetchSince() {
   let calledDone = false;
   repo.createSession(null, function (err, session) {
     do_check_true(!err);
-    session.fetchSince(2001, function fetchCallback(error, record) {
-      if (calledDone) {
-        do_throw("Did not expect any more items after DONE!");
-      }
+    session.begin(function (err) {
+      session.fetchSince(2001, function fetchCallback(error, record) {
+        if (calledDone) {
+          do_throw("Did not expect any more items after DONE!");
+        }
 
-      do_check_eq(error, null);
-      // Verify that the record is one of the ones we expect.
-      if (expected.length) {
-        let index = expected.indexOf(record.id);
-        do_check_neq(index, -1);
-        expected.splice(index, 1);
-        return;
-      }
+        do_check_eq(error, null);
+        // Verify that the record is one of the ones we expect.
+        if (expected.length) {
+          let index = expected.indexOf(record.id);
+          do_check_neq(index, -1);
+          expected.splice(index, 1);
+          return;
+        }
 
-      // We've reached the end of the list, so we must be done.
-      do_check_eq(record, DONE);
-      calledDone = true;
-      session.finish(function () {
-        run_next_test();
+        // We've reached the end of the list, so we must be done.
+        do_check_eq(record, DONE);
+        calledDone = true;
+        session.finish(function () {
+          run_next_test();
+        });
       });
     });
   });
@@ -130,10 +140,14 @@ add_test(function test_fetchSince() {
 add_test(function test_timestamp() {
   let repo = setup_fixtures();
   function sessionCallback(error, session) {
-    session.timestamp = 12345;
-    session.finish(function (ts) {
-      do_check_eq(ts, 12345);
-      run_next_test();
+    do_check_true(!error);
+    session.begin(function (err) {
+      do_check_true(!err);
+      session.timestamp = 12345;
+      session.finish(function (ts) {
+        do_check_eq(ts, 12345);
+        run_next_test();
+      });
     });
   }
   repo.createSession(null, sessionCallback);
@@ -147,25 +161,28 @@ add_test(function test_fetch() {
 
   function sessionCallback(error, session) {
     do_check_true(!error);
-    session.fetch(guids, function fetchCallback(error, record) {
-      if (calledDone) {
-        do_throw("Did not expect any more items after DONE!");
-      }
+    session.begin(function (err) {
+      do_check_true(!err);
+      session.fetch(guids, function fetchCallback(error, record) {
+        if (calledDone) {
+          do_throw("Did not expect any more items after DONE!");
+        }
 
-      do_check_false(!!error);
-      // Verify that the record is one of the ones we expect.
-      if (expected.length) {
-        let index = expected.indexOf(record.id);
-        do_check_neq(index, -1);
-        expected.splice(index, 1);
-        return;
-      }
+        do_check_false(!!error);
+        // Verify that the record is one of the ones we expect.
+        if (expected.length) {
+          let index = expected.indexOf(record.id);
+          do_check_neq(index, -1);
+          expected.splice(index, 1);
+          return;
+        }
 
-      // We've reached the end of the list, so we must be done.
-      do_check_eq(record, DONE);
-      calledDone = true;
-      session.finish(function () {
-        run_next_test();
+        // We've reached the end of the list, so we must be done.
+        do_check_eq(record, DONE);
+        calledDone = true;
+        session.finish(function () {
+          run_next_test();
+        });
       });
     });
   }
@@ -180,9 +197,12 @@ add_test(function test_store_empty() {
   let session;
 
   function sessionCallback(error, sess) {
-    do_check_false(!!error);
+    do_check_true(!error);
     session = sess;
-    sess.store(DONE);
+    session.begin(function (err) {
+      do_check_true(!err);
+      sess.store(DONE);
+    });
   }
 
   function storeCallback(error) {
@@ -209,11 +229,14 @@ add_test(function test_store() {
   let session;
 
   function sessionCallback(error, sess) {
+    do_check_true(!error);
     session = sess;
-    for each (record in items) {
-      sess.store(record);
-    }
-    sess.store(DONE);
+    session.begin(function (err) {
+      for each (record in items) {
+        sess.store(record);
+      }
+      sess.store(DONE);
+    });
   }
 
   function storeCallback(error) {
@@ -239,10 +262,13 @@ add_test(function test_session_store_refetching() {
   let repo = new WBORepository();
   let session;
   function sessionCallback(error, sess) {
+    do_check_true(!error);
     session = sess;
-    sess.store({id: "abcdabcdabc1", payload: "one"});
-    sess.store({id: "abcdabcdabc2", payload: "two"});
-    sess.store(DONE);
+    session.begin(function (err) {
+      sess.store({id: "abcdabcdabc1", payload: "one"});
+      sess.store({id: "abcdabcdabc2", payload: "two"});
+      sess.store(DONE);
+    });
   }
 
   function storeCallback(error) {

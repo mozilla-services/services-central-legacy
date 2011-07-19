@@ -6,6 +6,12 @@ Cu.import("resource://services-sync/synchronizer.js");
 Cu.import("resource://services-sync/log4moz.js");
 
 /**
+ * Hook for performing actions mid-sync.
+ */
+function onStore() {
+}
+
+/**
  * Instrument calls to WBORepositorySession.store.
  */
 let storeCalls = [];
@@ -16,6 +22,7 @@ WBORepositorySession.prototype.store = (function wrap(f) {
       storeCalls.push([Utils.deepCopy(this.repository.wbos), record]);
     }
     f.call(this, record);
+    onStore();
   };
 })(WBORepositorySession.prototype.store);
 

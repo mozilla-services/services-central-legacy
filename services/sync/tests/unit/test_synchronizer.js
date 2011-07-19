@@ -194,6 +194,45 @@ add_test(function test_modify() {
   s1.synchronize(firstSyncCallback);
 });
 
+/**
+ * Scenario:
+ *
+ *   * Create sessions.
+ *   * Begin fetching from A.
+ *   * Add item to A.
+ *   * Complete sync.
+ *   * Sync again.
+ *
+ * This test verifies that an item added during a sync will arrive at its
+ * destination by the end of the subsequent sync.
+ */
+add_test(function test_addition_during_sync() {
+  let [s1, r1, r2] = setup_repositories();
+  onStore = function() {
+    r1.wbos["123412346666"] = {id: "123412346666",
+                               modified: Date.now(),
+                               payload: "AddedMidStream"};
+    onStore = function () {};
+  };
+
+  function firstSyncCallback(error) {
+    do_check_true(!error);
+    _("Record in r2? " + ("123412346666" in r2.wbos));
+    do_check_eq(r1.wbos["123412346666"].payload, "AddedMidStream");
+    s1.synchronize(secondSyncCallback);
+  }
+
+  function secondSyncCallback(error) {
+    do_check_true(!error);
+    _("Record in r2? " + ("123412346666" in r2.wbos));
+    do_check_eq(r1.wbos["123412346666"].payload, "AddedMidStream");
+    do_check_eq(r2.wbos["123412346666"].payload, "AddedMidStream");
+
+    run_next_test();
+  }
+
+  s1.synchronize(firstSyncCallback);
+});
 
 // TODO:
 // * Implement and verify store/time in-session tracking, verifying that store

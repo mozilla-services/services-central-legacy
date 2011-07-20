@@ -181,6 +181,8 @@ add_test(function test_modify() {
 
   function secondSyncCallback(error) {
     checkResult(error);
+    // Modifying items results in store() being called only once per modified
+    // item, and no more.
     _("Store calls: " + JSON.stringify(storeCalls));
     do_check_eq(storeCalls.length, 2);
 
@@ -227,6 +229,7 @@ add_test(function test_addition_during_sync() {
     _("Record in r2? " + ("123412346666" in r2.wbos));
     do_check_eq(r1.wbos["123412346666"].payload, "AddedMidStream");
     do_check_eq(r2.wbos["123412346666"].payload, "AddedMidStream");
+    wbos_eq(r1, r2);
 
     run_next_test();
   }

@@ -52,6 +52,8 @@ add_test(function test_sync_through_crypto_middleware() {
     let payload2 = JSON.parse(item2.payload);
     do_check_eq(JSON.parse(payload1.ciphertext).id, "123412341234");
     do_check_eq(JSON.parse(payload2.ciphertext).id, "123412341235");
+    do_check_eq(JSON.parse(payload1.ciphertext).payload, "Bar4");
+    do_check_eq(JSON.parse(payload2.ciphertext).payload, "Bar5");
     run_next_test();
   }
 

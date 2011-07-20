@@ -237,6 +237,42 @@ add_test(function test_addition_during_sync() {
   s1.synchronize(firstSyncCallback);
 });
 
+add_test(function test_threeway_sync() {
+  _("Make sure that items end up passing through crypto middleware during sync.");
+  let r1 = new WBORepository();
+  let r2 = new WBORepository();
+  let rs = new WBORepository();
+  let s1 = new Synchronizer();
+  let s2 = new Synchronizer();
+
+  let now = Date.now();
+  r1.wbos = {
+    "123412341234": {id: "123412341234",
+                     modified: now - 1,
+                     payload: "Bar4"},
+    "123412341235": {id: "123412341235",
+                     modified: now - 2,
+                     payload: "Bar5"}
+  };
+
+  s1.repositoryA = r1;
+  s1.repositoryB = rs;
+  s2.repositoryA = r2;
+  s2.repositoryB = rs;
+
+  s1.synchronize(function (err) {
+    do_check_true(!err);
+    wbos_eq(r1, rs);
+    s2.synchronize(function (err) {
+      do_check_true(!err);
+      wbos_eq(r1, rs);
+      wbos_eq(r1, r2);
+      wbos_eq(r2, rs);
+      run_next_test();
+    })
+  });
+});
+
 // TODO:
 // * Implement and verify store/time in-session tracking, verifying that store
 //   isn't being called for items that we just uploaded

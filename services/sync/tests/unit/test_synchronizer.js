@@ -238,6 +238,5 @@ add_test(function test_addition_during_sync() {
 // * Implement and verify store/time in-session tracking, verifying that store
 //   isn't being called for items that we just uploaded
 // * Error handling
-// * Synchronizing through middleware
 // * Multiple synchronize() calls, both with and without new items, and
 //   modifying one or both ends

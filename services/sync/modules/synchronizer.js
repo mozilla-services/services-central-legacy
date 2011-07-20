@@ -47,6 +47,9 @@ const EXPORTED_SYMBOLS = ["Synchronizer"];
  * A SynchronizerSession exchanges data between two RepositorySessions.
  * As with other kinds of session, this is a one-shot object.
  *
+ * SynchronizerSession is an implementation detail of the Synchronizer. It is
+ * not a public class.
+ *
  * Grab a session for each of our repositories. Once both sessions are set
  * up, we pair invocations of fetchSince and store callbacks, switching
  * places once the first stream is done. Then we finish each session and
@@ -68,8 +71,8 @@ const EXPORTED_SYMBOLS = ["Synchronizer"];
 function SynchronizerSession(synchronizer) {
   this.synchronizer = synchronizer;
 
-  let level = Svc.Prefs.get("log.logger.synchronizersession");
-  this._log = Log4Moz.repository.getLogger("Sync.SynchronizerSession");
+  let level = Svc.Prefs.get("log.logger.synchronizer");
+  this._log = Log4Moz.repository.getLogger("Sync.Synchronizer");
   this._log.level = Log4Moz.Level[level];
 }
 SynchronizerSession.prototype = {
@@ -77,16 +80,17 @@ SynchronizerSession.prototype = {
   sessionB:     null,
   synchronizer: null,
 
-  /**
-   * Need to persist all of these.
-   */
-  timestampA:   null,
-  timestampB:   null,
-  storageA:     null,
-  storageB:     null,
+  //
+  // TODO: Need to persist all of these.
+  //
+  timestampA:  null,
+  timestampB:  null,
+  bundleA:     null,
+  bundleB:     null,
 
   /**
    * Override these two methods!
+   * TODO: comments
    */
   onInitialized: function onInitialized(error) {
     throw "Override onInitialized.";
@@ -111,6 +115,11 @@ SynchronizerSession.prototype = {
   onStoreError: function onStoreError(error) {
   },
 
+  // TODO
+  onSessionError: function onSessionError(error) {
+  },
+
+  // TODO: bind and currying session.
   fetchCallback: function fetchCallback(session, error, record) {
     if (error) {
       this._log.warn("Got error " + Utils.exceptionStr(error) +
@@ -120,6 +129,7 @@ SynchronizerSession.prototype = {
       return this.onFetchError(error, record);
     }
     session.store(record);
+    return null;
   },
 
   /**
@@ -132,13 +142,13 @@ SynchronizerSession.prototype = {
       this.onStoreError(error);
       return;
     }
-    this._log.debug("Done with records in storeCallbackB.");
-    this._log.debug("Fetching from B into A.");
+    this._log.trace("Done with records in storeCallbackB.");
+    this._log.trace("Fetching from B into A.");
     // On to the next!
     this.sessionB.begin(function (err) {
       if (err) {
         // Hook for handling. No response channel yet.
-        this.onStoreError(error);
+        this.onSessionError(error);
         return;
       }
       this.sessionB.fetchSince(this.synchronizer.lastSyncB,
@@ -152,29 +162,29 @@ SynchronizerSession.prototype = {
       this.onStoreError(error);
       return;
     }
-    this._log.debug("Done with records in storeCallbackA.");
+    this._log.trace("Done with records in storeCallbackA.");
     this.finishSync();
   },
 
   sessionCallbackA: function sessionCallbackA(error, session) {
-    session.unbundle(this.storageA);
-    this.sessionA = session;
     if (error) {
       this.onInitialized(error);
       return;
     }
+    this.sessionA = session;
+    session.unbundle(this.bundleA);
     this.synchronizer.repositoryB.createSession(this.storeCallbackB.bind(this),
                                                 this.sessionCallbackB.bind(this));
   },
 
   sessionCallbackB: function sessionCallbackB(error, session) {
-    session.unbundle(this.storageB);
-    this.sessionB = session;
     if (error) {
       return this.sessionA.finish(function () {
         this.onInitialized(error);
       }.bind(this));
     }
+    this.sessionB = session;
+    session.unbundle(this.bundleB);
     this.onInitialized();
   },
 
@@ -184,10 +194,10 @@ SynchronizerSession.prototype = {
   finishSync: function finishSync() {
     this.sessionA.finish(function (timestampA, bundle) {
       this.timestampA = timestampA;
-      this.storageA   = bundle;
+      this.bundleA    = bundle;
       this.sessionB.finish(function (timestampB, bundle) {
         this.timestampB = timestampB;
-        this.storageB   = bundle;
+        this.bundleB    = bundle;
         // Finally invoke the output callback.
         this.onSynchronized(null);
       }.bind(this));
@@ -198,8 +208,9 @@ SynchronizerSession.prototype = {
    * Initialize the two repository sessions, then invoke onInitialized.
    */
   init: function init() {
-    this.synchronizer.repositoryA.createSession(this.storeCallbackA.bind(this),
-                                                this.sessionCallbackA.bind(this));
+    this.synchronizer
+        .repositoryA.createSession(this.storeCallbackA.bind(this),
+                                   this.sessionCallbackA.bind(this));
   },
 
   /**
@@ -210,7 +221,7 @@ SynchronizerSession.prototype = {
     this.sessionA.begin(function (err) {
       if (err) {
         // Hook for handling. No response channel yet.
-        this.onStoreError(error);
+        this.onSessionError(err);
         return;
       }
       this.sessionA.fetchSince(this.synchronizer.lastSyncA,
@@ -265,6 +276,7 @@ Synchronizer.prototype = {
    */
   lastSyncA: 0,
   lastSyncB: 0,
+  // TODO: bundles
 
   /**
    * Repositories to sync.
@@ -278,9 +290,14 @@ Synchronizer.prototype = {
    * Do the stuff to the thing.
    */
   synchronize: function synchronize(callback) {
-    this._log.debug("Entering Synchronizer.synchronize().");
+    this._log.trace("Entering Synchronizer.synchronize().");
 
     let session = new SynchronizerSession(this);
+    session.onSessionError = function (error) {
+      this._log.warn("Error in SynchronizerSession: " +
+                     Utils.exceptionStr(error));
+      return callback(error);
+    };
     session.onInitialized = function (error) {
       // Invoked with session as `this`.
       if (error) {
@@ -288,7 +305,7 @@ Synchronizer.prototype = {
                        Utils.exceptionStr(error));
         return callback(error);
       }
-      this.synchronize();
+      session.synchronize();
     };
     session.onSynchronized = function (error) {
       // Invoked with session as `this`.
@@ -298,8 +315,9 @@ Synchronizer.prototype = {
         return callback(error);
       }
       // Copy across the timestamps from within the session.
-      this.synchronizer.lastSyncA = this.timestampA;
-      this.synchronizer.lastSyncB = this.timestampB;
+      session.synchronizer.lastSyncA = session.timestampA;
+      session.synchronizer.lastSyncB = session.timestampB;
+      // TODO: copy bundle.
       callback();
     };
     session.init();

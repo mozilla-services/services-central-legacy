@@ -637,14 +637,12 @@ Crypto5Middleware.prototype = {
 
 function Crypto5StoreSession(repository, storeCallback, sessionCallback) {
   RepositorySession.call(this, repository, storeCallback);
-  this.session       = undefined;
   // TODO: do we need to wrap storeCallback at all?
   repository.repository.createSession(storeCallback,
     function (error, session) {
       this.session = session;
       sessionCallback(error, this);
     }.bind(this));
-  return this;
 }
 Crypto5StoreSession.prototype = {
   __proto__: RepositorySession.prototype,

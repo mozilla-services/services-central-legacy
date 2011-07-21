@@ -72,10 +72,12 @@ function SynchronizerSession(synchronizer) {
   this.synchronizer = synchronizer;
 
   let level = Svc.Prefs.get("log.logger.synchronizer");
-  this._log = Log4Moz.repository.getLogger("Sync.Synchronizer");
+  this._log = Log4Moz.repository.getLogger(this._logName);
   this._log.level = Log4Moz.Level[level];
 }
 SynchronizerSession.prototype = {
+  _logName: "Sync.Synchronizer",
+
   sessionA:     null,
   sessionB:     null,
   synchronizer: null,
@@ -266,10 +268,11 @@ SynchronizerSession.prototype = {
 
 function Synchronizer() {
   let level = Svc.Prefs.get("log.logger.synchronizer");
-  this._log = Log4Moz.repository.getLogger("Sync.Synchronizer");
+  this._log = Log4Moz.repository.getLogger(this._logName);
   this._log.level = Log4Moz.Level[level];
 }
 Synchronizer.prototype = {
+  _logName: "Sync.Synchronizer",
 
   /**
    * Keep track of timestamps. These need to be persisted.

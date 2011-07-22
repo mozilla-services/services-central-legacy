@@ -430,14 +430,20 @@ WBORepository.prototype = {
   __proto__: Repository.prototype,
 
   /**
-   * Repository API
+   * Constructor. This allows you to control which Session class is
+   * instantiated by createSession.
+   */
+  _sessionConstructor: WBORepositorySession,
+
+  /**
+   * Repository API.
    */
   createSession: function createSession(storeCallback, sessionCallback) {
-    sessionCallback(null, new WBORepositorySession(this, storeCallback));
+    sessionCallback(null, new (this._sessionConstructor)(this, storeCallback));
   },
 
   /**
-   * Helpers
+   * Helpers.
    */
   get count() {
     return Object.keys(this.wbos).length;

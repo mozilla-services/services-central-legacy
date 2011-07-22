@@ -284,3 +284,17 @@ add_test(function test_session_store_refetching() {
   }
   repo.createSession(storeCallback, sessionCallback);
 });
+
+// TODO: need a test for storeCallback aborting.
+add_test(function test_storeCallback_abort() {
+  _("Test aborting from a storeCallback.");
+  let repo = setup_fixtures();
+  let counter = 0;
+  let stopped = false;
+  repo.createSession(null, function (err, session) {
+    session.begin(function (err) {
+      do_check_true(!err);
+      run_next_test();
+    });
+  });
+});

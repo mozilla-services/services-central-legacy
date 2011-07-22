@@ -273,29 +273,12 @@ add_test(function test_threeway_sync() {
   });
 });
 
-function FailingWBORepository(wbos) {
-  WBORepository.call(this, wbos);
-}
-FailingWBORepository.prototype = {
-  __proto__: WBORepository.prototype,
-  _sessionConstructor: FailingWBORepositorySession
-};
-
-function FailingWBORepositorySession(repository, storeCallback) {
-  WBORepositorySession.call(this, repository, storeCallback);
-}
-FailingWBORepositorySession.prototype = {
-  __proto__: WBORepositorySession.prototype,
-  begin: function begin(callback) {
-    callback(new Error("Oh no!"));
-  }
-};
-
 add_test(function test_failing_session() {
   _("Fail session creation during sync.");
-  let r1 = new FailingWBORepository();
+  let r1 = new WBORepository();
   let r2 = new WBORepository();
   let s1 = new Synchronizer();
+  r1._sessionConstructor = FailingSessionWBORepositorySession;
   s1.repositoryA = r1;
   s1.repositoryB = r2;
   let called = false;
@@ -309,11 +292,29 @@ add_test(function test_failing_session() {
   }
 });
 
+// This test -- and Synchronizer -- need to be amended to reflect abort().
+// Behavior during store failures should match up to existing engine behavior.
+// TODO
+/*
 add_test(function test_failing_store() {
   _("Fail store during sync.");
-  run_next_test();
-});
+  let r1 = new WBORepository();
+  let r2 = new WBORepository();
+  let s1 = new Synchronizer();
+  r1._sessionConstructor = FailingStoreWBORepositorySession;
+  s1.repositoryA = r1;
+  s1.repositoryB = r2;
+  let called = false;
+  s1.synchronize(function (error) {
+    called = true;
+    run_next_test();
+  });
 
+  if (!called) {
+    do_throw("I reached here!");
+  }
+});
+*/
 
 
 // TODO:

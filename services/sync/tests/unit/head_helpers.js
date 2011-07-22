@@ -455,3 +455,30 @@ WBORepositorySession.prototype = {
     callback();
   }
 };
+
+function FailingSessionWBORepositorySession(repository, storeCallback) {
+  WBORepositorySession.call(this, repository, storeCallback);
+}
+FailingSessionWBORepositorySession.prototype = {
+  __proto__: WBORepositorySession.prototype,
+  begin: function begin(callback) {
+    callback(new Error("Oh no!"));
+  }
+};
+
+function FailingStoreWBORepositorySession(repository, storeCallback) {
+  WBORepositorySession.call(this, repository, storeCallback);
+}
+FailingStoreWBORepositorySession.prototype = {
+  __proto__: WBORepositorySession.prototype,
+  store: function store(record) {
+    _("Store: " + JSON.stringify(record));
+    let cb = this.storeCallback;
+    Utils.nextTick(function () {
+      cb({info: new Error("Oh no!")});
+      Utils.nextTick(function () {
+        cb(Repository.prototype.DONE);
+      });
+    });
+  }
+};

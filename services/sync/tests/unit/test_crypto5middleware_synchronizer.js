@@ -7,7 +7,6 @@ Cu.import("resource://services-sync/synchronizer.js");
 Cu.import("resource://services-sync/log4moz.js");
 
 const DONE = Repository.prototype.DONE;
-const STOP = Repository.prototype.STOP;
 
 function run_test() {
   // Monkey-patch fake crypto in place.

@@ -5,7 +5,6 @@ Cu.import("resource://services-sync/repository.js");
 Cu.import("resource://services-sync/record.js");
 
 const DONE = Repository.prototype.DONE;
-const STOP = Repository.prototype.STOP;
 
 function run_test() {
   // Monkey-patch fake crypto in place.

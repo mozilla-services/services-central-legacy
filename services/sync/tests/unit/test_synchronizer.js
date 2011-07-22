@@ -273,6 +273,49 @@ add_test(function test_threeway_sync() {
   });
 });
 
+function FailingWBORepository(wbos) {
+  WBORepository.call(this, wbos);
+}
+FailingWBORepository.prototype = {
+  __proto__: WBORepository.prototype,
+  _sessionConstructor: FailingWBORepositorySession
+};
+
+function FailingWBORepositorySession(repository, storeCallback) {
+  WBORepositorySession.call(this, repository, storeCallback);
+}
+FailingWBORepositorySession.prototype = {
+  __proto__: WBORepositorySession.prototype,
+  begin: function begin(callback) {
+    callback(new Error("Oh no!"));
+  }
+};
+
+add_test(function test_failing_session() {
+  _("Fail session creation during sync.");
+  let r1 = new FailingWBORepository();
+  let r2 = new WBORepository();
+  let s1 = new Synchronizer();
+  s1.repositoryA = r1;
+  s1.repositoryB = r2;
+  let called = false;
+  s1.synchronize(function () {
+    called = true;
+    run_next_test();
+  });
+
+  if (!called) {
+    do_throw("I reached here!");
+  }
+});
+
+add_test(function test_failing_store() {
+  _("Fail store during sync.");
+  run_next_test();
+});
+
+
+
 // TODO:
 // * Implement and verify store/time in-session tracking, verifying that store
 //   isn't being called for items that we just uploaded

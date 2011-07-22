@@ -6,7 +6,6 @@ Cu.import("resource://services-sync/record.js");
 Cu.import("resource://services-sync/util.js");
 
 const DONE = Repository.prototype.DONE;
-const STOP = Repository.prototype.STOP;
 
 function run_test() {
   run_next_test();

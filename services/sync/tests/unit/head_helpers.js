@@ -375,8 +375,17 @@ WBORepositorySession.prototype = {
     guidsCallback(null, guids);
   },
 
+  abort: function abort() {
+    _("Called abort on WBORepositorySession.");
+    this.aborted = true;
+  },
+
   fetchSince: function fetchSince(timestamp, fetchCallback) {
     for (let [guid, wbo] in Iterator(this.repository.wbos)) {
+      if (this.aborted) {
+        return;
+      }
+
       // >= covers the case of an immediate store within the same millisecond
       // as initialization. We want to return that item, even if it's sometimes
       // redundant.
@@ -384,22 +393,20 @@ WBORepositorySession.prototype = {
         if (this.shouldSkip(wbo.id, timestamp)) {
           continue;
         }
-        if (fetchCallback(null, wbo) == Repository.prototype.STOP) {
-          return;
-        }
+        fetchCallback(null, wbo);
       }
     }
     fetchCallback(null, Repository.prototype.DONE);
   },
 
   fetch: function fetch(guids, fetchCallback) {
-    const STOP = Repository.prototype.STOP;
     for (let i = 0; i < guids.length; i++) {
+      if (this.aborted) {
+        return;
+      }
       let wbo = this.repository.wbos[guids[i]];
       if (wbo) {
-        if (fetchCallback(null, wbo) == STOP) {
-          return;
-        }
+        fetchCallback(null, wbo);
       }
     }
     fetchCallback(null, Repository.prototype.DONE);

@@ -123,7 +123,7 @@ SynchronizerSession.prototype = {
    * other recovery/etc. handling, when failure occurs.
    */
   onFetchError: function onFetchError(error, record) {
-    // E.g., return Repository.prototype.STOP;
+    // E.g., session.abort();
   },
 
   /**

@@ -49,7 +49,6 @@ const EXPORTED_SYMBOLS = ["Repository",
                           "Crypto5Middleware"];
 
 const DONE = { toString: function() "<DONE>" };
-const STOP = { toString: function() "<STOP>" };
 
 /**
  * Base repository.
@@ -61,7 +60,6 @@ Repository.prototype = {
    * Values to pass to and from callbacks.
    */
   DONE: DONE,
-  STOP: STOP,
 
   /**
    * Create a new session object.
@@ -70,12 +68,13 @@ Repository.prototype = {
    *        Callback with the signature (error). It may be called multiple
    *        times with error objects. It will be always called with the DONE
    *        value when the store operation has been completed.
+   *        storeCallback should call session.abort() to signal that the fetch
+   *        should be aborted.
    *        @param error
    *               One of two values: DONE, or an error object.
    *               `error.guids` is an array of GUIDs of records that couldn't
    *               be stored.
    *               `error.info` describes the error, e.g. an exception.
-   *        @return STOP if the store session should be aborted.
    *
    * @param sessionCallback
    *        Callback with the signature (error, session). Invoked once a
@@ -99,6 +98,11 @@ function RepositorySession(repository, storeCallback) {
   this.storeCallback = storeCallback;
 }
 RepositorySession.prototype = {
+
+  /**
+   * Has abort() been called on this session?
+   */
+  aborted: false,
 
   /**
    * Invoked as part of store().
@@ -134,6 +138,16 @@ RepositorySession.prototype = {
   },
 
   /**
+   * Interface expected to be used by fetchCallback and storeCallback.
+   * Invoking this method will make an effort to abort the current fetch.
+   *
+   * An aborted session does not cause further callbacks to be invoked.
+   */
+  abort: function abort() {
+    this.aborted = true;
+  },
+
+  /**
    * Retrieve a sequence of records that have been modified since timestamp.
    * Invoke the callback once for each retrieved record, then finally with
    * the DONE value.
@@ -142,9 +156,10 @@ RepositorySession.prototype = {
    *        Number of seconds since the epoch (can be a decimal number).
    * @param fetchCallback
    *        Callback function with the signature (error, record).
+   *        fetchCallback should call session.abort() to signal that the fetch
+   *        should be aborted.
    *        @param error is null for a successful operation.
    *        @param record will be the DONE value on the last invocation.
-   *        @return STOP if the fetch operation should be aborted.
    */
   fetchSince: function fetchSince(timestamp, fetchCallback) {
     throw "RepositorySession must implement 'fetchSince'";
@@ -159,9 +174,10 @@ RepositorySession.prototype = {
    *        Array of GUIDs to retrieve.
    * @param fetchCallback
    *        Callback function with the signature (error, record).
+   *        fetchCallback should call session.abort() to signal that the fetch
+   *        should be aborted.
    *        @param error is null for a succcessful operation.
    *        @param record will be the DONE value on the last invocation.
-   *        @return STOP if the fetch operation should be aborted.
    */
   fetch: function fetch(guids, fetchCallback) {
     throw "RepositorySession must implement 'fetch'";
@@ -286,11 +302,16 @@ Server11Session.prototype = {
   batch:         null,
   flushQueue:    null,
 
-  /*
+  /**
    * Flushing control.
    */
   done: false,
   flushing: 0,
+
+  /**
+   * Aborting control.
+   */
+  request: null,
 
   /**
    * Upload batch size.
@@ -326,6 +347,19 @@ Server11Session.prototype = {
       }
       guidsCallback(null, result);
     });
+  },
+
+  /**
+   * TODO: this relies on onComplete being called on our behalf...
+   * is that correct?
+   */
+  abort: function abort() {
+    let r = this.request;
+    this.request = null;
+    if (r) {
+      this.aborted = true;
+      r.abort();
+    }
   },
 
   fetchSince: function fetchSince(timestamp, fetchCallback) {
@@ -375,6 +409,9 @@ Server11Session.prototype = {
    */
   _fetchRecords: function(uri, fetchCallback) {
     let request = new SyncStorageRequest(uri);
+
+    // Track this so we can abort.
+    this.request = request;
     request.setHeader("Accept", "application/newlines");
 
     request.onProgress = function onProgress() {
@@ -385,7 +422,9 @@ Server11Session.prototype = {
         return;
       }
       let newline;
-      while ((newline = response.body.indexOf("\n")) > 0) {
+
+      while (!this.aborted &&
+             (newline = response.body.indexOf("\n")) > 0) {
         let json = response.body.slice(0, newline);
         response.body = response.body.slice(newline + 1);
         let error, record;
@@ -395,12 +434,10 @@ Server11Session.prototype = {
           // Notify the caller of genuine parsing errors.
           error = ex;
         }
-        if (fetchCallback(error, record) == STOP) {
-          request.abort();
-          return;
-        }
+        fetchCallback(error, record);
       }
     };
+
     request.onComplete = function onComplete(error) {
       let response = request.response;
       // 'response.success' exposes nsIHttpChannel::requestSucceeded.
@@ -697,7 +734,7 @@ Crypto5StoreSession.prototype = {
   //XXX TODO this doesn't handle key refetches yet
   // Idea: consumers should deal with this. If this passes an HMAC error back
   // to them, and this was the first time they've encountered one, they can
-  // abort with STOP and then restart the fetch.
+  // abort and then restart the fetch.
   makeDecryptCb: function makeDecryptCb(fetchCallback) {
     return (function decryptCallback(error, record) {
       if (!error && record != DONE) {

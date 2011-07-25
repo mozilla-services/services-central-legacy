@@ -66,10 +66,10 @@ add_test(function test_empty_repositories() {
     do_check_true(!error);
     do_check_eq(0, Object.keys(r1.wbos).length);
     do_check_eq(0, Object.keys(r2.wbos).length);
-    _("lastSyncA: " + s1.lastSyncA);
-    _("lastSyncB: " + s1.lastSyncB);
-    do_check_true(s1.lastSyncA > 0);
-    do_check_true(s1.lastSyncB > 0);
+    _("bundleA.timestamp: " + s1.bundleA.timestamp);
+    _("bundleB.timestamp: " + s1.bundleB.timestamp);
+    do_check_true(s1.bundleA.timestamp > 0);
+    do_check_true(s1.bundleB.timestamp > 0);
     wbos_eq(r1, r2);
     run_next_test();
   }
@@ -108,10 +108,10 @@ add_test(function test_empty_to_full() {
     do_check_true(!error);
     do_check_eq(2, r1.count);
     do_check_eq(2, r2.count);
-    _("lastSyncA: " + s1.lastSyncA);
-    _("lastSyncB: " + s1.lastSyncB);
-    do_check_true(s1.lastSyncA > 0);
-    do_check_true(s1.lastSyncB > 0);
+    _("bundleA.timestamp: " + s1.bundleA.timestamp);
+    _("bundleB.timestamp: " + s1.bundleB.timestamp);
+    do_check_true(s1.bundleA.timestamp > 0);
+    do_check_true(s1.bundleB.timestamp > 0);
     wbos_eq(r1, r2);
     run_next_test();
   }
@@ -129,10 +129,10 @@ add_test(function test_full_to_empty() {
     do_check_true(!error);
     do_check_eq(2, r1.count);
     do_check_eq(2, r2.count);
-    _("lastSyncA: " + s1.lastSyncA);
-    _("lastSyncB: " + s1.lastSyncB);
-    do_check_true(s1.lastSyncA > 0);
-    do_check_true(s1.lastSyncB > 0);
+    _("bundleA.timestamp: " + s1.bundleA.timestamp);
+    _("bundleB.timestamp: " + s1.bundleB.timestamp);
+    do_check_true(s1.bundleA.timestamp > 0);
+    do_check_true(s1.bundleB.timestamp > 0);
     wbos_eq(r1, r2);
     run_next_test();
   }
@@ -147,10 +147,10 @@ add_test(function test_modify() {
     do_check_true(!error);
     do_check_eq(2, r1.count);
     do_check_eq(2, r2.count);
-    _("lastSyncA: " + s1.lastSyncA);
-    _("lastSyncB: " + s1.lastSyncB);
-    do_check_true(s1.lastSyncA > 0);
-    do_check_true(s1.lastSyncB > 0);
+    _("bundleA.timestamp: " + s1.bundleA.timestamp);
+    _("bundleB.timestamp: " + s1.bundleB.timestamp);
+    do_check_true(s1.bundleA.timestamp > 0);
+    do_check_true(s1.bundleB.timestamp > 0);
     wbos_eq(r1, r2);
   }
 

@@ -607,10 +607,13 @@ Crypto5Middleware.prototype = {
    */
 
   createSession: function createSession(storeCallback, sessionCallback) {
-    // Constructor takes care of invoking sessionCallback on our behalf.
-    // TODO: do we have any GC issues here? Setting to this.session just in
-    // case...
-    this.session = new Crypto5StoreSession(this, storeCallback, sessionCallback);
+    function cb(err, session) {
+      if (err) {
+        return sessionCallback(err);
+      }
+      sessionCallback(null, new Crypto5StoreSession(this, session));
+    }
+    this.repository.createSession(storeCallback, cb.bind(this));
   },
 
   /**
@@ -674,14 +677,9 @@ Crypto5Middleware.prototype = {
 
 };
 
-function Crypto5StoreSession(repository, storeCallback, sessionCallback) {
-  RepositorySession.call(this, repository, storeCallback);
-  // TODO: do we need to wrap storeCallback at all?
-  repository.repository.createSession(storeCallback,
-    function (error, session) {
-      this.session = session;
-      sessionCallback(error, this);
-    }.bind(this));
+function Crypto5StoreSession(repository, innerSession) {
+  RepositorySession.call(this, repository);
+  this.session = innerSession;
 }
 Crypto5StoreSession.prototype = {
   __proto__: RepositorySession.prototype,

@@ -230,7 +230,7 @@ RepositorySession.prototype = {
    * which can be used for persisting tracking data between sessions.
    */
   finish: function finish(callback) {
-    callback(this.timestamp, {});
+    callback({timestamp: this.timestamp});
   },
 };
 
@@ -840,10 +840,10 @@ TrackingSession.prototype = {
     }
     delete this.forgotten;
 
-    let cb = function (ts, bundle) {
+    let cb = function (bundle) {
       bundle.stored = this.stored;
       delete this.stored;
-      finish(ts, bundle);
+      finish(bundle);
     }.bind(this);
 
     RepositorySession.prototype.finish.call(this, cb);

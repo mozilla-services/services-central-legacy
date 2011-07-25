@@ -97,8 +97,6 @@ SynchronizerSession.prototype = {
   //
   // TODO: Need to persist all of these.
   //
-  timestampA:  null,
-  timestampB:  null,
   bundleA:     null,
   bundleB:     null,
 
@@ -184,7 +182,7 @@ SynchronizerSession.prototype = {
    */
   synchronize: function synchronize() {
     this._log.trace("Fetching from A into B.");
-    let timestamp = this.synchronizer.lastSyncA;
+    let timestamp = this.synchronizer.bundleA.timestamp;
     this.synchronizeSessions(this.sessionA, this.sessionB, timestamp);
   },
 
@@ -237,7 +235,7 @@ SynchronizerSession.prototype = {
     this._log.trace("Fetching from B into A.");
 
     // On to the next!
-    let timestamp = this.synchronizer.lastSyncB;
+    let timestamp = this.synchronizer.bundleB.timestamp;
     this.synchronizeSessions(this.sessionB, this.sessionA, timestamp);
   },
 
@@ -255,12 +253,10 @@ SynchronizerSession.prototype = {
    * Dispose of both sessions and invoke onSynchronized.
    */
   finishSync: function finishSync() {
-    this.sessionA.finish(function (timestampA, bundle) {
-      this.timestampA = timestampA;
-      this.bundleA    = bundle;
-      this.sessionB.finish(function (timestampB, bundle) {
-        this.timestampB = timestampB;
-        this.bundleB    = bundle;
+    this.sessionA.finish(function (bundle) {
+      this.bundleA = bundle;
+      this.sessionB.finish(function (bundle) {
+        this.bundleB = bundle;
         // Finally invoke the output callback.
         this.onSynchronized(null);
       }.bind(this));
@@ -312,11 +308,11 @@ Synchronizer.prototype = {
   _logName: "Sync.Synchronizer",
 
   /**
-   * Keep track of timestamps. These need to be persisted.
+   * Keep track of timestamps and other metadata.
+   * TODO: These need to be persisted.
    */
-  lastSyncA: 0,
-  lastSyncB: 0,
-  // TODO: bundles
+  bundleA: {timestamp: 0},
+  bundleB: {timestamp: 0},
 
   /**
    * Repositories to sync.
@@ -354,10 +350,9 @@ Synchronizer.prototype = {
                        Utils.exceptionStr(error));
         return callback(error);
       }
-      // Copy across the timestamps from within the session.
-      session.synchronizer.lastSyncA = session.timestampA;
-      session.synchronizer.lastSyncB = session.timestampB;
-      // TODO: copy bundle.
+      // Copy across the bundles from within the session.
+      session.synchronizer.bundleA = session.bundleA;
+      session.synchronizer.bundleB = session.bundleB;
       callback();
     };
     session.init();

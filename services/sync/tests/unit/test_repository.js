@@ -143,8 +143,8 @@ add_test(function test_timestamp() {
     session.begin(function (err) {
       do_check_true(!err);
       session.timestamp = 12345;
-      session.finish(function (ts) {
-        do_check_eq(ts, 12345);
+      session.finish(function (bundle) {
+        do_check_eq(bundle.timestamp, 12345);
         run_next_test();
       });
     });

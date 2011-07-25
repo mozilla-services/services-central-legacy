@@ -84,10 +84,12 @@ add_test(function test_setup_session() {
 add_test(function test_guidsSince() {
   let expected = ["123456789012", "abcdefghijkl", "charliesheen", "trololololol"];
   function sessionCallback(err, session) {
-    session.guidsSince(2000, function guidsCallback(error, guids) {
-      do_check_eq(error, null);
-      do_check_eq(expected + "", guids.sort());
-      session.finish(run_next_test);
+    session.begin(function (error) {
+      session.guidsSince(2000, function guidsCallback(error, guids) {
+        do_check_eq(error, null);
+        do_check_eq(expected + "", guids.sort());
+        session.finish(run_next_test);
+      });
     });
   }
   setup_session(sessionCallback);
@@ -98,69 +100,75 @@ add_test(function test_fetchSince() {
   let calledDone = false;
   function sessionCallback(err, session) {
     _("Session callback. err is " + err + ", session is " + session);
-    session.fetchSince(2001, function fetchCallback(error, record) {
-      if (calledDone) {
-        do_throw("Did not expect any more items after DONE!");
-      }
+    session.begin(function (error) {
+      do_check_true(!error);
+      session.fetchSince(2001, function fetchCallback(error, record) {
+        _("Invoked fetchCallback: " + error + ", " + record);
+        if (calledDone) {
+          do_throw("Did not expect any more items after DONE!");
+        }
 
-      do_check_eq(error, null);
-      // Verify that the record is one of the ones we expect.
-      if (expected.length) {
-        let index = expected.indexOf(record.id);
-        do_check_neq(index, -1);
-        expected.splice(index, 1);
+        do_check_eq(error, null);
+        // Verify that the record is one of the ones we expect.
+        if (expected.length) {
+          let index = expected.indexOf(record.id);
+          do_check_neq(index, -1);
+          expected.splice(index, 1);
 
-        // Verify that it has the data we expect.
-        let wbo = session.repository.repository.wbos[record.id];
-        do_check_eq(record.modified, wbo.modified);
-        do_check_eq(record.sortindex, wbo.sortindex);
-        do_check_eq(record.ttl, wbo.ttl);
-        let payload = payloads[record.id];
-        do_check_eq(record.title, payload.title);
-        return;
-      }
+          // Verify that it has the data we expect.
+          let wbo = session.repository.repository.wbos[record.id];
+          do_check_eq(record.modified, wbo.modified);
+          do_check_eq(record.sortindex, wbo.sortindex);
+          do_check_eq(record.ttl, wbo.ttl);
+          let payload = payloads[record.id];
+          do_check_eq(record.title, payload.title);
+          return;
+        }
 
-      // We've reached the end of the list, so we must be done.
-      do_check_eq(record, DONE);
-      calledDone = true;
-      session.finish(run_next_test);
+        // We've reached the end of the list, so we must be done.
+        do_check_eq(record, DONE);
+        calledDone = true;
+        session.finish(run_next_test);
+      });
     });
   }
   setup_session(sessionCallback);
 });
-
 
 add_test(function test_fetch() {
   let guids = ["123456789012", "non-existent", "charliesheen", "trololololol"];
   let expected = ["123456789012", "charliesheen", "trololololol"];
   let calledDone = false;
   function sessionCallback(err, session) {
-    session.fetch(guids, function fetchCallback(error, record) {
-      if (calledDone) {
-        do_throw("Did not expect any more items after DONE!");
-      }
+    session.begin(function (error) {
+      do_check_true(!error);
+      session.fetch(guids, function fetchCallback(error, record) {
+        if (calledDone) {
+          do_throw("Did not expect any more items after DONE!");
+        }
 
-      do_check_eq(error, null);
-      // Verify that the record is one of the ones we expect.
-      if (expected.length) {
-        let index = expected.indexOf(record.id);
-        do_check_neq(index, -1);
-        expected.splice(index, 1);
+        do_check_eq(error, null);
+        // Verify that the record is one of the ones we expect.
+        if (expected.length) {
+          let index = expected.indexOf(record.id);
+          do_check_neq(index, -1);
+          expected.splice(index, 1);
 
-        // Verify that it has the data we expect.
-        let wbo = session.repository.repository.wbos[record.id];
-        do_check_eq(record.modified, wbo.modified);
-        do_check_eq(record.sortindex, wbo.sortindex);
-        do_check_eq(record.ttl, wbo.ttl);
-        let payload = payloads[record.id];
-        do_check_eq(record.title, payload.title);
-        return;
-      }
+          // Verify that it has the data we expect.
+          let wbo = session.repository.repository.wbos[record.id];
+          do_check_eq(record.modified, wbo.modified);
+          do_check_eq(record.sortindex, wbo.sortindex);
+          do_check_eq(record.ttl, wbo.ttl);
+          let payload = payloads[record.id];
+          do_check_eq(record.title, payload.title);
+          return;
+        }
 
-      // We've reached the end of the list, so we must be done.
-      do_check_eq(record, DONE);
-      calledDone = true;
-      session.finish(run_next_test);
+        // We've reached the end of the list, so we must be done.
+        do_check_eq(record, DONE);
+        calledDone = true;
+        session.finish(run_next_test);
+      });
     });
   }
   setup_session(sessionCallback);

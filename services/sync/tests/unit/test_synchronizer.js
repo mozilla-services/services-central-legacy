@@ -282,7 +282,8 @@ add_test(function test_failing_session() {
   s1.repositoryA = r1;
   s1.repositoryB = r2;
   let called = false;
-  s1.synchronize(function () {
+  s1.synchronize(function (error) {
+    do_check_true(!!error);
     called = true;
     run_next_test();
   });

@@ -7,6 +7,7 @@ Cu.import("resource://services-sync/record.js");
 const DONE = Repository.prototype.DONE;
 
 function run_test() {
+  initTestLogging();
   // Monkey-patch fake crypto in place.
   let fakeCrypto = new FakeCryptoService(); // Installs itself as Svc.Crypto.
   Crypto5Middleware.prototype.ciphertextHMAC = fakeCrypto.sha256HMAC;

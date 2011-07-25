@@ -96,8 +96,12 @@ Repository.prototype = {
 function RepositorySession(repository, storeCallback) {
   this.repository = repository;
   this.storeCallback = storeCallback;
+  this._log = Log4Moz.repository.getLogger(this._logName);
+  this._log.level = Log4Moz.Level[Svc.Prefs.get(this._logLevel)];
 }
 RepositorySession.prototype = {
+  _logLevel: "log.logger.repositorysession",
+  _logName: "Sync.RepositorySession",
 
   /**
    * Has abort() been called on this session?
@@ -291,13 +295,10 @@ function Server11Session(repository, storeCallback) {
 
   this.batch         = [];   // Holds items until we have enough for a batch.
   this.flushQueue    = [];   // Holds completed batches to be flushed.
-
-  let level = Svc.Prefs.get("log.logger.repository.server.store");
-  this._log = Log4Moz.repository.getLogger("Sync.Server11Session");
-  this._log.level = Log4Moz.Level[level];
 }
 Server11Session.prototype = {
   __proto__: RepositorySession.prototype,
+  _logName: "Sync.Server11Session",
 
   batch:         null,
   flushQueue:    null,
@@ -597,8 +598,9 @@ function Crypto5Middleware(repository, keyBundle) {
   this.keyBundle = keyBundle;
 }
 Crypto5Middleware.prototype = {
-
   __proto__: Repository.prototype,
+  _logLevel: "log.logger.crypto5middleware",
+  _logName: "Sync.Crypto5Middleware",
 
   /**
    * Repository API
@@ -683,6 +685,8 @@ function Crypto5StoreSession(repository, storeCallback, sessionCallback) {
 }
 Crypto5StoreSession.prototype = {
   __proto__: RepositorySession.prototype,
+  _logName: "Sync.Crypto5Middleware",
+  _logLevel: "log.logger.crypto5middleware",
 
   session: null,
 

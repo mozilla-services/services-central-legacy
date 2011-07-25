@@ -328,6 +328,7 @@ function WBORepository(wbos) {
 }
 WBORepository.prototype = {
   __proto__: Repository.prototype,
+  _logName: "Sync.WBORepository",
 
   /**
    * Constructor. This allows you to control which Session class is
@@ -353,16 +354,14 @@ WBORepository.prototype = {
 function WBORepositorySession(repository, storeCallback) {
   TrackingSession.call(this, repository, storeCallback);
 
-  let level = Svc.Prefs.get("log.logger.test.wborepositorysession");
-  this._log = Log4Moz.repository.getLogger("Sync.WBORepositorySession");
-  this._log.level = Log4Moz.Level[level];
-
   // Equivalent to modifying lastSyncLocal in Engine._syncStartup.
   // This starts out as the time of the sync.
   this._log.debug("WBORepositorySession timestamp: " + this.timestamp);
 }
 WBORepositorySession.prototype = {
   __proto__: TrackingSession.prototype,
+  _logLevel: "log.logger.test.wborepositorysession",
+  _logName: "Sync.WBORepositorySession",
 
   toString: function toString() {
     return "<Session for " + this.repository + ">";
@@ -451,7 +450,9 @@ WBORepositorySession.prototype = {
   },
 
   begin: function begin(callback) {
+    _("Setting timestamp...");
     this.timestamp = Date.now();
+    _("Calling begin callback.");
     callback();
   }
 };

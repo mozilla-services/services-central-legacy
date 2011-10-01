@@ -10,8 +10,7 @@ function run_test() {
   initTestLogging();
   // Monkey-patch fake crypto in place.
   let fakeCrypto = new FakeCryptoService(); // Installs itself as Svc.Crypto.
-  Crypto5Middleware.prototype.ciphertextHMAC = fakeCrypto.sha256HMAC;
-
+  Crypto5Middleware.prototype.ciphertextHMAC = fakeSHA256HMAC;
   run_next_test();
 }
 

@@ -15,18 +15,17 @@ const DONE = Repository.prototype.DONE;
 function setup_fixtures() {
   let guids = ["0000deadbeef", "abcdefghijkl", "charliesheen",
                "trololololol", "123456789012"];
-  let wbos = {};
-  for (let i = 0; i < guids.length; i++) {
-    let guid = guids[i];
-    let wbo = wbos[guid] = new ServerWBO(guid, {id: guid});
-    wbo.modified = (i + 1) * 1000;
+  let server = new SyncServer();
+  let john   = server.registerUser("john", "password");
+
+  let marbles = john.createCollection("marbles");
+  let i = 0;
+  for each (let guid in guids) {
+    marbles.insert(guid, {}, ++i * 1000);
   }
-  let collection = new ServerCollection(wbos, true);
-  let server = httpd_setup({
-    "/1.1/john/storage/marbles": collection.handler()
-  });
+  server.start();
   let repo = new Server11Repository("http://localhost:8080", "john", "marbles");
-  return [repo, server, collection];
+  return [repo, server, marbles];
 }
 
 function run_test() {

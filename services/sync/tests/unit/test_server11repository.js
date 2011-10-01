@@ -360,9 +360,9 @@ add_test(function test_store() {
     do_check_eq(error, DONE);
     calledDone = true;
     do_check_eq(2, collection.count());
-    do_check_eq("Bar4", collection.wbos["123412341234"].payload);
-    do_check_eq("Bar5", collection.wbos["123412341235"].payload);
-    do_check_eq(undefined, collection.wbos["123412341230"]);
+    do_check_eq("Bar4", collection.payload("123412341234"));
+    do_check_eq("Bar5", collection.payload("123412341235"));
+    do_check_eq(undefined, collection.wbo("123412341230"));
     finish(session, server);
   }
   function sessionCallback(err, sess) {

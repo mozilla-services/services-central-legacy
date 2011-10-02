@@ -48,7 +48,7 @@ const EXPORTED_SYMBOLS = ["Repository",
                           "Server11Repository",
                           "Crypto5Middleware"];
 
-const DONE = { toString: function() "<DONE>" };
+const DONE = { toString: function() { return "<DONE>"; } };
 
 /**
  * Base repository.
@@ -516,7 +516,8 @@ Server11Session.prototype = {
 
     // Finish up if we have an empty batch left.
     if (!this.flushQueue.length) {
-      return finalmente();
+      finalmente();
+      return;
     }
 
     let batch = this.flushQueue.pop();
@@ -525,7 +526,8 @@ Server11Session.prototype = {
       request = new SyncStorageRequest(this.repository.uri);
     } catch (ex) {
       this.storeCallback({info: ex, guids: batchGUIDs(batch)});
-      return finalmente();
+      finalmente();
+      return;
     }
 
     request.post(batch, function onPost(error) {
@@ -611,7 +613,7 @@ Crypto5Middleware.prototype = {
       if (err) {
         return sessionCallback(err);
       }
-      sessionCallback(null, new Crypto5StoreSession(this, session));
+      return sessionCallback(null, new Crypto5StoreSession(this, session));
     }
     this.repository.createSession(storeCallback, cb.bind(this));
   },

@@ -20,6 +20,7 @@
  *
  * Contributor(s):
  *   Richard Newman <rnewman@mozilla.com>
+ *   Philipp von Weitershausen <philipp@weitershausen.de>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -51,7 +52,8 @@ const EXPORTED_SYMBOLS = ["Synchronizer"];
  * not a public class. Synchronizer interacts with SynchronizerSession through
  * three callbacks:
  *
- *   - onInitialized, invoked when the session has been established after calling 'init';
+ *   - onInitialized, invoked when the session has been established after calling
+ *     'init';
  *   - onSynchronized, invoked when synchronization has completed;
  *   - onFetchError, invoked when a fetch failed (and accepts a return val);
  *   - onStoreError, when storing an item failed;
@@ -173,7 +175,7 @@ SynchronizerSession.prototype = {
     }
     this.sessionB = session;
     session.unbundle(this.bundleB);
-    this.onInitialized();
+    return this.onInitialized();
   },
 
   /**
@@ -341,7 +343,7 @@ Synchronizer.prototype = {
                        Utils.exceptionStr(error));
         return callback(error);
       }
-      session.synchronize();
+      return session.synchronize();
     };
     session.onSynchronized = function (error) {
       // Invoked with session as `this`.
@@ -353,7 +355,7 @@ Synchronizer.prototype = {
       // Copy across the bundles from within the session.
       session.synchronizer.bundleA = session.bundleA;
       session.synchronizer.bundleB = session.bundleB;
-      callback();
+      return callback();
     };
     session.init();
   },
@@ -387,8 +389,8 @@ EngineCollectionSynchronizer.prototype = {
   /**
    * Convention.
    */
-  get localRepository()  this.repositoryA,
-  get serverRepository() this.repositoryB,
+  get localRepository()  { return this.repositoryA; },
+  get serverRepository() { return this.repositoryB; },
 
   /**
    * lastSync is a timestamp in server time.

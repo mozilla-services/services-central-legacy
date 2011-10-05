@@ -96,6 +96,9 @@ SynchronizerSession.prototype = {
   sessionB:     null,
   synchronizer: null,
 
+  fetchSession: null,    // For easy aborting.
+  storeSession: null,
+
   //
   // TODO: Need to persist all of these.
   //
@@ -194,6 +197,8 @@ SynchronizerSession.prototype = {
    * once in a callback that indicates that the first direction is done.
    */
   synchronizeSessions: function synchronizeSessions(from, to, timestamp) {
+    this.fetchSession = from;
+    this.storeSession = to;
     from.begin(function (err) {
       if (err) {
         // Hook for handling. No response channel yet.
@@ -255,6 +260,7 @@ SynchronizerSession.prototype = {
    * Dispose of both sessions and invoke onSynchronized.
    */
   finishSync: function finishSync() {
+    this.fetchSession = this.storeSession = null;
     this.sessionA.finish(function (bundle) {
       this.bundleA = bundle;
       this.sessionB.finish(function (bundle) {
@@ -310,6 +316,12 @@ Synchronizer.prototype = {
   _logName: "Sync.Synchronizer",
 
   /**
+   * Constructor. This allows you to control which SynchronizerSession class is
+   * instantiated within `synchronize`.
+   */
+  _sessionConstructor: SynchronizerSession,
+
+  /**
    * Keep track of timestamps and other metadata.
    * TODO: These need to be persisted.
    */
@@ -330,7 +342,7 @@ Synchronizer.prototype = {
   synchronize: function synchronize(callback) {
     this._log.trace("Entering Synchronizer.synchronize().");
 
-    let session = new SynchronizerSession(this);
+    let session = new (this._sessionConstructor)(this);
     session.onSessionError = function (error) {
       this._log.warn("Error in SynchronizerSession: " +
                      Utils.exceptionStr(error));

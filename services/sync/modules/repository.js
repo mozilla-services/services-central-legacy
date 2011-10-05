@@ -68,7 +68,7 @@ Repository.prototype = {
    *        Callback with the signature (error). It may be called multiple
    *        times with error objects. It will be always called with the DONE
    *        value when the store operation has been completed.
-   *        storeCallback should call session.abort() to signal that the fetch
+   *        storeCallback may call session.abort() to signal that the fetch
    *        should be aborted.
    *        @param error
    *               One of two values: DONE, or an error object.

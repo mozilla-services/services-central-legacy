@@ -30,6 +30,7 @@ WBORepositorySession.prototype.store = (function wrap(f) {
 
 function run_test() {
   initTestLogging();
+  //Log4Moz.repository.getLogger("Sync.Synchronizer").level = Log4Moz.Level.Trace;
   run_next_test();
 }
 
@@ -293,30 +294,51 @@ add_test(function test_failing_session() {
   }
 });
 
-// This test -- and Synchronizer -- need to be amended to reflect abort().
-// Behavior during store failures should match up to existing engine behavior.
-// TODO
-/*
+
+let SynchronizerSession = Cu.import("resource://services-sync/synchronizer.js").SynchronizerSession;
+function AbortingSynchronizerSession(synchronizer) {
+  SynchronizerSession.call(this, synchronizer);
+}
+AbortingSynchronizerSession.prototype = {
+  __proto__: SynchronizerSession.prototype,
+
+  onStoreError: function onStoreError(error) {
+    _("onStoreError in AbortingSynchronizerSession.");
+    _("Aborting fetchSession (which is " + this.fetchSession + ").");
+    this.fetchSession.abort();
+  }
+};
+
+// TODO: Behavior during store failures should match up to existing engine
+// behavior.
 add_test(function test_failing_store() {
   _("Fail store during sync.");
+  let aborted = false;
+  let report = {
+    onAbort: function onAbort(repositorySession) {
+      _("Repository session " + repositorySession + " aborted.");
+      aborted = true;
+    }
+  };
   let r1 = new WBORepository();
   let r2 = new WBORepository();
   let s1 = new Synchronizer();
-  r1._sessionConstructor = FailingStoreWBORepositorySession;
+  s1._sessionConstructor = AbortingSynchronizerSession;
   s1.repositoryA = r1;
   s1.repositoryB = r2;
-  let called = false;
+
+  r1._sessionConstructor = FailingStoreWBORepositorySession;
+  r2._sessionConstructor =
+    CallbackWBORepositorySession.bind(this, report);
+
   s1.synchronize(function (error) {
-    called = true;
+    // TODO: should this receive an error?
+    // TODO: should we abort the SynchronizerSession? What about the other
+    //       WBORepositorySession?
+    do_check_true(aborted);
     run_next_test();
   });
-
-  if (!called) {
-    do_throw("I reached here!");
-  }
 });
-*/
-
 
 // TODO:
 // * Implement and verify store/time in-session tracking, verifying that store

@@ -457,6 +457,29 @@ WBORepositorySession.prototype = {
   }
 };
 
+/**
+ * A WBORepositorySession subclass that invokes callbacks on `report`
+ * as events occur. This allows for tests to observe the internal interactions
+ * of the sessions created during a sync without having to define new classes
+ * each time.
+ */
+function CallbackWBORepositorySession(report, repository, storeCallback) {
+  WBORepositorySession.call(this, repository, storeCallback);
+  this.report = report;
+}
+CallbackWBORepositorySession.prototype = {
+  __proto__: WBORepositorySession.prototype,
+
+  // TODO: add methods here as appropriate.
+  abort: function abort() {
+    let ret = WBORepositorySession.prototype.abort.call(this);
+    if (this.report.onAbort) {
+      this.report.onAbort(this);
+    }
+    return ret;
+  }
+};
+
 function FailingSessionWBORepositorySession(repository, storeCallback) {
   WBORepositorySession.call(this, repository, storeCallback);
 }
@@ -473,10 +496,12 @@ function FailingStoreWBORepositorySession(repository, storeCallback) {
 FailingStoreWBORepositorySession.prototype = {
   __proto__: WBORepositorySession.prototype,
   store: function store(record) {
-    _("Store: " + JSON.stringify(record));
+    _("Failing store: " + JSON.stringify(record));
     let cb = this.storeCallback;
     Utils.nextTick(function () {
-      cb({info: new Error("Oh no!")});
+      _("Calling " + cb + " with error.");
+      cb({info:  new Error("Oh no!"),
+          guids: []});
       Utils.nextTick(function () {
         cb(Repository.prototype.DONE);
       });

@@ -34,7 +34,8 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-const EXPORTED_SYMBOLS = ['FormEngine', 'FormRec'];
+const EXPORTED_SYMBOLS = ["FormEngine", "FormRec",
+                          "FormsRepository"];
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
@@ -48,7 +49,63 @@ Cu.import("resource://services-sync/util.js");
 Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/log4moz.js");
 
+Cu.import("resource://services-sync/repository.js");
+
 const FORMS_TTL = 5184000; // 60 days
+
+/**
+ * Implement sessioned access to the form data store.
+ */
+function FormsRepositorySession(repository, storeCallback) {
+}
+FormsRepositorySession.prototype = {
+  __proto__: RepositorySession,
+  _logLevel: "log.logger.engine.forms",
+  _logName: "Sync.FormsRepositorySession",
+
+  /**
+   * Fetch form GUIDs with a lastUsed greater than the timestamp.
+   */
+  guidsSince: function guidsSince(timestamp, guidsCallback) {
+    let stmt = FormWrapper._getGUIDsStmt;
+    stmt.params.timestamp = timestamp;
+    Async.queryForColumn(stmt, "guid", guidsCallback);
+  },
+
+  abort: function abort() {
+  },
+  fetchSince: function fetchSince(timestamp, fetchCallback) {
+    throw "RepositorySession must implement 'fetchSince'";
+  },
+  fetch: function fetch(guids, fetchCallback) {
+    throw "RepositorySession must implement 'fetch'";
+  },
+  store: function store(record) {
+    throw "RepositorySession must implement 'store'";
+  },
+  wipe: function wipe(wipeCallback) {
+    throw "RepositorySession must implement 'wipe'";
+  },
+  begin: function begin(callback) {
+    RepositorySession.prototype.begin.call(this, callback);
+  },
+  finish: function finish(callback) {
+    RepositorySession.prototype.finish.call(this, callback);
+  }
+};
+
+function FormsRepository() {
+  Repository.call(this);
+}
+FormsRepository.prototype = {
+  __proto__: Repository.prototype,
+  _logLevel: "log.logger.engine.forms",
+  _logName: "Sync.FormsRepository",
+
+  createSession: function createSession(storeCallback, sessionCallback) {
+    sessionCallback(null, new FormsRepositorySession(this, storeCallback));
+  }
+};
 
 function FormRec(collection, id) {
   CryptoWrapper.call(this, collection, id);
@@ -77,6 +134,12 @@ let FormWrapper = {
     this._log.trace("Creating SQL statement: " + query);
     let db = Svc.Form.DBConnection;
     return this._stmts[query] = db.createAsyncStatement(query);
+  },
+
+  get _getGUIDsStmt() {
+    const query = "SELECT guid FROM moz_formhistory " +
+                  "WHERE lastUsed >= :timestamp";
+    return this._getStmt(query);
   },
 
   get _getAllEntriesStmt() {
@@ -126,6 +189,12 @@ let FormWrapper = {
     let stmt = this._getEntryStmt;
     stmt.params.guid = guid;
     return Async.querySpinningly(stmt, this._getEntryCols)[0];
+  },
+
+  getGUIDs: function getGUIDs(timestamp) {
+    let getStmt = this._getGUIDsStmt;
+    getStmt.params.timestamp = timestamp;
+    return Async.querySpinningly(getStmt, this._guidCols);
   },
 
   getGUID: function getGUID(name, value) {

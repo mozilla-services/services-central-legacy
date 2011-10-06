@@ -478,6 +478,7 @@ function finishSession(session, server) {
     if (server) {
       server.stop(run_next_test);
     } else {
+      _("finishSession invoking run_next_test.");
       run_next_test();
     }
   });

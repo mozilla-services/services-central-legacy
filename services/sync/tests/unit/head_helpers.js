@@ -458,6 +458,32 @@ WBORepositorySession.prototype = {
 };
 
 /**
+ * Helper to avoid boilerplate when instantiating sessions.
+ */
+function withSession(repo, f) {
+  repo.createSession(null, function (err, session) {
+    do_check_true(!err);
+    session.begin(function (err) {
+      do_check_true(!err);
+      f(session);
+    });
+  });
+}
+
+/**
+ * Helper to avoid boilerplate when finishing sessions and stopping servers.
+ */
+function finishSession(session, server) {
+  session.finish(function () {
+    if (server) {
+      server.stop(run_next_test);
+    } else {
+      run_next_test();
+    }
+  });
+}
+
+/**
  * A WBORepositorySession subclass that invokes callbacks on `report`
  * as events occur. This allows for tests to observe the internal interactions
  * of the sessions created during a sync without having to define new classes

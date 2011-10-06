@@ -51,10 +51,103 @@ const REASON_ERROR = Ci.mozIStorageStatementCallback.REASON_ERROR;
 
 Cu.import("resource://gre/modules/Services.jsm");
 
+/**
+ * Create a mozIStorageStatementCallback object for use in asynchronous
+ * queries.
+ *
+ * Usage:
+ *
+ *   let stmt = helper.getStatement("SELECT guid ...");
+ *   function processGUIDs(err, guids) {
+ *     _("Got GUIDs! " + JSON.stringify(guids[0]));
+ *   }
+ *   let cb = new SingleColumnQueryCallback(stmt, "guid", processGUIDs);
+ *   cb.run();
+ *
+ * @param statement
+ *        A mozIStorageStatement for which this will act as a callback. If you
+ *        created a new statement, you should make sure that you call
+ *        statement.finalize() in your `callback` function.
+ * @param column
+ *        A string value, used to select a single column from each result.
+ * @param callback
+ *        A function of arguments (error, values). `error` will be null on
+ *        success, in which case `values` will be the accumulated column
+ *        values. `error` can also be an error passed to `handleError`, or the
+ *        value `mozIStorageStatementCallback.REASON_ERROR`.
+ *
+ * @return a mozIStorageStatementCallback object.
+ */
+function SingleColumnQueryCallback(statement, column, callback) {
+  this.callback  = callback;
+  this.column    = column;
+  this.results   = [];
+  this.statement = statement;
+}
+SingleColumnQueryCallback.prototype = {
+  callback:  null,
+  column:    null,
+  results:   null,
+  statement: null,
+
+  /**
+   * Invoke the input callback if it has not yet been invoked.
+   */
+  invokeCallback: function invokeCallback(err, result) {
+    let c = this.callback;
+    if (c) {
+      this.callback = null;
+      c(err, result);         // TODO: nextTick?
+    }
+  },
+
+  transform: function transform(row) {
+    return row;
+  },
+
+  handleResult: function handleResult(resultSet) {
+    let column = this.column;
+    let r;
+    while ((r = resultSet.getNextRow()) != null) {
+      this.results.push(r.getResultByName(column));
+    }
+  },
+
+  handleError: function handleError(err) {
+    this.invokeCallback(err);
+  },
+
+  handleCompletion: function handleCompletion(reason) {
+    if (reason == REASON_ERROR) {
+      return this.invokeCallback(REASON_ERROR);
+    }
+    this.invokeCallback(null, this.results);
+  },
+
+  run: function run() {
+    this.statement.executeAsync(this);
+    return this;
+  }
+};
+
 /*
  * Helpers for various async operations.
  */
 let Async = {
+
+  /**
+   * Execute the provided mozIStorageStatement, extracting a single column
+   * from each row, and invoking `callback` with either an error or the
+   * accumulated values.
+   *
+   * See SingleColumnQueryCallback earlier in async.js.
+   *
+   * @return the mozIStorageStatementCallback.
+   */
+  queryForColumn: function queryForColumn(statement, column, callback) {
+    let cb = new SingleColumnQueryCallback(statement, column, callback);
+    return cb.run();
+  },
 
   /**
    * Execute an arbitrary number of asynchronous functions one after the

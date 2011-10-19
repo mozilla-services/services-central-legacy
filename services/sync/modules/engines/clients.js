@@ -84,6 +84,14 @@ ClientEngine.prototype = {
   // Always sync client data as it controls other sync behavior
   get enabled() true,
 
+  /**
+   * We override the SyncEngine default because the clients collection is not
+   * wiped during a non-full server wipe.
+   */
+  get wipeCollectionNames() {
+    return [];
+  },
+
   get lastRecordUpload() {
     return Svc.Prefs.get(this.name + ".lastRecordUpload", 0);
   },

@@ -186,6 +186,23 @@ function test_wipeServer() {
   }
 }
 
+function test_collections() {
+  _("Ensure SyncEngine.collections returns the appropriate value.");
+
+  let engine = makeSteamEngine();
+  do_check_eq("steam", engine.name);
+
+  let collections = engine.allCollectionNames;
+  do_check_true(Array.isArray(collections));
+  do_check_eq(1, collections.length);
+  do_check_eq("steam", collections[0]);
+
+  collections = engine.wipeCollectionNames;
+  do_check_true(Array.isArray(collections));
+  do_check_eq(1, collections.length);
+  do_check_eq("steam", collections[0]);
+}
+
 function run_test() {
   test_url_attributes();
   test_syncID();
@@ -194,4 +211,5 @@ function run_test() {
   test_previousFailed();
   test_resetClient();
   test_wipeServer();
+  test_collections();
 }

@@ -427,7 +427,36 @@ EngineManagerSvc.prototype = {
   getEnabled: function EngMgr_getEnabled() {
     return this.getAll().filter(function(engine) engine.enabled);
   },
-  
+
+  /**
+   * Returns an array of all the names of collections belonging to all engines.
+   */
+  get allCollectionNames() {
+    let collections = [];
+
+    for each (let engine in this.getAll()) {
+      for each (let collection in engine.allCollectionNames) {
+        collections.push(collection);
+      }
+    }
+
+    return collections;
+  },
+
+  /**
+   * Returns an array of all the names of collections that should be wiped.
+   */
+  get wipeCollectionNames() {
+    let collections = [];
+    for each (let engine in this.getAll()) {
+      for each (let collection in engine.wipeCollectionNames) {
+        collections.push(collection);
+      }
+    }
+
+    return collections;
+  },
+
   /**
    * Register an Engine to the service. Alternatively, give an array of engine
    * objects to register.
@@ -559,16 +588,16 @@ SyncEngine.prototype = {
   __proto__: Engine.prototype,
   _recordObj: CryptoWrapper,
   version: 1,
-  
+
   // How many records to pull in a single sync. This is primarily to avoid very
   // long first syncs against profiles with many history records.
   downloadLimit: null,
-  
+
   // How many records to pull at one time when specifying IDs. This is to avoid
   // URI length limitations.
   guidFetchBatchSize: DEFAULT_GUID_FETCH_BATCH_SIZE,
   mobileGUIDFetchBatchSize: DEFAULT_MOBILE_GUID_FETCH_BATCH_SIZE,
-  
+
   // How many records to process in a single batch.
   applyIncomingBatchSize: DEFAULT_STORE_BATCH_SIZE,
 
@@ -588,6 +617,28 @@ SyncEngine.prototype = {
   },
   set syncID(value) {
     Svc.Prefs.set(this.name + ".syncID", value);
+  },
+
+  /**
+   * Returns an array of all collections this engine is responsible for.
+   *
+   * This set is used for determining what server collections to wipe when
+   * clearing all server data, for example.
+   */
+  get allCollectionNames() {
+    return [this.name];
+  },
+
+  /**
+   * Returns an array of collections that should be deleted when a wipeServer
+   * or wipeRemote is processed.
+   *
+   * This is typically the same as allCollectionNames. It is only different in
+   * specific circumstances, such as the Clients engine/collection, which is
+   * treated specially.
+   */
+  get wipeCollectionNames() {
+    return this.allCollectionNames;
   },
 
   /*
@@ -747,7 +798,7 @@ SyncEngine.prototype = {
     // Clear the tracker now. If the sync fails we'll add the ones we failed
     // to upload back.
     this._tracker.clearChangedIDs();
- 
+
     // Array of just the IDs from this._modified. This is what we iterate over
     // so we can modify this._modified during the iteration.
     this._modifiedIDs = Object.keys(this._modified);
@@ -773,7 +824,7 @@ SyncEngine.prototype = {
     newitems.newer = this.lastSync;
     newitems.full  = true;
     newitems.limit = batchSize;
-    
+
     // applied    => number of items that should be applied.
     // failed     => number of items that failed in this sync.
     // newFailed  => number of items that failed for the first time in this sync.
@@ -835,7 +886,7 @@ SyncEngine.prototype = {
 
       // Track the collection for the WBO.
       item.collection = self.name;
-      
+
       // Remember which records were processed
       handled.push(item.id);
 
@@ -855,7 +906,7 @@ SyncEngine.prototype = {
               strategy = self.handleHMACMismatch(item, false);
             }
           }
-          
+
           switch (strategy) {
             case null:
               // Retry succeeded! No further handling.
@@ -924,7 +975,7 @@ SyncEngine.prototype = {
     // Mobile: check if we got the maximum that we requested; get the rest if so.
     if (handled.length == newitems.limit) {
       let guidColl = new Collection(this.engineURL);
-      
+
       // Sort and limit so that on mobile we only get the last X records.
       guidColl.limit = this.downloadLimit;
       guidColl.newer = this.lastSync;

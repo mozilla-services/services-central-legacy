@@ -47,7 +47,7 @@ interface nsIDOMNode;
  * tabs contained in them.
  */
 
-[scriptable, uuid(766a09c1-d21b-4bf8-9fe3-8b34b716251a)]
+[scriptable, uuid(b1199d68-0073-4bf2-acb3-38206d284d98)]
 interface nsISessionStore : nsISupports
 {
   /**
@@ -102,6 +102,23 @@ interface nsISessionStore : nsISupports
    * @param aKey is the value's name.
    */
   void deleteTabValue(in nsIDOMNode aTab, in AString aKey);
+
+  /**
+   * Obtain the tab state for a given browser.
+   *
+   * This function returns a JS-object describing the current state. The only
+   * key that is guaranteed to exist is "version." The format of the objects
+   * is guaranteed to remain constant once a version is defined. Therefore,
+   * consumers should key off the numeric version value to determine how to
+   * handle the object.
+   *
+   * The optional aHistory argument is only meant to be passed from JavaScript.
+   *
+   * @param aBrowser is the browser instance whose tab state to obtain.
+   * @param aHistory is an object describing the session history
+   * @returns        a JavaScript object describing the current tab state.
+   */
+  jsval getTabState1(in nsIDOMNode aBrowser, [optional] in jsval aHistory);
 
   /**
    * @returns A boolean indicating we should restore previous browser session

@@ -423,7 +423,10 @@ SessionStore.prototype = {
 
     if (aMessage.name == "Content:SessionHistory") {
       delete aBrowser.__SS_data;
-      this._collectTabData(aBrowser, aMessage.json);
+      // If this browser is being restored, skip any session save activity
+      if (!aBrowser.__SS_restore) {
+        aBrowser.__SS_data = this.getTabState1(aBrowser, aMessage.json);
+      }
     }
 
     // Save out the state as quickly as possible
@@ -502,21 +505,6 @@ SessionStore.prototype = {
     for (index in this._windows)
       data.windows.push(this._windows[index]);
     return data;
-  },
-
-  _collectTabData: function ss__collectTabData(aBrowser, aHistory) {
-    // If this browser is being restored, skip any session save activity
-    if (aBrowser.__SS_restore)
-      return;
-
-    let aHistory = aHistory || { entries: [{ url: aBrowser.currentURI.spec, title: aBrowser.contentTitle }], index: 1 };
-
-    let tabData = {};
-    tabData.entries = aHistory.entries;
-    tabData.index = aHistory.index;
-    tabData.attributes = { image: aBrowser.mIconURL };
-
-    aBrowser.__SS_data = tabData;
   },
 
   _collectWindowData: function ss__collectWindowData(aWindow) {
@@ -700,6 +688,41 @@ SessionStore.prototype = {
       delete browser.__SS_extdata[aKey];
     else
       throw (Components.returnCode = Cr.NS_ERROR_INVALID_ARG);
+  },
+
+  /**
+   * Obtain the tab state for a given tab.
+   *
+   * The returned return object is guaranteed to have a "version" key.
+   * Currently, only version 1 is returned. The semantics of the object for
+   * a given version should not change over time.
+   *
+   * @param aBrowser
+   *        The browser to obtain state from
+   * @param aHistory
+   *        History object holding session history. If not defined, will be
+   *        determined automatically.
+   *
+   * @return string
+   *         Object defining tab state.
+   */
+  getTabState1: function ss_getTabState1(aBrowser, aHistory) {
+    let history = aHistory || {
+      entries: [{
+        url:   aBrowser.currentURI.spec,
+        title: aBrowser.contentTitle
+      }],
+      index: 1
+    };
+
+    let attributes = {image: aBrowser.mIconURL};
+
+    return {
+      version:    1,
+      entries:    history.entries,
+      index:      history.index,
+      attributes: attributes
+    };
   },
 
   shouldRestore: function ss_shouldRestore() {

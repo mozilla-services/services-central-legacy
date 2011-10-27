@@ -39,6 +39,8 @@ const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
 const EXPORTED_SYMBOLS = ["GlobalSession"];
 
+Cu.import("resource://services-sync/status.js");
+
 let MetaGlobal = {
 
   _record: null,
@@ -101,29 +103,132 @@ let MetaGlobal = {
 
 };
 
+const SYNC_STATUS_OK             = 0;
+const SYNC_STATUS_NO_CREDENTIALS = 1;
 
-function GlobalSession() {
+/**
+ * Create a new Sync session tied to specific global state.
+ *
+ * The global state instance is a XXX
+ * TODO
+ */
+function GlobalSession(globalState) {
+  this.globalState = globalState;
 }
 GlobalSession.prototype = {
+  /**
+   * Defines the order of the functions called on the local object during a
+   * sync.
+   */
+  STATE_FLOW: [
+    "checkPreconditions",
+    "obtainClusterURL",
+    "fetchInfoCollections",
+    "ensureSpecialRecords",
+    "updateEngineTimestamps",
+    "syncClientsEngine",
+    "processFirstSyncPref",
+    "processClientCommands",
+    "updateEnabledEngines",
+    "syncEngines"
+  ],
 
-  // Things TODO here:
+  /**
+   * Holds the current index in STATE_FLOW the session is operating in.
+   */
+  currentStateIndex: 0,
 
+  inProgress: false,
+
+  /**
+   * Callback invoked when sync attempt has finished, regardless of success or
+   * failure.
+   */
+  finishedCallback: null,
+
+  advanceSyncState: function advanceSyncState() {
+    // We are on the last state and are thus done.
+    if (this.currentStateIndex == this.STATE_FLOW.length - 1) {
+      this.currentStateIndex = 0;
+      return;
+    }
+
+    this.currentStateIndex += 1;
+
+    let f = this[STATE_FLOW[this.currentStateIndex]];
+    f.call(this);
+  },
+
+  /**
+   * Begin a sync.
+   *
+   * The caller should ensure that only one GlobalSession's begin() function
+   * is active at one time.
+   */
   begin: function begin(callback) {
+    this.finishedCallback = callback;
+    this.inProgress = true;
+
+    // TODO move to state function
     Status.resetSync();
 
-    // - lock
-    // - figure out whether we have everything to sync
-    //   - do we have all credentials?
-    //   - do we have a firstSync?
-    //   - are we online?
-    //   - have we met backoff?
-    //   - master password unlocked?
-    // - do we have clusterURL?
-    //   - if we don't, fetch it.
-    //   - if we can't, abort sync
-    // - fetch info/collections
-    //   - also serves as verifying credentials, abort if unsuccesful
-    //   - use ?v=<version> once a day (does we still need that for metrics?)
+    this.advanceSyncState();
+  },
+
+  /**
+   * Helper function called whenever the sync process finishes.
+   *
+   * @param  error
+   *         Error code (eventually object) to be passed to callback which is
+   *         defined on sync start.
+   */
+  finish: function finish(error) {
+    this.inProgress = false;
+    this.finishedCallback(error);
+  },
+
+  // --------------------------------------------------------------------------
+  // What follows are the handlers for specific states during an individual   |
+  // sync. They are defined in the order in which they are executed.          |
+  // --------------------------------------------------------------------------
+
+  checkPreconditions: function checkPreconditions() {
+    let status = Status.checkSetup();
+
+    if (status == CLIENT_NOT_CONFIGURED) {
+      return this.finish(SYNC_STATUS_NO_CREDENTIALS);
+    }
+
+    // TODO do we have a first sync
+    // TODO are we online
+    // TODO have we met backoff
+    // TODO master password unlocked
+
+    this.advanceSyncState();
+  },
+
+  obtainClusterURL: function obtainClusterURL() {
+    // TODO if we don't, fetch it
+    // TODO if we can't, abort
+    // See Service._findCluster()
+
+    return this.advanceSyncState();
+  },
+
+  fetchInfoCollections: function fetchInfoCollections() {
+    // This serves multiple purposes:
+    // 1) Ensure our login credentials are valid
+    // 2) Obtain initial/bootstrap data from the server
+
+    // If we can't make the HTTP request, something is seriously wrong and
+    // we can't proceed.
+
+    // TODO use ?v=<version> once a day (if we still need that for metrics)
+
+    return this.advanceSyncState();
+  },
+
+  ensureSpecialRecords: function ensureSpecialRecords() {
     // - fetch keys if 'crypto' timestamp differs from local one
     //   - if it's non-existent, goto fresh start.
     //   - decrypt keys with Sync Key, abort if HMAC verification fails.
@@ -136,22 +241,36 @@ GlobalSession.prototype = {
     //   - wipe server. all of it.
     //   - create + upload meta/global
     //   - generate + upload new keys
+    return this.advanceSyncState();
+  },
+
+  updateEngineTimestamps: function updateEngineTimestamps() {
     // - update engine last modified timestamps from info/collections record
-    // - sync clients engine
-    //   - clients engine always fetches all records
-    // - process reset/wipe requests in 'firstSync' preference
-    // - process any commands, including the 'wipeClient' command
-    // - infer enabled engines from meta/global
+    return this.advanceSyncState();
   },
 
-  synchronize: function synchronize(callback) {
-    // - sync engines
-    //   - only stop if 401 is encountered
+  syncClientsEngine: function syncClientsEngine() {
+    // clients engine always fetches all records
+    return this.advanceSyncState();
   },
 
-  finish: function finish(callback) {
-    // - if meta/global has changed, reupload it
-    // - unlock
+  processFirstSyncPref: function processFirstSyncPref() {
+    // process reset/wipe requests in 'firstSync' preference
+    return this.advanceSyncState();
+  },
+
+  processClientCommands: function processClientCommands() {
+    // includes wipeClient commands, et al
+    return this.advanceSyncState();
+  },
+
+  updateEnabledEngines: function updateEnabledEngines() {
+    // infer enabled engines from meta/global
+    return this.advanceSyncState();
+  },
+
+  syncEngines: function syncEngines() {
+    // only stop if 401 seen
+    return this.advanceSyncState();
   }
-
 };

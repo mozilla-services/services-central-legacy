@@ -114,6 +114,7 @@ const SYNC_STATUS_NO_CREDENTIALS = 1;
  */
 function GlobalSession(globalState) {
   this.globalState = globalState;
+  this.boundAdvance = this.advance.bind(this);
 }
 GlobalSession.prototype = {
   /**
@@ -136,9 +137,7 @@ GlobalSession.prototype = {
   /**
    * Holds the current index in STATE_FLOW the session is operating in.
    */
-  currentStateIndex: 0,
-
-  inProgress: false,
+  currentStateIndex: -1,
 
   /**
    * Callback invoked when sync attempt has finished, regardless of success or
@@ -146,17 +145,19 @@ GlobalSession.prototype = {
    */
   finishedCallback: null,
 
-  advanceSyncState: function advanceSyncState() {
+  /**
+   * Advance the state pointer and execute the next transition in the state flow.
+   */
+  advance: function advance(error) {
     // We are on the last state and are thus done.
-    if (this.currentStateIndex == this.STATE_FLOW.length - 1) {
-      this.currentStateIndex = 0;
+    if (error || this.currentStateIndex >= this.STATE_FLOW.length) {
+      this.finish(error);
       return;
     }
 
     this.currentStateIndex += 1;
-
     let f = this[STATE_FLOW[this.currentStateIndex]];
-    f.call(this);
+    f.call(this, this.boundAdvance);
   },
 
   /**
@@ -166,13 +167,13 @@ GlobalSession.prototype = {
    * is active at one time.
    */
   begin: function begin(callback) {
+    if (this.currentStateIndex != -1) {
+      callback("XXX TODO already begun, current state index is " +
+               this.currentStateIndex);
+      return;
+    }
     this.finishedCallback = callback;
-    this.inProgress = true;
-
-    // TODO move to state function
-    Status.resetSync();
-
-    this.advanceSyncState();
+    this.advance(null);
   },
 
   /**
@@ -183,7 +184,6 @@ GlobalSession.prototype = {
    *         defined on sync start.
    */
   finish: function finish(error) {
-    this.inProgress = false;
     this.finishedCallback(error);
   },
 
@@ -192,11 +192,12 @@ GlobalSession.prototype = {
   // sync. They are defined in the order in which they are executed.          |
   // --------------------------------------------------------------------------
 
-  checkPreconditions: function checkPreconditions() {
+  checkPreconditions: function checkPreconditions(callback) {
+    Status.resetSync();
     let status = Status.checkSetup();
 
     if (status == CLIENT_NOT_CONFIGURED) {
-      return this.finish(SYNC_STATUS_NO_CREDENTIALS);
+      return callback(SYNC_STATUS_NO_CREDENTIALS);
     }
 
     // TODO do we have a first sync
@@ -204,18 +205,20 @@ GlobalSession.prototype = {
     // TODO have we met backoff
     // TODO master password unlocked
 
-    this.advanceSyncState();
+    return callback(null);
   },
 
-  obtainClusterURL: function obtainClusterURL() {
-    // TODO if we don't, fetch it
+  obtainClusterURL: function obtainClusterURL(callback) {
+    if (Service.clusterURL) {
+      return callback(null);
+    }
     // TODO if we can't, abort
     // See Service._findCluster()
 
-    return this.advanceSyncState();
+    return callback(null);
   },
 
-  fetchInfoCollections: function fetchInfoCollections() {
+  fetchInfoCollections: function fetchInfoCollections(callback) {
     // This serves multiple purposes:
     // 1) Ensure our login credentials are valid
     // 2) Obtain initial/bootstrap data from the server
@@ -225,10 +228,10 @@ GlobalSession.prototype = {
 
     // TODO use ?v=<version> once a day (if we still need that for metrics)
 
-    return this.advanceSyncState();
+    return callback(null);
   },
 
-  ensureSpecialRecords: function ensureSpecialRecords() {
+  ensureSpecialRecords: function ensureSpecialRecords(callback) {
     // - fetch keys if 'crypto' timestamp differs from local one
     //   - if it's non-existent, goto fresh start.
     //   - decrypt keys with Sync Key, abort if HMAC verification fails.
@@ -241,36 +244,36 @@ GlobalSession.prototype = {
     //   - wipe server. all of it.
     //   - create + upload meta/global
     //   - generate + upload new keys
-    return this.advanceSyncState();
+    return callback(null);
   },
 
-  updateEngineTimestamps: function updateEngineTimestamps() {
+  updateEngineTimestamps: function updateEngineTimestamps(callback) {
     // - update engine last modified timestamps from info/collections record
-    return this.advanceSyncState();
+    return callback(null);
   },
 
-  syncClientsEngine: function syncClientsEngine() {
+  syncClientsEngine: function syncClientsEngine(callback) {
     // clients engine always fetches all records
-    return this.advanceSyncState();
+    return callback(null);
   },
 
-  processFirstSyncPref: function processFirstSyncPref() {
+  processFirstSyncPref: function processFirstSyncPref(callback) {
     // process reset/wipe requests in 'firstSync' preference
-    return this.advanceSyncState();
+    return callback(null);
   },
 
-  processClientCommands: function processClientCommands() {
+  processClientCommands: function processClientCommands(callback) {
     // includes wipeClient commands, et al
-    return this.advanceSyncState();
+    return callback(null);
   },
 
-  updateEnabledEngines: function updateEnabledEngines() {
+  updateEnabledEngines: function updateEnabledEngines(callback) {
     // infer enabled engines from meta/global
-    return this.advanceSyncState();
+    return callback(null);
   },
 
-  syncEngines: function syncEngines() {
+  syncEngines: function syncEngines(callback) {
     // only stop if 401 seen
-    return this.advanceSyncState();
+    return callback(null);
   }
 };

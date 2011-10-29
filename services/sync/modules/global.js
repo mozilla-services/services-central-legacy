@@ -115,15 +115,19 @@ const SYNC_STATUS_NO_CREDENTIALS = 1;
 function GlobalSession(globalState) {
   this.globalState = globalState;
   this.boundAdvance = this.advance.bind(this);
+
+  this._log.level = Log4Moz.Level[Svc.Prefs.get("log.logger.globalsession")];
 }
 GlobalSession.prototype = {
+  _log: Log4Moz.repository.getLogger("Sync.GlobalSession"),
+
   /**
    * Defines the order of the functions called on the local object during a
    * sync.
    */
   STATE_FLOW: [
     "checkPreconditions",
-    "obtainClusterURL",
+    "ensureClusterURL",
     "fetchInfoCollections",
     "ensureSpecialRecords",
     "updateEngineTimestamps",
@@ -197,38 +201,125 @@ GlobalSession.prototype = {
     let status = Status.checkSetup();
 
     if (status == CLIENT_NOT_CONFIGURED) {
-      return callback(SYNC_STATUS_NO_CREDENTIALS);
+      return callback("XXX TODO client not configured");
     }
-
-    // TODO do we have a first sync
-    // TODO are we online
-    // TODO have we met backoff
-    // TODO master password unlocked
+    if (Svc.Prefs.get("firstSync") == "notReady") {
+      return callback("XXX TODO still setting up");
+    }
+    if (Services.io.offline) {
+      return callback("XXX TODO no can haz interwebs");
+    }
+    if (Status.minimumNextSync > Date.now()) {
+      return callback("XXX TODO backoff not met");
+    }
+    if ((Status.login == MASTER_PASSWORD_LOCKED) &&
+        Utils.mpLocked()) {
+      return callback("XXX TODO master password is still locked");
+    }
 
     return callback(null);
   },
 
-  obtainClusterURL: function obtainClusterURL(callback) {
+  _fetchedClusterURL: false,
+  ensureClusterURL: function ensureClusterURL(callback) {
     if (Service.clusterURL) {
-      return callback(null);
+      callback(null);
+      return;
     }
-    // TODO if we can't, abort
-    // See Service._findCluster()
 
-    return callback(null);
+    let url = Service.userAPI + Service.username + "/node/weave";
+    //XXX TODO we also want to pay attention to backoff on this call, but it's
+    // not as simple as using SyncStorageRequest because that does auth.
+    let request = new RESTRequest(url).get(function (error) {
+      if (error) {
+        this._log.debug("ensureClusterURL failed: " + Utils.exceptionStr(error));
+        Status.login = LOGIN_FAILED_NETWORK_ERROR;
+        return callback({exception: error});
+      }
+      let response = request.response;
+      switch (response.status) {
+        case 400:
+          this._log.debug("Server responded error code ");
+          Status.login = LOGIN_FAILED_LOGIN_REJECTED;
+          return callback("XXX TODO find cluster denied: " +
+                          ErrorHandler.errorStr(response.body));
+        case 404:
+          this._log.debug("Server doesn't support user API. " +
+                          "Using serverURL as data cluster");
+          Service.clusterURL = Service.serverURL;
+          break;
+        case 200:
+          let node = request.body;
+          if (node == "null") {
+            node = null;
+          }
+          this._log.trace("node/weave returned " + node);
+          Service.clusterURL = node;
+          break;
+        default:
+          return callback({httpResponse: response});
+          break;
+      }
+
+      this._fetchedClusterURL = true;
+      return callback(null);
+    }.bind(this));
   },
+
+  infoCollections: null,
 
   fetchInfoCollections: function fetchInfoCollections(callback) {
-    // This serves multiple purposes:
-    // 1) Ensure our login credentials are valid
-    // 2) Obtain initial/bootstrap data from the server
+    // Ping the server with a special info request once a day.
+    let url = Service.infoURL;
+    let now = Math.floor(Date.now() / 1000);
+    let lastPing = Svc.Prefs.get("lastPing", 0);
+    if (now - lastPing > 86400) { // 60 * 60 * 24
+      url += "?v=" + WEAVE_VERSION;
+      Svc.Prefs.set("lastPing", now);
+    }
+    let request = new SyncStorageRequest(url).get(function (error) {
+      if (error) {
+        this._log.debug("fetchInfoCollections failed: " +
+                        Utils.exceptionStr(error));
+        Status.login = LOGIN_FAILED_NETWORK_ERROR;
+        return callback({exception: error});
+      }
+      let response = request.response;
 
-    // If we can't make the HTTP request, something is seriously wrong and
-    // we can't proceed.
+      // A 401 or 404 response code can mean we're talking to wrong node or
+      // we're using the wrong credentials. Only way to find out is to refetch
+      // the node and then try again.
+      if (response.status == 401 || response.status == 404) {
+        // Did we already try fetching the clusterURL this sync? If so, it seems
+        // that we've got incorrect credentials.
+        if (this._fetchedClusterURL) {
+          Status.login = LOGIN_FAILED_LOGIN_REJECTED;
+          return callback({httpResponse: response});
+        }
+        // Could be a node-reassingment. Refetch the clusterURL, then go back to
+        // this function.
+        Svc.Prefs.reset("clusterURL");
+        return this.ensureClusterURL(function (error) {
+          if (error) {
+            return callback(error);
+          }
+          return this.fetchInfoCollections(callback);
+        });
+      }
 
-    // TODO use ?v=<version> once a day (if we still need that for metrics)
+      // Any non 200 response codes: something's wrong, abort!
+      if (response.status != 200) {
+        return callback({httpResponse: response});
+      }
 
-    return callback(null);
+      try {
+        this.infoCollections = JSON.parse(response.body);
+      } catch (ex) {
+        return callback({exception: ex});
+      }
+
+      return callback(null);
+    }.bind(this));
   },
 
   ensureSpecialRecords: function ensureSpecialRecords(callback) {

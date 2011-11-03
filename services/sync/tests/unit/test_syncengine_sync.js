@@ -1222,6 +1222,7 @@ add_test(function test_uploadOutgoing_MAX_UPLOAD_RECORDS() {
 
     // Ensure that the uploads were performed in batches of MAX_UPLOAD_RECORDS.
     do_check_eq(noOfUploads, Math.ceil(234/MAX_UPLOAD_RECORDS));
+    do_check_eq(0, Object.keys(engine._modified).length);
 
   } finally {
     cleanAndGo(server);

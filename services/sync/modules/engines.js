@@ -1096,69 +1096,100 @@ SyncEngine.prototype = {
 
   // Upload outgoing records
   _uploadOutgoing: function SyncEngine__uploadOutgoing() {
-    this._log.trace("Uploading local changes to server.");
-    if (this._modifiedIDs.length) {
-      this._log.trace("Preparing " + this._modifiedIDs.length +
-                      " outgoing records");
+    let result = this._uploadOutgoingRecords(
+      this._modifiedIDs,
+      this.engineURL,
+      this.lastSync,
+      this._createRecord,
+      function onSuccess(id) {
+        delete this._modified[id];
+      }
+    );
 
-      // collection we'll upload
-      let up = new Collection(this.engineURL);
-      let count = 0;
+    this.lastSync = result.lastSync;
+  },
 
-      // Upload what we've got so far in the collection
-      let doUpload = Utils.bind2(this, function(desc) {
-        this._log.info("Uploading " + desc + " of " +
-                       this._modifiedIDs.length + " records");
-        let resp = up.post();
-        if (!resp.success) {
-          this._log.debug("Uploading records failed: " + resp);
-          resp.failureCode = ENGINE_UPLOAD_FAIL;
-          throw resp;
-        }
+  _uploadOutgoingRecords: function _uploadOutgoingRecords(
+    modifiedIDs, collectionURL, lastSync, fetchRecord, onSuccess
+  ) {
+    this._log.trace("Uploading records to server.");
 
-        // Update server timestamp from the upload.
-        let modified = resp.headers["x-weave-timestamp"];
-        if (modified > this.lastSync)
-          this.lastSync = modified;
+    let result = {successIDs: [], lastSync: lastSync};
 
-        let failed_ids = Object.keys(resp.obj.failed);
-        if (failed_ids.length)
-          this._log.debug("Records that will be uploaded again because "
-                          + "the server couldn't store them: "
-                          + failed_ids.join(", "));
+    if (!modifiedIDs.length) {
+      return result;
+    }
 
-        // Clear successfully uploaded objects.
-        for each (let id in resp.obj.success) {
-          delete this._modified[id];
-        }
+    this._log.trace("Preparing " + modifiedIDs.length +
+                    " outgoing records");
 
-        up.clearRecords();
-      });
+    // collection we'll upload
+    let up = new Collection(collectionURL);
+    let count = 0;
 
-      for each (let id in this._modifiedIDs) {
-        try {
-          let out = this._createRecord(id);
-          if (this._log.level <= Log4Moz.Level.Trace)
-            this._log.trace("Outgoing: " + out);
-
-          out.encrypt();
-          up.pushData(out);
-        }
-        catch(ex) {
-          this._log.warn("Error creating record: " + Utils.exceptionStr(ex));
-        }
-
-        // Partial upload
-        if ((++count % MAX_UPLOAD_RECORDS) == 0)
-          doUpload((count - MAX_UPLOAD_RECORDS) + " - " + count + " out");
-
-        this._store._sleep(0);
+    // Upload what we've got so far in the collection
+    let doUpload = Utils.bind2(this, function(desc) {
+      this._log.info("Uploading " + desc + " of " +
+                     modifiedIDs.length + " records");
+      let resp = up.post();
+      if (!resp.success) {
+        this._log.debug("Uploading records failed: " + resp);
+        resp.failureCode = ENGINE_UPLOAD_FAIL;
+        throw resp;
       }
 
-      // Final upload
-      if (count % MAX_UPLOAD_RECORDS > 0)
-        doUpload(count >= MAX_UPLOAD_RECORDS ? "last batch" : "all");
+      // Update server timestamp from the upload.
+      let modified = resp.headers["x-weave-timestamp"];
+      if (modified > result.lastSync) {
+        result.lastSync = modified;
+      }
+
+      let failed_ids = Object.keys(resp.obj.failed);
+      if (failed_ids.length) {
+        this._log.debug("Records that will be uploaded again because "
+                        + "the server couldn't store them: "
+                        + failed_ids.join(", "));
+      }
+
+      for each (let id in resp.obj.success) {
+        result.successIDs.push(id);
+
+        if (onSuccess) {
+          onSuccess.call(this, id);
+        }
+      }
+
+      up.clearRecords();
+    });
+
+    for each (let id in modifiedIDs) {
+      try {
+        let out = fetchRecord.call(this, id);
+        if (this._log.level <= Log4Moz.Level.Trace) {
+          this._log.trace("Outgoing: " + out);
+        }
+
+        out.encrypt();
+        up.pushData(out);
+      }
+      catch(ex) {
+        this._log.warn("Error creating record: " + Utils.exceptionStr(ex));
+      }
+
+      // Partial upload
+      if ((++count % MAX_UPLOAD_RECORDS) == 0) {
+        doUpload((count - MAX_UPLOAD_RECORDS) + " - " + count + " out");
+      }
+
+      this._store._sleep(0);
     }
+
+    // Final upload
+    if (count % MAX_UPLOAD_RECORDS > 0) {
+      doUpload(count >= MAX_UPLOAD_RECORDS ? "last batch" : "all");
+    }
+
+    return result;
   },
 
   // Any cleanup necessary.

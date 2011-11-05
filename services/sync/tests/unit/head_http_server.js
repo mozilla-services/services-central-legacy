@@ -5,6 +5,8 @@ Cu.import("resource://services-sync/log4moz.js");
 const SYNC_HTTP_LOGGER = "Sync.Test.Server";
 const SYNC_API_VERSION = "1.1";
 
+Cu.import("resource://services-sync/engines.js");
+
 // Use the same method that record.js does, which mirrors the server.
 // The server returns timestamps with 1/100 sec granularity. Note that this is
 // subject to change: see Bug 650435.
@@ -468,7 +470,7 @@ function sync_httpd_setup(handlers) {
  * Track collection modified times. Return closures.
  */
 function track_collections_helper() {
-  
+
   /*
    * Our tracking object.
    */
@@ -511,14 +513,14 @@ function track_collections_helper() {
       default:
         throw "Non-GET on info_collections.";
     }
-        
+
     response.setHeader("X-Weave-Timestamp",
                        "" + new_timestamp(),
                        false);
     response.setStatusLine(request.httpVersion, 200, "OK");
     response.bodyOutputStream.write(body, body.length);
   }
-  
+
   return {"collections": collections,
           "handler": info_collections,
           "with_updated_collection": with_updated_collection,

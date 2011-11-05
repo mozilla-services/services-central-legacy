@@ -194,6 +194,10 @@ let Utils = {
     return btoa(bytes).replace('+', '-', 'g').replace('/', '_', 'g');
   },
 
+  decodeBase64url: function decodeBase64url(data) {
+    return atob(data.replace('-', '+', 'g').replace('_', '/', 'g'));
+  },
+
   /**
    * GUIDs are 9 random bytes encoded with base64url (RFC 4648).
    * That makes them 12 characters long with 72 bits of entropy.

@@ -58,6 +58,7 @@ let lazies = {
                            "BasicAuthenticator", "NoOpAuthenticator"],
   "service.js":           ["Service"],
   "status.js":            ["Status"],
+  "tabstate.js":          ["TabStateUtils"],
   "util.js":              ['Utils', 'Svc', 'Str']
 };
 

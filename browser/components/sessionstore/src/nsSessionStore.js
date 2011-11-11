@@ -125,6 +125,7 @@ const TAB_EVENTS = ["TabOpen", "TabClose", "TabSelect", "TabShow", "TabHide",
 #define BROKEN_WM_Z_ORDER
 #endif
 
+Cu.import("resource://gre/modules/DocumentUtils.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 // debug.js adds NS_ASSERT. cf. bug 669196
@@ -2143,13 +2144,23 @@ SessionStoreService.prototype = {
     if (aFullData || this._checkPrivacyLevel(isHTTPS, aIsPinned) ||
         aContent.top.document.location.href == "about:sessionrestore") {
       if (aFullData || aUpdateFormData) {
-        let formData = this._collectFormDataForFrame(aContent.document);
-        if (formData)
-          aData.formdata = formData;
-        else if (aData.formdata)
+        let formData = DocumentUtils.getFormData(aContent.document);
+
+        // For backwards compatibility in SessionStore, the structure of the
+        // stored object is modified slightly.
+        if (Object.keys(formData).length) {
+          // The object returned from getFormData() is not shared, so we reuse
+          // the xpath sub-object for our storage.
+          aData.formdata = formData.xpath;
+
+          for each (let [k, v] in Iterator(formData.id)) {
+            aData.formdata["#" + k] = v;
+          }
+        } else if (aData.formdata) {
           delete aData.formdata;
+        }
       }
-      
+
       // designMode is undefined e.g. for XUL documents (as about:config)
       if ((aContent.document.designMode || "") == "on") {
         if (aData.innerHTML === undefined && !aFullData) {
@@ -2192,83 +2203,6 @@ SessionStoreService.prototype = {
         return selectedPageStyle;
     }
     return "";
-  },
-
-  /**
-   * collect the state of all form elements
-   * @param aDocument
-   *        document reference
-   */
-  _collectFormDataForFrame: function sss_collectFormDataForFrame(aDocument) {
-    let formNodes = aDocument.evaluate(XPathHelper.restorableFormNodes, aDocument,
-                                       XPathHelper.resolveNS,
-                                       Ci.nsIDOMXPathResult.UNORDERED_NODE_ITERATOR_TYPE, null);
-    let node = formNodes.iterateNext();
-    if (!node)
-      return null;
-
-    const MAX_GENERATED_XPATHS = 100;
-    let generatedCount = 0;
-
-    let data = {};
-    do {
-      let nId = node.id;
-      let hasDefaultValue = true;
-      let value;
-
-      // Only generate a limited number of XPath expressions for perf reasons (cf. bug 477564)
-      if (!nId && generatedCount > MAX_GENERATED_XPATHS)
-        continue;
-
-      if (node instanceof Ci.nsIDOMHTMLInputElement ||
-          node instanceof Ci.nsIDOMHTMLTextAreaElement) {
-        switch (node.type) {
-          case "checkbox":
-          case "radio":
-            value = node.checked;
-            hasDefaultValue = value == node.defaultChecked;
-            break;
-          case "file":
-            value = { type: "file", fileList: node.mozGetFileNameArray() };
-            hasDefaultValue = !value.fileList.length;
-            break;
-          default: // text, textarea
-            value = node.value;
-            hasDefaultValue = value == node.defaultValue;
-            break;
-        }
-      }
-      else if (!node.multiple) {
-        // <select>s without the multiple attribute are hard to determine the
-        // default value, so assume we don't have the default.
-        hasDefaultValue = false;
-        value = node.selectedIndex;
-      }
-      else {
-        // <select>s with the multiple attribute are easier to determine the
-        // default value since each <option> has a defaultSelected
-        let options = Array.map(node.options, function(aOpt, aIx) {
-          let oSelected = aOpt.selected;
-          hasDefaultValue = hasDefaultValue && (oSelected == aOpt.defaultSelected);
-          return oSelected ? aIx : -1;
-        });
-        value = options.filter(function(aIx) aIx >= 0);
-      }
-      // In order to reduce XPath generation (which is slow), we only save data
-      // for form fields that have been changed. (cf. bug 537289)
-      if (!hasDefaultValue) {
-        if (nId) {
-          data["#" + nId] = value;
-        }
-        else {
-          generatedCount++;
-          data[XPathHelper.generate(node)] = value;
-        }
-      }
-
-    } while ((node = formNodes.iterateNext()));
-
-    return data;
   },
 
   /**
@@ -3367,70 +3301,21 @@ SessionStoreService.prototype = {
     function hasExpectedURL(aDocument, aURL)
       !aURL || aURL.replace(/#.*/, "") == aDocument.location.href.replace(/#.*/, "");
 
-    function restoreFormData(aDocument, aData, aURL) {
-      for (let key in aData) {
-        if (!hasExpectedURL(aDocument, aURL))
-          return;
-
-        let node = key.charAt(0) == "#" ? aDocument.getElementById(key.slice(1)) :
-                                          XPathHelper.resolve(aDocument, key);
-        if (!node)
-          continue;
-
-        let eventType;
-        let value = aData[key];
-        if (typeof value == "string" && node.type != "file") {
-          if (node.value == value)
-            continue; // don't dispatch an input event for no change
-
-          node.value = value;
-          eventType = "input";
-        }
-        else if (typeof value == "boolean") {
-          if (node.checked == value)
-            continue; // don't dispatch a change event for no change
-
-          node.checked = value;
-          eventType = "change";
-        }
-        else if (typeof value == "number") {
-          // We saved the value blindly since selects take more work to determine
-          // default values. So now we should check to avoid unnecessary events.
-          if (node.selectedIndex == value)
-            continue;
-
-          try {
-            node.selectedIndex = value;
-            eventType = "change";
-          } catch (ex) { /* throws for invalid indices */ }
-        }
-        else if (value && value.fileList && value.type == "file" && node.type == "file") {
-          node.mozSetFileNameArray(value.fileList, value.fileList.length);
-          eventType = "input";
-        }
-        else if (value && typeof value.indexOf == "function" && node.options) {
-          Array.forEach(node.options, function(aOpt, aIx) {
-            aOpt.selected = value.indexOf(aIx) > -1;
-
-            // Only fire the event here if this wasn't selected by default
-            if (!aOpt.defaultSelected)
-              eventType = "change";
-          });
-        }
-
-        // Fire events for this node if applicable
-        if (eventType) {
-          let event = aDocument.createEvent("UIEvents");
-          event.initUIEvent(eventType, true, true, aDocument.defaultView, 0);
-          node.dispatchEvent(event);
-        }
-      }
-    }
-
     let selectedPageStyle = aBrowser.__SS_restore_pageStyle;
     function restoreTextDataAndScrolling(aContent, aData, aPrefix) {
-      if (aData.formdata)
-        restoreFormData(aContent.document, aData.formdata, aData.url);
+      if (aData.formdata && hasExpectedURL(aContent.document, aData.url)) {
+        let data = {xpath: {}, id: {}};
+        for each (let [key, value] in Iterator(aData.formdata)) {
+          if (key.charAt(0) == "#") {
+            data.id[key.slice(1)] = value;
+          } else {
+            data.xpath[key] = value;
+          }
+        }
+
+        DocumentUtils.mergeFormData(aContent.document, data);
+      }
+
       if (aData.innerHTML) {
         aWindow.setTimeout(function() {
           if (aContent.document.designMode == "on" &&
@@ -4408,97 +4293,6 @@ SessionStoreService.prototype = {
   }
 };
 
-let XPathHelper = {
-  // these two hashes should be kept in sync
-  namespaceURIs:     { "xhtml": "http://www.w3.org/1999/xhtml" },
-  namespacePrefixes: { "http://www.w3.org/1999/xhtml": "xhtml" },
-
-  /**
-   * Generates an approximate XPath query to an (X)HTML node
-   */
-  generate: function sss_xph_generate(aNode) {
-    // have we reached the document node already?
-    if (!aNode.parentNode)
-      return "";
-    
-    // Access localName, namespaceURI just once per node since it's expensive.
-    let nNamespaceURI = aNode.namespaceURI;
-    let nLocalName = aNode.localName;
-
-    let prefix = this.namespacePrefixes[nNamespaceURI] || null;
-    let tag = (prefix ? prefix + ":" : "") + this.escapeName(nLocalName);
-    
-    // stop once we've found a tag with an ID
-    if (aNode.id)
-      return "//" + tag + "[@id=" + this.quoteArgument(aNode.id) + "]";
-    
-    // count the number of previous sibling nodes of the same tag
-    // (and possible also the same name)
-    let count = 0;
-    let nName = aNode.name || null;
-    for (let n = aNode; (n = n.previousSibling); )
-      if (n.localName == nLocalName && n.namespaceURI == nNamespaceURI &&
-          (!nName || n.name == nName))
-        count++;
-    
-    // recurse until hitting either the document node or an ID'd node
-    return this.generate(aNode.parentNode) + "/" + tag +
-           (nName ? "[@name=" + this.quoteArgument(nName) + "]" : "") +
-           (count ? "[" + (count + 1) + "]" : "");
-  },
-
-  /**
-   * Resolves an XPath query generated by XPathHelper.generate
-   */
-  resolve: function sss_xph_resolve(aDocument, aQuery) {
-    let xptype = Ci.nsIDOMXPathResult.FIRST_ORDERED_NODE_TYPE;
-    return aDocument.evaluate(aQuery, aDocument, this.resolveNS, xptype, null).singleNodeValue;
-  },
-
-  /**
-   * Namespace resolver for the above XPath resolver
-   */
-  resolveNS: function sss_xph_resolveNS(aPrefix) {
-    return XPathHelper.namespaceURIs[aPrefix] || null;
-  },
-
-  /**
-   * @returns valid XPath for the given node (usually just the local name itself)
-   */
-  escapeName: function sss_xph_escapeName(aName) {
-    // we can't just use the node's local name, if it contains
-    // special characters (cf. bug 485482)
-    return /^\w+$/.test(aName) ? aName :
-           "*[local-name()=" + this.quoteArgument(aName) + "]";
-  },
-
-  /**
-   * @returns a properly quoted string to insert into an XPath query
-   */
-  quoteArgument: function sss_xph_quoteArgument(aArg) {
-    return !/'/.test(aArg) ? "'" + aArg + "'" :
-           !/"/.test(aArg) ? '"' + aArg + '"' :
-           "concat('" + aArg.replace(/'+/g, "',\"$&\",'") + "')";
-  },
-
-  /**
-   * @returns an XPath query to all savable form field nodes
-   */
-  get restorableFormNodes() {
-    // for a comprehensive list of all available <INPUT> types see
-    // http://mxr.mozilla.org/mozilla-central/search?string=kInputTypeTable
-    let ignoreTypes = ["password", "hidden", "button", "image", "submit", "reset"];
-    // XXXzeniko work-around until lower-case has been implemented (bug 398389)
-    let toLowerCase = '"ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"';
-    let ignore = "not(translate(@type, " + toLowerCase + ")='" +
-      ignoreTypes.join("' or translate(@type, " + toLowerCase + ")='") + "')";
-    let formNodesXPath = "//textarea|//select|//xhtml:textarea|//xhtml:select|" +
-      "//input[" + ignore + "]|//xhtml:input[" + ignore + "]";
-    
-    delete this.restorableFormNodes;
-    return (this.restorableFormNodes = formNodesXPath);
-  }
-};
 
 // This is used to help meter the number of restoring tabs. This is the control
 // point for telling the next tab to restore. It gets attached to each gBrowser

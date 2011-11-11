@@ -408,20 +408,20 @@ AddonsStore.prototype = {
 
       // If we don't have this add-on locally, we mark it for install.
       if (!addon) {
-        this._log.trace("Marking add-on for install: " + id);
+        this._log.debug("Marking add-on for install: " + id);
         install_ids[id] = guid;
         continue;
       }
 
       // Catch enable/disable actions.
-      if (record.userEnabled && addon.userDisabled) {
-        this._log.trace("Marking add-on for disabling: " + id);
+      if (!record.userEnabled && !addon.userDisabled) {
+        this._log.debug("Marking add-on for disabling: " + id);
         disable_ids[id] = true;
         continue;
       }
 
-      if (!record.userEnabled && !addon.userDisabled) {
-        this._log.trace("Marking add-on for enabling: " + id);
+      if (record.userEnabled && addon.userDisabled) {
+        this._log.debug("Marking add-on for enabling: " + id);
         enable_ids[id] = true;
         continue;
       }

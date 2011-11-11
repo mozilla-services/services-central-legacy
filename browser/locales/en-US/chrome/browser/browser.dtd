@@ -39,6 +39,10 @@ can reach it easily. -->
 <!ENTITY  undoCloseTab.accesskey             "U">
 <!ENTITY  closeTab.label                     "Close Tab">
 <!ENTITY  closeTab.accesskey                 "c">
+<!ENTITY  sendTabToDevice.label              "Send Tab to Device">
+<!ENTITY  sendTabToDeviceConfigureSync.label "Configure Sync to use this feature…">
+<!ENTITY  sendTabToDeviceSetUpDevice.label   "Pair another device with Sync to use this feature…">
+<!ENTITY  sendTabToDeviceNotReady.label      "Sync is not currently available. Try again later.">
 
 <!ENTITY  listAllTabs.label      "List all tabs">
 

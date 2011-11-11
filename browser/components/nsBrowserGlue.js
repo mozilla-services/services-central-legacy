@@ -155,6 +155,20 @@ BrowserGlue.prototype = {
     Cu.import("resource://services-sync/main.js");
     Weave.SyncScheduler.delayedAutoConnect(delay);
   },
+
+  /**
+   * Handle a display-tab Sync command receipt notification.
+   *
+   * This simply calls into the Sync Clients engine instance to perform all the
+   * heavy lifting.
+   */
+  _onSyncDisplayTab: function BG__onSyncDisplayTab(subject) {
+    // Sync's Svc.Obs performs wrapping of a native JS Object type.
+    let obj = subject.wrappedJSObject.object;
+    let browser = this.getMostRecentBrowserWindow().gBrowser;
+
+    Weave.TabStateUtils.restoreTab(browser, obj);
+  },
 #endif
 
   // nsIObserver implementation 
@@ -202,6 +216,9 @@ BrowserGlue.prototype = {
 #ifdef MOZ_SERVICES_SYNC
       case "weave:service:ready":
         this._setSyncAutoconnectDelay();
+        break;
+      case "weave:engine:clients:display-tab":
+        this._onSyncDisplayTab(subject);
         break;
 #endif
       case "session-save":
@@ -289,6 +306,7 @@ BrowserGlue.prototype = {
 #endif
 #ifdef MOZ_SERVICES_SYNC
     os.addObserver(this, "weave:service:ready", false);
+    os.addObserver(this, "weave:engine:clients:display-tab", false);
 #endif
     os.addObserver(this, "session-save", false);
     os.addObserver(this, "places-init-complete", false);
@@ -315,7 +333,8 @@ BrowserGlue.prototype = {
     os.removeObserver(this, "browser-lastwindow-close-granted");
 #endif
 #ifdef MOZ_SERVICES_SYNC
-    os.removeObserver(this, "weave:service:ready", false);
+    os.removeObserver(this, "weave:service:ready");
+    os.removeObserver(this, "weave:engine:clients:display-tab");
 #endif
     os.removeObserver(this, "session-save");
     if (this._isIdleObserver)

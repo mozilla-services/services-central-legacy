@@ -21,6 +21,7 @@
 #   Raymond Lee <raymond@appcoast.com>
 #   Ian Gilman <ian@iangilman.com>
 #   Tim Taubert <tim.taubert@gmx.de>
+#   Gregory Szorc <gps@mozilla.com>
 #
 # Alternatively, the contents of this file may be used under the terms of
 # either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -439,6 +440,71 @@ let TabView = {
 
       // show banner
       this._window.UI.notifySessionRestoreEnabled();
+    }
+  },
+
+  /**
+   * Update the send tab to device popup menu.
+   *
+   * This is called right before the menu is rendered.
+   */
+  updateSendTabPopup: function TabView_updateSendTabPopup(event) {
+    let popup = event.target;
+
+    // Wipe out existing clients list.
+    let children = popup.childNodes;
+    let removeElements = [];
+    for (let i = 0; i < children.length; i++) {
+      let node = children[i];
+      if (node.id == "context_tabViewSendTabNoSync") continue;
+      if (node.id == "context_tabViewSendTabNotReady") continue;
+      if (node.id == "context_tabViewSendTabNoClients") continue;
+
+      removeElements.push(node);
+    }
+
+    for each (let element in removeElements) {
+      popup.removeChild(element);
+    }
+
+    let noSyncItem = document.getElementById("context_tabViewSendTabNoSync");
+    let notReadyItem = document.getElementById("context_tabViewSendTabNotReady");
+    let noClientsItem = document.getElementById("context_tabViewSendTabNoClients");
+
+    // If Sync is not configured, display the message to that effect.
+    if (!Services.prefs.prefHasUserValue("services.sync.username")) {
+      noSyncItem.setAttribute("hidden", false);
+      notReadyItem.setAttribute("hidden", true);
+      noClientsItem.setAttribute("hidden", true);
+
+      return;
+    }
+
+    noSyncItem.setAttribute("hidden", true);
+
+    if (!Weave.Status.ready || !gSyncUI.syncPerformed) {
+      notReadyItem.setAttribute("hidden", false);
+      noClientsItem.setAttribute("hidden", true);
+
+      return;
+    }
+
+    let clients = Weave.Clients.remoteClients;
+
+    notReadyItem.setAttribute("hidden", true);
+    noClientsItem.setAttribute("hidden", Object.keys(clients).length > 0);
+
+    for each (let [id, client] in Iterator(clients)) {
+      let menuItem = document.createElement("menuitem");
+      menuItem.setAttribute("label", client.name);
+
+      menuItem.addEventListener("command", function sendClientTabHandler() {
+        Weave.TabStateUtils.sendTabToClient(gBrowser.selectedTab,
+                                            id,
+                                            {engine: Weave.Clients});
+      }, false);
+
+      popup.appendChild(menuItem);
     }
   }
 };

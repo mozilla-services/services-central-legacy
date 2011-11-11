@@ -8836,6 +8836,8 @@ var TabContextMenu = {
     // Hide "Move to Group" if it's a pinned tab.
     document.getElementById("context_tabViewMenu").hidden =
       (this.contextTab.pinned || !TabView.firstUseExperienced);
+
+    document.getElementById("context_sendTabToDevice").hidden = false;
   }
 };
 

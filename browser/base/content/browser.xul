@@ -137,6 +137,23 @@
                 accesskey="&moveToNewWindow.accesskey;"
                 tbattr="tabbrowser-multiple"
                 oncommand="gBrowser.replaceTabWithWindow(TabContextMenu.contextTab);"/>
+      <menu id="context_sendTabToDevice"
+                label="&sendTabToDevice.label;">
+        <menupopup id="context_sendTabToDevicePopup"
+                   onpopupshowing="if (event.target == this) TabView.updateSendTabPopup(event);">
+          <menuitem id="context_tabViewSendTabNoSync"
+                    label="&sendTabToDeviceConfigureSync.label;"
+                    hidden="true"
+                    oncommand="gSyncUI.openSetup()"/>
+          <menuitem id="context_tabViewSendTabNotReady"
+                    label="&sendTabToDeviceNotReady.label;"
+                    hidden="true"/>
+          <menuitem id="context_tabViewSendTabNoClients"
+                    label="&sendTabToDeviceSetUpDevice.label;"
+                    hidden="true"
+                    oncommand="gSyncUI.openAddDevice()"/>
+        </menupopup>
+      </menu>
       <menuseparator/>
       <menuitem id="context_reloadAllTabs" label="&reloadAllTabs.label;" accesskey="&reloadAllTabs.accesskey;"
                 tbattr="tabbrowser-multiple-visible"

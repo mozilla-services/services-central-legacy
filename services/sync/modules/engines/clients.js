@@ -53,6 +53,13 @@ Cu.import("resource://services-sync/main.js");
 const CLIENTS_TTL = 1814400; // 21 days
 const CLIENTS_TTL_REFRESH = 604800; // 7 days
 
+const TAB_STATE_COLLECTION = "sendtab";
+
+// The length of 21 days matches the TTL of client records. Records are
+// deleted after they are fetched by the receiving client, so they shouldn't
+// accumulate on the server.
+const DEFAULT_TAB_STATE_TTL = 1814400; // 21 days
+
 function ClientsRec(collection, id) {
   CryptoWrapper.call(this, collection, id);
 }
@@ -64,6 +71,22 @@ ClientsRec.prototype = {
 
 Utils.deferGetSet(ClientsRec, "cleartext", ["name", "type", "commands"]);
 
+/**
+  * This is the record for individual tab states.
+  *
+  * It is used by the send tab command. Tab states are stored in their own
+  * collection because they could be large and could exhaust space in the
+  * clients record.
+  */
+function SendTabRecord(collection, id) {
+  CryptoWrapper.call(this, collection, id);
+}
+SendTabRecord.prototype = {
+  __proto__: CryptoWrapper.prototype,
+  _logName:  "Sync.Record.SendTab",
+  ttl:       DEFAULT_TAB_STATE_TTL
+};
+Utils.deferGetSet(SendTabRecord, "cleartext", ["tabState"]);
 
 XPCOMUtils.defineLazyGetter(this, "Clients", function () {
   return new ClientEngine();
@@ -140,6 +163,32 @@ ClientEngine.prototype = {
   get localType() Svc.Prefs.get("client.type", "desktop"),
   set localType(value) Svc.Prefs.set("client.type", value),
 
+  /**
+   * Retrieve information about remote clients.
+   *
+   * Returns an object with client IDs as keys and objects describing each
+   * client as values.
+   */
+  get remoteClients() {
+    let ret = {};
+
+    for each (let [id, record] in Iterator(this._store._remoteClients)) {
+      ret[id] = record;
+    }
+
+    return ret;
+  },
+
+  /**
+   * Obtain the URL of the tab state collection.
+   *
+   * @return String
+   *         URL to tabstate collection.
+   */
+  get tabStateURL() {
+    return this.storageURL + TAB_STATE_COLLECTION;
+  },
+
   isMobile: function isMobile(id) {
     if (this._store._remoteClients[id])
       return this._store._remoteClients[id].type == "mobile";
@@ -155,7 +204,53 @@ ClientEngine.prototype = {
     SyncEngine.prototype._syncStartup.call(this);
   },
 
-  // Always process incoming items because they might have commands
+  // We override the default implementation to additionally upload tab state
+  // records.
+  _uploadOutgoing: function _uploadOutgoing() {
+    // There might be a race condition between us uploading tab state records
+    // and another client fetching them during command processing. We upload
+    // the tab state records first to avoid this.
+    this._uploadSendTabRecords();
+    SyncEngine.prototype._uploadOutgoing.call(this);
+  },
+
+  _uploadSendTabRecords: function _uploadSendTabRecords() {
+    if (!Object.keys(this._store._outgoingSendTabRecords).length) {
+      return;
+    }
+
+    // This will be invoked with 'this' bound to the engine.
+    let getTabRecord = function(id) {
+      let record = new SendTabRecord(id, TAB_STATE_COLLECTION);
+      let entry = this._store._outgoingSendTabRecords[id];
+
+      record.id       = id;
+      record.ttl      = entry.ttl;
+      record.tabState = entry.state;
+
+      return record;
+    };
+
+    // The value of lastSync is irrelevant.
+    let result = this._uploadOutgoingRecords(
+      Object.keys(this._store._outgoingSendTabRecords),
+      this.tabStateURL,
+      this.lastSync,
+      getTabRecord
+    );
+
+    // Technically we should only wipe out records which were successfully
+    // uploaded. But with tab state, we have one shot at it. If it doesn't
+    // work, we move forward. That being said, we never get this far on many
+    // errors because the upload error will throw which will abort sync of the
+    // engine. In the case of an aborted sync, we'll simply try again on the
+    // next sync. In the event we actually get here, we'll still send a
+    // command but the state record won't exist and the receiver will fall
+    // back to simple "display a URI" behavior.
+    this._store._outgoingSendTabRecords = {};
+  },
+
+  // Always process incoming items because they might have commands.
   _reconcile: function _reconcile() {
     return true;
   },
@@ -200,7 +295,8 @@ ClientEngine.prototype = {
     wipeAll:     { args: 0, desc: "Delete all client data for all engines" },
     wipeEngine:  { args: 1, desc: "Delete all client data for engine" },
     logout:      { args: 0, desc: "Log out client" },
-    displayURI:  { args: 2, desc: "Instruct a client to display a URI" }
+    displayURI:  { args: 2, desc: "Instruct a client to display a URI" },
+    displayTab:  { args: 1, desc: "Instruct a client to display a tab" }
   },
 
   /**
@@ -287,6 +383,9 @@ ClientEngine.prototype = {
             return false;
           case "displayURI":
             this._handleDisplayURI(args[0], args[1]);
+            break;
+          case "displayTab":
+            this._handleDisplayTab(args[0]);
             break;
           default:
             this._log.debug("Received an unknown command: " + command);
@@ -380,16 +479,152 @@ ClientEngine.prototype = {
 
     let subject = { uri: uri, client: clientId };
     Svc.Obs.notify("weave:engine:clients:display-uri", subject);
+  },
+
+  /**
+   * Sends a tab to another client.
+   *
+   * This can be thought of as a more powerful version of
+   * sendURIToClientForDisplay(). This version takes an options
+   * argument which controls how the sending works.
+   *
+   * Calling this function with tab state will eventually result in a
+   * record in another collection being created. This record is only
+   * referenced in the command. It is protected against orphanage by a
+   * server-side expiration TTL.
+   *
+   * Tab state is a complicated beast. As far as this API is concerned,
+   * tab state is treated as a black box. However, various clients expect
+   * a specific format. Code that deals with the specifics is purposefully
+   * located outside of the Clients engine.
+   *
+   * @param uri
+   *        String URI to send to the remote client.
+   * @param client
+   *        String client ID to send the command to. Must be defined.
+   * @param options
+   *        Object containing metadata to control how sending works. Can
+   *        contain the following keys:
+   *          tabState - Tab's state. If not defined, no tab state is sent.
+   *
+   *          ttl - TTL for record containing tab state. If not defined, it
+   *          will default to a reasonable value.
+   */
+  sendURIToClient: function sendURIToClient(uri, client, options) {
+    this._log.info("Sending tab to client: " + uri + " -> " + client);
+
+    let input = options || {};
+
+    let args = {
+      uri:      uri,
+      senderID: this.localID
+    };
+
+    // Tab states can be large and all commands are in one record, so
+    // sending many tabs could cause the client record to become quite large.
+    // We work around this problem by storing the tab state in a foreign
+    // record, outside of the clients collection.
+    let guid, outgoingRecord;
+    if ("tabState" in input) {
+      let ttl = DEFAULT_TAB_STATE_TTL;
+      if ("ttl" in input) {
+        ttl = input.ttl;
+      }
+
+      guid = Utils.makeGUID();
+      args.stateID = guid;
+      outgoingRecord = {
+        ttl:   ttl,
+        state: input.tabState
+      };
+
+      this._log.debug("Prepared tab state record: " + guid);
+    }
+
+    this.sendCommand("displayTab", [args], client);
+
+    // Wait until after sendCommand() to record the outgoing record in case
+    // sendCommand() throws.
+    if (guid && outgoingRecord) {
+      this._store._outgoingSendTabRecords[guid] = outgoingRecord;
+    }
+
+    Clients._tracker.score += SCORE_INCREMENT_XLARGE;
+  },
+
+  /**
+   * Handle received displayTab commands.
+   *
+   * After assembling all the command data, this function fires a
+   * weave:engine:clients:display-tab notification. The subject is an object
+   * containing the following fields:
+   *
+   *   uri      - String URI to display
+   *   tabState - Object defining tab state. May not be defined. The tab state
+   *              is treated as a black box to this engine. The format is not
+   *              well-defined outside the Clients engine at this time.
+   *   senderID - ID of client that sent the tab.
+   *
+   * In Firefox, the notification is handled by BrowserGlue. The handler then
+   * calls back into this engine (restoreTab) with the subject object and a
+   * browser instance, and the tab is restored. This may seem like a very
+   * roundabout way of doing things. However, the alternative is UI code would
+   * be tightly integrated with Sync, which is supposed to remain application
+   * agnostic.
+   */
+  _handleDisplayTab: function _handleDisplayTab(args) {
+    this._log.info("Received a tab for display: " + args.uri);
+
+    let state;
+
+    // Commands may or may not have tab state. If they do, it is stored in a
+    // foreign record, which we'll need to fetch.
+    if ("stateID" in args) {
+      let record = new SendTabRecord(TAB_STATE_COLLECTION, args.stateID);
+      let uri = this.tabStateURL + "/" + args.stateID;
+
+      this._log.debug("Fetching remote record from: " + uri);
+
+      try {
+        // This is synchronous and spins the event loop. It also throws on
+        // some errors.
+        record.fetch(uri);
+
+        record.decrypt();
+        state = record.tabState;
+        this._log.debug("Received tab state record: " + args.stateID);
+
+        // Issue an async delete request for the resource. We don't care
+        // what the response is.
+        new AsyncResource(uri).delete(function() {});
+      }
+      catch (ex) {
+        this._log.error("Error fetching tab state record (" + args.stateID +
+                        "). Ignoring tab state: " + ex);
+      }
+    }
+
+    let subject = {
+      uri:      args.uri,
+      tabState: state,
+      senderID: args.senderID
+    };
+    Svc.Obs.notify("weave:engine:clients:display-tab", subject);
   }
 };
-
 function ClientStore(name) {
   Store.call(this, name);
 }
 ClientStore.prototype = {
   __proto__: Store.prototype,
 
-  create: function create(record) this.update(record),
+  // Holds SendTab records created by "displayTab" command which haven't
+  // yet been uploaded. Maps Record ID -> payload object.
+  _outgoingSendTabRecords: {},
+
+  create: function create(record) {
+    this.update(record);
+  },
 
   update: function update(record) {
     // Only grab commands from the server; local name/type always wins
@@ -425,7 +660,8 @@ ClientStore.prototype = {
   },
 
   wipe: function wipe() {
-    this._remoteClients = {};
+    this._remoteClients          = {};
+    this._outgoingSendTabRecords = {};
   },
 };
 

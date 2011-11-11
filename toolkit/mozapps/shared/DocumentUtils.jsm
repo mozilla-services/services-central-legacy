@@ -261,7 +261,7 @@ let DocumentUtils = {
 /**
  * XPath helper functions.
  *
- * This code was lifted from nsSessionStore.js vebatim.
+ * This code was originally lifted from nsSessionStore.js.
  */
 let XPathHelper = {
   // these two hashes should be kept in sync
@@ -273,28 +273,32 @@ let XPathHelper = {
    */
   generate: function sss_xph_generate(aNode) {
     // have we reached the document node already?
-    if (!aNode.parentNode)
+    if (!aNode.parentNode) {
       return "";
+    }
 
     // Access localName, namespaceURI just once per node since it's expensive.
     let nNamespaceURI = aNode.namespaceURI;
-    let nLocalName = aNode.localName;
+    let nLocalName    = aNode.localName;
 
     let prefix = this.namespacePrefixes[nNamespaceURI] || null;
     let tag = (prefix ? prefix + ":" : "") + this.escapeName(nLocalName);
 
     // stop once we've found a tag with an ID
-    if (aNode.id)
+    if (aNode.id) {
       return "//" + tag + "[@id=" + this.quoteArgument(aNode.id) + "]";
+    }
 
     // count the number of previous sibling nodes of the same tag
     // (and possible also the same name)
     let count = 0;
     let nName = aNode.name || null;
-    for (let n = aNode; (n = n.previousSibling); )
+    for (let n = aNode; (n = n.previousSibling); ) {
       if (n.localName == nLocalName && n.namespaceURI == nNamespaceURI &&
-          (!nName || n.name == nName))
+          (!nName || n.name == nName)) {
         count++;
+      }
+    }
 
     // recurse until hitting either the document node or an ID'd node
     return this.generate(aNode.parentNode) + "/" + tag +

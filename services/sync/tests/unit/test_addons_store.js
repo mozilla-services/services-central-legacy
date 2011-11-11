@@ -25,11 +25,12 @@ const uriPrefix = "http://localhost:4444/addons/";
  */
 function createRecordForThisApp(id, addonId, enabled, deleted) {
   return {
-    id:           id,
-    extension_id: addonId,
-    userDisabled: !enabled,
-    deleted:      !!deleted,
-    app_id:       Services.appinfo.ID
+    id:                id,
+    addonID:           addonId,
+    userEnabled:       enabled,
+    deleted:           !!deleted,
+    applicationID:     Services.appinfo.ID,
+    isAddonRepository: true
   };
 }
 
@@ -53,30 +54,22 @@ function verifyAssembledChanges(changes, install, uninstall, guid,
                                 enable, disable) {
   do_check_neq(null, changes);
   do_check_eq(5, Object.keys(changes).length);
-  _("Ensure number of installs is correct.");
   do_check_eq(Object.keys(install).length, Object.keys(changes.install).length);
-  _("Ensure number of uninstalls is correct.");
   do_check_eq(uninstall.length, Object.keys(changes.uninstall).length);
-  _("Ensure number of GUID changes is correct.");
   do_check_eq(Object.keys(guid).length, Object.keys(changes.guid).length);
-  _("Ensure number of add-ons to enable is correct.");
   do_check_eq(enable.length, Object.keys(changes.enable).length);
-  _("Ensure number of add-ons to disable is correct.");
   do_check_eq(disable.length, Object.keys(changes.disable).length);
 
-  _("Ensure install records match expected.");
   for each (let [id, guid] in Iterator(install)) {
     do_check_neq(null, changes.install[id]);
     do_check_eq(guid, changes.install[id]);
   }
 
-  _("Ensure uninstall records match expected.");
   uninstall.forEach(function(id) {
     do_check_neq(null, changes.uninstall[id]);
     do_check_eq(true, changes.uninstall[id]);
   });
 
-  _("Ensure GUID change records match expected.");
   for each (let [id, g] in Iterator(guid)) {
     do_check_neq(null, changes.guid[id]);
     do_check_eq(g, changes.guid[id]);
@@ -143,13 +136,12 @@ add_test(function test_assemble_changes() {
 
   _("Ensure a record for a separate application ID is ignored.");
   records.push({
-    id:           Utils.makeGUID(),
-    extension_id: "foo",
-    userDisabled: false,
-    deleted:      false,
-    app_id:       "otherID",
-    updateURL:    null,
-    sourceURI:    null
+    id:                Utils.makeGUID(),
+    addonID:          "foo",
+    userEnabled:       false,
+    deleted:           false,
+    applicationID:     "otherID",
+    isAddonRepository: true
   });
   changes = store._assembleChangesFromRecords(records);
   verifyAssembledChanges(changes, installs, uninstalls, guids, enables,

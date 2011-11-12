@@ -145,7 +145,9 @@ function AddonsEngine() {
 
   // This assumes that the engine is instantiated at most once in each app.
   // If this ever changes, this will yield duplicate change records.
-  Utils.nextTick(this._tracker._trackStartupChanges, this);
+  Utils.nextTick(function() {
+    this._tracker._trackStartupChanges(this._store);
+  }, this);
 }
 AddonsEngine.prototype = {
   __proto__:              SyncEngine.prototype,
@@ -632,7 +634,7 @@ AddonsTracker.prototype = {
    * start-up. It only needs to be called once during the lifetime of the
    * application.
    */
-  _trackStartupChanges: function _trackStartupChanges(engine) {
+  _trackStartupChanges: function _trackStartupChanges(store) {
     let ids = {}; // add-on ID to true
 
     for (let type in this._startupChangeTypes) {
@@ -642,8 +644,6 @@ AddonsTracker.prototype = {
     }
 
     let updated = false;
-
-    let store = engine._store;
 
     let cb = Async.makeSyncCallback();
     AddonManager.getAddonsByIDs(Object.keys(ids));

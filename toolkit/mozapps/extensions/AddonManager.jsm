@@ -1404,6 +1404,28 @@ var AddonManager = {
     return AddonManagerInternal.startupChanges[aType].slice(0);
   },
 
+  /**
+   * Returns an object describing all startup changes.
+   *
+   * Object keys are the AddonManager.STARTUP_CHANGE_* constants. Values
+   * are arrays of add-on IDs.
+   *
+   * The object is copied from the source of truth, so it is safe to
+   * mutate.
+   */
+  getAllStartupChanges: function AM_getAllStartupChanges() {
+    let result = {};
+    for (let [k, v] in Iterator(AddonManagerInternal.startupChanges)) {
+      if (!v || !v.length) {
+        continue;
+      }
+
+      result[k] = v.slice(0);
+    }
+
+    return result;
+  },
+
   getAddonByID: function AM_getAddonByID(aId, aCallback) {
     AddonManagerInternal.getAddonByID(aId, aCallback);
   },

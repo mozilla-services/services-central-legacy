@@ -652,6 +652,7 @@ AddonsTracker.prototype = {
    * application.
    */
   _trackStartupChanges: function _trackStartupChanges(store) {
+    this._log.debug("Obtaining add-ons modified on application startup");
     let ids = {}; // add-on ID to true
 
     for (let type in this._startupChangeTypes) {
@@ -659,6 +660,14 @@ AddonsTracker.prototype = {
         ids[id] = true;
       }
     }
+
+    if (!Object.keys(ids).length) {
+      this._log.info("No add-on changes on application startup detected");
+      return;
+    }
+
+    this._log.info("Detected changed add-ons on application startup: " +
+                   Object.keys(ids));
 
     let updated = false;
 

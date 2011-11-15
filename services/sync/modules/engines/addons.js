@@ -618,14 +618,6 @@ function AddonsTracker(name) {
 AddonsTracker.prototype = {
   __proto__: Tracker.prototype,
 
-  _startupChangeTypes: [
-    AddonManager.STARTUP_CHANGE_INSTALLED,
-    AddonManager.STARTUP_CHANGE_CHANGED,
-    AddonManager.STARTUP_CHANGE_UNINSTALLED,
-    AddonManager.STARTUP_CHANGE_DISABLED,
-    AddonManager.STARTUP_CHANGE_ENABLED
-  ],
-
   _enabled: false,
   observe: function(aSubject, aTopic, aData) {
     switch (aTopic) {
@@ -653,26 +645,31 @@ AddonsTracker.prototype = {
    */
   _trackStartupChanges: function _trackStartupChanges(store) {
     this._log.debug("Obtaining add-ons modified on application startup");
-    let ids = {}; // add-on ID to true
 
-    for (let type in this._startupChangeTypes) {
-      for each (let id in AddonManager.getStartupChanges(type)) {
-        ids[id] = true;
-      }
-    }
+    let changes = AddonManager.getAllStartupChanges();
+    // TODO remove next line before landing
+    this._log.debug("All startup changes: " + JSON.stringify(changes));
 
-    if (!Object.keys(ids).length) {
+    if (!Object.keys(changes).length) {
       this._log.info("No add-on changes on application startup detected");
       return;
     }
 
+    let ids = {};
+    for each (let list in changes) {
+      for each (let id in list) {
+        ids[id] = true;
+      }
+    }
+
+    // TODO remove next line before shipping.
     this._log.info("Detected changed add-ons on application startup: " +
                    Object.keys(ids));
 
     let updated = false;
 
     let cb = Async.makeSyncCallback();
-    AddonManager.getAddonsByIDs(Object.keys(ids));
+    AddonManager.getAddonsByIDs(Object.keys(ids), cb);
     let addons = Async.waitForSyncCallback(cb);
 
     for (let addon in addons) {

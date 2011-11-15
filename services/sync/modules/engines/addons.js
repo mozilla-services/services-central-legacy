@@ -310,12 +310,29 @@ AddonsStore.prototype = {
    * @return Boolean indicating whether it is appropriate for Sync
    */
   isAddonSyncable: function isAddonSyncable(addon) {
-    // Currently, we only support syncing of add-ons in a well-defined set of
-    // types and those in the current profile (since add-ons can be installed
-    // in multiple locations).
+    // Currently, we limit syncable add-ons to those that:
+    //   1) In a well-defined set of types
+    //   2) Installed in current profile
+    //   3) Not installed by a foreign entity (i.e. installed by the app)
+    //      since they act like global extensions.
+    //   4) Are installed from AMO
+
+    this._log.info("Raw Addon: " + JSON.stringify(addon));
+
+    let cb = Async.makeSyncCallback();
+    AddonRepository.getCachedAddonByID(addon.id, cb);
+    let result = Async.waitForSyncCallback(cb);
+
+    this._log.info("Cached Result: " + JSON.stringify(result));
+
+    // TODO don't hardcode addons.mozilla.org
+
     return addon &&
            this._syncableTypes.indexOf(addon.type) != -1 &&
-           addon.scope | AddonManager.SCOPE_PROFILE;
+           addon.scope | AddonManager.SCOPE_PROFILE &&
+           !addon.foreignInstall &&
+           result && result.sourceURI &&
+           result.sourceURI.host == "addons.mozilla.org";
   },
 
   /**

@@ -655,6 +655,8 @@ AddonsTracker.prototype = {
       return;
     }
 
+    // TODO handle uninstall case properly. Currently, we don't have the
+    // syncGUID of uninstalled add-ons.
     let ids = {};
     for each (let list in changes) {
       for each (let id in list) {

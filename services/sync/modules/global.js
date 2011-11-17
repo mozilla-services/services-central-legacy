@@ -95,7 +95,7 @@ let MetaGlobal = {
     this._record.engines = value;
   }
 
-  toSJON: function toJSON() {
+  toJSON: function toJSON() {
     return {syncID:         this.syncID,
             storageVersion: this.storageVersion,
             engines:        this.engines};

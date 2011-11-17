@@ -169,7 +169,7 @@ var TPS =
 
   quit: function () {
     Logger.close();
-    this.goQuitApplication();
+    //this.goQuitApplication();
   },
 
   HandleTabs: function (tabs, action) {

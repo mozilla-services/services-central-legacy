@@ -79,6 +79,8 @@ Cu.import("resource://gre/modules/AddonRepository.jsm");
 
 const EXPORTED_SYMBOLS = ["AddonsEngine"];
 
+const ADDON_REPOSITORY_WHITELIST_HOSTNAME = "addons.mozilla.org";
+
 /**
  * AddonsRec represents the state of an add-on in an application.
  *
@@ -325,14 +327,12 @@ AddonsStore.prototype = {
 
     this._log.info("Cached Result: " + JSON.stringify(result));
 
-    // TODO don't hardcode addons.mozilla.org
-
     return addon &&
            this._syncableTypes.indexOf(addon.type) != -1 &&
            addon.scope | AddonManager.SCOPE_PROFILE &&
            !addon.foreignInstall &&
            result && result.sourceURI &&
-           result.sourceURI.host == "addons.mozilla.org";
+           result.sourceURI.host == ADDON_REPOSITORY_WHITELIST_HOSTNAME;
   },
 
   /**
@@ -656,7 +656,7 @@ AddonsTracker.prototype = {
     }
 
     // TODO handle uninstall case properly. Currently, we don't have the
-    // syncGUID of uninstalled add-ons.
+    // syncGUID of uninstalled add-ons. Bug 702819 tracks.
     let ids = {};
     for each (let list in changes) {
       for each (let id in list) {

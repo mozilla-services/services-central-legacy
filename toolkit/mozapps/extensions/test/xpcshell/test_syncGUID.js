@@ -84,13 +84,21 @@ add_test(function test_error_on_duplicate_syncguid_insert() {
         restartManager();
 
         AddonManager.getAddonsByIDs(installIDs, function(addons) {
+          let initialGUID = addons[1].syncGUID;
+
           try {
             addons[1].syncGUID = addons[0].syncGUID;
+            do_throw("Should not get here.");
           }
           catch (e) {
             do_check_eq(e.result,
                         Components.results.NS_ERROR_STORAGE_CONSTRAINT);
-            run_next_test();
+            restartManager();
+
+            AddonManager.getAddonByID(installIDs[1], function(addon) {
+              do_check_eq(initialGUID, addon.syncGUID);
+              run_next_test();
+            });
           }
         });
       }

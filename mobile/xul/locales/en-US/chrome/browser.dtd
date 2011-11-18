@@ -120,3 +120,8 @@
 <!ENTITY pageactions.charEncoding    "Character Encoding">
 
 <!ENTITY appMenu.siteOptions         "Site Options">
+
+<!ENTITY sendtab.label               "Send to Device">
+<!ENTITY sendtabPopup.label          "Send Tab to Device">
+<!ENTITY sendtabPopup.noSync         "Configure Sync...">
+<!ENTITY sendtabPopup.syncNotReady   "Sync not yet ready">

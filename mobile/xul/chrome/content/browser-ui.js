@@ -848,6 +848,15 @@ var BrowserUI = {
     } catch(e) { }
   },
 
+#ifdef MOZ_SERVICES_SYNC
+  sendTabToDevice: function sendTabToDevice(aTab) {
+    let tab = aTab || Browser.selectedTab;
+
+    SendTabPopup.toggle();
+    // TODO call out to Sync
+  },
+#endif
+
   handleEscape: function (aEvent) {
     aEvent.stopPropagation();
 
@@ -1138,6 +1147,7 @@ var BrowserUI = {
       case "cmd_volumeLeft":
       case "cmd_volumeRight":
       case "cmd_lockscreen":
+      case "cmd_sendtab":
         isSupported = true;
         break;
       default:
@@ -1311,6 +1321,9 @@ var BrowserUI = {
                                      strings.GetStringFromName("alertLockScreen." + (!locked ? "locked" : "unlocked")), false, "", null);
         break;
       }
+      case "cmd_sendtab":
+        this.sendTabToDevice();
+        break;
     }
   }
 };

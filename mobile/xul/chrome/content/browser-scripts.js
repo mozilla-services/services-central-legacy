@@ -114,6 +114,7 @@ XPCOMUtils.defineLazyGetter(this, "CommonUI", function() {
 #ifdef MOZ_SERVICES_SYNC
   ["WeaveGlue", "chrome://browser/content/sync.js"],
   ["SyncPairDevice", "chrome://browser/content/sync.js"],
+  ["SendTabPopup", "chrome://browser/content/SendTabPopup.js"],
 #endif
   ["WebappsUI", "chrome://browser/content/WebappsUI.js"],
   ["SSLExceptions", "chrome://browser/content/exceptions.js"],

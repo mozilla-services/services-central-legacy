@@ -128,6 +128,7 @@
     <command id="cmd_bookmarks" oncommand="CommandUpdater.doCommand(this.id);"/>
     <command id="cmd_history" oncommand="CommandUpdater.doCommand(this.id);"/>
     <command id="cmd_sanitize" oncommand="CommandUpdater.doCommand(this.id);"/>
+    <command id="cmd_sendtab" label="&sendtab.label;" oncommand="CommandUpdater.doCommand(this.id);"/>
 
     <!-- screen/display -->
     <command id="cmd_fullscreen" oncommand="CommandUpdater.doCommand(this.id);"/>
@@ -309,6 +310,7 @@
           <toolbarbutton id="tool-star" class="tool-star button-control" command="cmd_star"/>
           <toolbarbutton id="tool-back" class="tool-back button-control" command="cmd_back"/>
           <toolbarbutton id="tool-forward" class="tool-forward button-control" command="cmd_forward"/>
+          <toolbarbutton id="tool-sendtab" class="tool-sendtab button-control" command="cmd_sendtab"/>
           <toolbarspring/>
           <toolbarbutton id="tool-panel-open" class="button-control" command="cmd_panel"/>
         </vbox>
@@ -405,6 +407,24 @@
         </hbox>
       </dialog>
     </box>
+
+#ifdef MOZ_SERVICES_SYNC
+    <arrowbox id="sendtab-popup" hidden="true" align="stretch" offset="12" type="dialog">
+      <hbox id="sendtab-popup-title">
+        <label value="&sendtabPopup.label;"/>
+      </hbox>
+      <richlistbox id="sendtab-popup-devices" class="action-buttons" onclick="SendTabPopup.hide();" flex="1">
+        <richlistitem class="action-button" id="sendtab-popup-nosync"
+                      hidden="true" onclick="WeaveGlue.open();">
+          <label value="&sendtabPopup.noSync;"/>
+        </richlistitem>
+        <richlistitem class="action-button" id="sendtab-popup-syncnotready"
+                      hidden="true" onclick="WeaveGlue.sync();">
+          <label value="&sendtabPopup.syncNotReady;"/>
+        </richlistitem>
+      </richlistbox>
+    </arrowbox>
+#endif
 
     <!-- use an offset to remove the space taken by the invisible callout arrow -->
     <arrowbox id="appmenu-popup" hidden="true" type="dialog" offset="18">

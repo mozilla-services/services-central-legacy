@@ -338,6 +338,10 @@ toolbarbutton.urlbar-button {
   list-style-image: url("chrome://browser/skin/images/forward-default-hdpi.png");
 }
 
+.tool-sendtab {
+  list-style-image: url("chrome://browser/skin/images/sendtab-default-hdpi.png");
+}
+
 #tool-panel-open {
   list-style-image: url("chrome://browser/skin/images/settings-default-hdpi.png");
 }
@@ -1003,6 +1007,11 @@ documenttab[reload="true"] > vbox > stack > .documenttab-reload {
   background-color: @color_background_default@;
 }
 
+/* Send Tab popup ---------------------------------------------------------- */
+#sendtab-popup-title {
+  background-color: @color_background_default@;
+}
+
 /* Identity popup   -------------------------------------------------------- */
 #identity-popup-container {
   background-color: @color_background_panel@;
@@ -1209,6 +1218,7 @@ pageaction:not([image]) > hbox >.pageaction-image {
 
 #share-title,
 #bookmark-popup-title,
+#sendtab-popup-title,
 #context-hint {
   color: @color_text_default@;
   font-size: @font_small@;

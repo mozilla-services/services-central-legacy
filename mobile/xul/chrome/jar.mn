@@ -76,6 +76,7 @@ chrome.jar:
   content/AnimatedZoom.js              (content/AnimatedZoom.js)
 #ifdef MOZ_SERVICES_SYNC
   content/sync.js                      (content/sync.js)
+  content/SendTabPopup.js              (content/SendTabPopup.js)
 #endif
   content/LoginManagerChild.js         (content/LoginManagerChild.js)
   content/fullscreen-video.js          (content/fullscreen-video.js)

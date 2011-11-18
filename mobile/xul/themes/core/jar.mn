@@ -144,6 +144,7 @@ chrome.jar:
   skin/images/aurora-lightbox-bg.jpg        (images/aurora-lightbox-bg.jpg)
   skin/images/aurora-lightbox-logo.png      (images/aurora-lightbox-logo.png)
   skin/images/aurora-lightbox-close.png     (images/aurora-lightbox-close.png)
+  skin/images/sendtab-default-hdpi.png      (images/sendtab-default-hdpi.png)
 
 chrome.jar:
 % skin browser classic/1.0 %skin/gingerbread/ os=Android osversion=2.3 osversion=2.3.3 osversion=2.3.4 osversion=2.3.5 osversion=2.3.6 osversion=2.3.7
@@ -283,6 +284,7 @@ chrome.jar:
   skin/gingerbread/images/aurora-lightbox-bg.jpg        (images/aurora-lightbox-bg.jpg)
   skin/gingerbread/images/aurora-lightbox-logo.png      (images/aurora-lightbox-logo.png)
   skin/gingerbread/images/aurora-lightbox-close.png     (images/aurora-lightbox-close.png)
+  skin/gingerbread/images/sendtab-default-hdpi.png      (gingerbread/images/sendtab-default-hdpi.png)
 
 chrome.jar:
 % skin browser classic/1.0 %skin/honeycomb/ os=Android osversion>=3.0

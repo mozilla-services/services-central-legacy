@@ -1161,6 +1161,11 @@ documenttab[reload="true"] > vbox > stack > .documenttab-reload {
   background-color: @color_background_default@;
 }
 
+/* send tab popup ---------------------------------------------------------- */
+#sendtab-popup-title {
+  background-color: @color_background_default@;
+}
+
 /* Identity popup   -------------------------------------------------------- */
 #identity-container .panel-arrowcontent {
   background-image: url("chrome://browser/skin/images/menu-top-insideglow-grey.png");
@@ -1427,6 +1432,7 @@ pageaction:not([image]) > hbox >.pageaction-image {
 }
 
 #share-title,
+#sendtab-popup-title,
 #bookmark-popup-title {
   color: @color_text_default@;
   font-size: @font_small@;

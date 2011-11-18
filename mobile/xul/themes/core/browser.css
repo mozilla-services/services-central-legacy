@@ -370,6 +370,10 @@ toolbarbutton.urlbar-button {
   list-style-image: url("chrome://browser/skin/images/forward-default-hdpi.png");
 }
 
+.tool-sendtab {
+  list-style-image: url("chrome://browser/skin/images/sendtab-default-hdpi.png");
+}
+
 #tool-panel-open {
   list-style-image: url("chrome://browser/skin/images/settings-default-hdpi.png");
 }
@@ -1040,6 +1044,11 @@ documenttab[reload="true"] > vbox > stack > .documenttab-reload {
   -moz-border-right-colors: white;
 }
 
+/* send tab popup ---------------------------------------------------------- */
+#sendtab-popup .action-button {
+  -moz-border-right-colors: white;
+}
+
 /* Identity popup   -------------------------------------------------------- */
 #identity-popup-container {
   padding: @padding_normal@; /* core spacing */
@@ -1236,6 +1245,7 @@ pageaction:not([image]) > hbox >.pageaction-image {
 
 #share-title,
 #bookmark-popup-title,
+#sendtab-popup-title,
 #context-hint {
   font-size: @font_small@;
   padding: @padding_small@;

@@ -42,6 +42,7 @@ let WeaveGlue = {
   _boundOnEngineSync: null,     // Needed to unhook the observers in close().
   _boundOnServiceSync: null,
   jpake: null,
+  syncPerformed: false,
   _bundle: null,
   _loginError: false,
   _progressBar: null,
@@ -397,12 +398,16 @@ let WeaveGlue = {
   },
 
   _addListeners: function _addListeners() {
-    let topics = ["weave:service:setup-complete",
-      "weave:service:sync:start", "weave:service:sync:finish",
-      "weave:service:sync:error", "weave:service:login:start",
-      "weave:service:login:finish", "weave:service:login:error",
-      "weave:ui:login:error",
-      "weave:service:logout:finish"];
+    let topics = ["weave:engine:clients:display-tab",
+                  "weave:service:setup-complete",
+                  "weave:service:sync:start",
+                  "weave:service:sync:finish",
+                  "weave:service:sync:error",
+                  "weave:service:login:start",
+                  "weave:service:login:finish",
+                  "weave:service:login:error",
+                  "weave:ui:login:error",
+                  "weave:service:logout:finish"];
 
     // For each topic, add WeaveGlue the observer
     topics.forEach(function(topic) {
@@ -456,6 +461,17 @@ let WeaveGlue = {
     let disconnect = this._elements.disconnect;
     let sync = this._elements.sync;
     let pairdevice = this._elements.pairdevice;
+
+    if (aTopic == "weave:engine:clients:display-tab") {
+      dump("Handling display-tab notification");
+      try {
+        let obj = aSubject.wrappedJSObject.object;
+        Weave.TabStateUtils.restoreTab(Browser, obj);
+      } catch (ex) {
+        dump("Exception when handling display-tab: " + ex);
+      }
+      return;
+    }
 
     // Show what went wrong with login if necessary
     if (aTopic == "weave:ui:login:error") {
@@ -549,6 +565,10 @@ let WeaveGlue = {
         if (choice == 0)
           Browser.addTab("https://services.mozilla.com/update/", true, Browser.selectedTab);
       }
+    }
+
+    if (aTopic == "weave:service:sync:finish") {
+      this.syncPerformed = true;
     }
 
     device.value = Weave.Clients.localName || "";

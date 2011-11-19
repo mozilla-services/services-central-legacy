@@ -7,80 +7,116 @@
  * testrunner (no single quotes, extra comma's, etc).
  */
 
-var phases = { "phase1": "profile1",
-               "phase2": "profile1",
-               "phase3": "profile2",
-               "phase4": "profile2",
-               "phase5": "profile1",
-               "phase6": "profile2",
-               "phase7": "profile1" };
-
-/*
- * Test phases
- */
-
-/*Initial Setup & prep for installing nonrestartless test.
- *  NB: a nonrestartless addon will be 'present'(detectable by the tests
- *  but not installed,but in disabled state until it is actually
- *  installed when the profile is restarted.
-*/
-Phase('phase1', [
+ var phases = { "phase01": "profile1",
+               "phase02": "profile1",
+               "phase03": "profile2",
+               "phase04": "profile2",
+               "phase05": "profile1",
+               "phase06": "profile1",
+               "phase07": "profile2",
+               "phase08": "profile2",
+               "phase09": "profile1",
+               "phase10": "profile1",
+               "phase11": "profile2",
+               "phase12": "profile2",
+               "phase13": "profile1",
+               "phase14": "profile1",
+               "phase15": "profile2",
+               "phase16": "profile2",
+               "phase17": "profile1",
+               "phase18": "profile2",
+               "phase19": "profile1",
+               "phase20": "profile2",
+               "phase21": "profile1"};
+Phase('phase01', [
   [Addons.verifyNot, ['unsigned-xpi@tests.mozilla.org']],
   [Addons.install, ['unsigned-1.0.xml']],
   [Addons.verify, ['unsigned-xpi@tests.mozilla.org'], STATE_DISABLED],
 ]);
-
-/**
- * unsigned-xpi@tests.mozilla.org is a non restartless addon. will not
- * be installed until profile has been closed & restarted.
- */
-Phase('phase2', [
+Phase('phase02', [
   [Addons.verify, ['unsigned-xpi@tests.mozilla.org'], STATE_ENABLED],
-  [Sync, SYNC_WIPE_SERVER],
-
+  [Sync],
 ]);
-/* Verify sync of installed addon, prep for disable test.
- */ 
-Phase('phase3', [
+Phase('phase03', [
   [Addons.verifyNot, ['unsigned-xpi@tests.mozilla.org']],
   [Sync],
+  /* should be present but not installed?*/
 ]);
-
-/* Should have found/installed addon from the sync at end of previous
- * phase */
-Phase('phase4', [
+Phase('phase04', [
   [Addons.verify, ['unsigned-xpi@tests.mozilla.org'], STATE_ENABLED],
+]);
+Phase('phase05', [
   [Addons.setState, ['unsigned-xpi@tests.mozilla.org'], STATE_DISABLED],
+]);
+Phase('phase06', [
   [Addons.verify, ['unsigned-xpi@tests.mozilla.org'], STATE_DISABLED],
   [Sync],
 ]);
-
-/* Verify disabled, prep for enable testing.
- */
-Phase('phase5', [
-  [Addons.verify, ['unsigned-xpi@tests.mozilla.org'], STATE_ENABLED],
+Phase('phase07', [
   [Sync],
+]);
+Phase('phase08', [
   [Addons.verify, ['unsigned-xpi@tests.mozilla.org'], STATE_DISABLED],
+]);
+Phase('phase09', [
   [Addons.setState, ['unsigned-xpi@tests.mozilla.org'], STATE_ENABLED],
+]);
+Phase('phase10', [
   [Addons.verify, ['unsigned-xpi@tests.mozilla.org'], STATE_ENABLED],
   [Sync],
 ]);
-
-/* Verify enabled, prep for uninstall testing.
- */
-Phase('phase6', [
-  [Addons.verify, ['unsigned-xpi@tests.mozilla.org'], STATE_DISABLED],
+Phase('phase11', [
   [Sync],
+]);
+Phase('phase12', [
+ [Addons.verify, ['unsigned-xpi@tests.mozilla.org'], STATE_ENABLED],
+]);
+Phase('phase13', [
   [Addons.verify, ['unsigned-xpi@tests.mozilla.org'], STATE_ENABLED],
   [Addons.uninstall, ['unsigned-xpi@tests.mozilla.org']],
+]);
+Phase('phase14', [
   [Addons.verifyNot, ['unsigned-xpi@tests.mozilla.org']],
   [Sync],
+]);
+Phase('phase15', [
+  [Sync],
+]);
+Phase('phase16', [
+  [Addons.verifyNot, ['unsigned-xpi@tests.mozilla.org']],
+]);
+Phase('phase17', [
+  [Addons.verifyNot, ['restartless@tests.mozilla.org']],
+  [Addons.install, ['restartless.xml']],
+  [Addons.verify, ['restartless@tests.mozilla.org'], STATE_ENABLED],
+]);
+Phase('phase18', [
+  [Addons.verifyNot, ['restartless@tests.mozilla.org']],
+  [Sync],
+  [Addons.verify, ['restartless@tests.mozilla.org'], STATE_ENABLED],
+  [Addons.setState, ['restartless@tests.mozilla.org'], STATE_DISABLED],
+  [Addons.verify, ['restartless@tests.mozilla.org'], STATE_DISABLED],
+  [Sync],
+]);
+Phase('phase19', [
+  [Addons.verify, ['restartless@tests.mozilla.org'], STATE_ENABLED],
+  [Sync],
+  [Addons.verify, ['restartless@tests.mozilla.org'], STATE_DISABLED],
+  [Addons.setState, ['restartless@tests.mozilla.org'], STATE_ENABLED],
+  [Addons.verify, ['restartless@tests.mozilla.org'], STATE_ENABLED],
+  [Sync],
+]);
+Phase('phase20', [
+  [Addons.verify, ['restartless@tests.mozilla.org'], STATE_DISABLED],
+  [Sync],
+  [Addons.verify, ['restartless@tests.mozilla.org'], STATE_ENABLED],
+  [Addons.uninstall,  ['restartless@tests.mozilla.org']],
+  [Addons.verifyNot, ['restartless@tests.mozilla.org']],
+  [Sync],
+]);
+Phase('phase21', [
+  [Addons.verify, ['restartless@tests.mozilla.org'], STATE_ENABLED],
+  [Sync],
+  [Addons.verifyNot, ['restartless@tests.mozilla.org']],
 ]);
 
-/* Verify uninstalled.
- */
-Phase('phase7', [
-  [Addons.verify, ['unsigned-xpi@tests.mozilla.org'], STATE_ENABLED],
-  [Sync],
-  [Addons.verifyNot, ['unsigned-xpi@tests.mozilla.org']],
-]);

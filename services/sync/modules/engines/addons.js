@@ -321,17 +321,24 @@ AddonsStore.prototype = {
 
     this._log.info("Raw Addon: " + JSON.stringify(addon));
 
+    let syncable = addon &&
+                   this._syncableTypes.indexOf(addon.type) != -1 &&
+                   addon.scope | AddonManager.SCOPE_PROFILE &&
+                   !addon.foreignInstall;
+
+    // We provide a back door to skip the repository checking of an add-on.
+    // This is utilized by the tests to make testing easier.
+    if (Svc.Prefs.get("addon.ignoreRepositoryChecking", false)) {
+      return syncable;
+    }
+
     let cb = Async.makeSyncCallback();
     AddonRepository.getCachedAddonByID(addon.id, cb);
     let result = Async.waitForSyncCallback(cb);
 
     this._log.info("Cached Result: " + JSON.stringify(result));
 
-    return addon &&
-           this._syncableTypes.indexOf(addon.type) != -1 &&
-           addon.scope | AddonManager.SCOPE_PROFILE &&
-           !addon.foreignInstall &&
-           result && result.sourceURI &&
+    return result && result.sourceURI &&
            result.sourceURI.host == ADDON_REPOSITORY_WHITELIST_HOSTNAME;
   },
 

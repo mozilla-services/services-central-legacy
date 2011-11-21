@@ -934,6 +934,7 @@ pref("services.sync.prefs.sync.accessibility.blockautorefresh", true);
 pref("services.sync.prefs.sync.accessibility.browsewithcaret", true);
 pref("services.sync.prefs.sync.accessibility.typeaheadfind", true);
 pref("services.sync.prefs.sync.accessibility.typeaheadfind.linksonly", true);
+pref("services.sync.prefs.sync.addon.ignoreRepositoryChecking", false);
 pref("services.sync.prefs.sync.app.update.mode", true);
 pref("services.sync.prefs.sync.browser.download.manager.closeWhenDone", true);
 pref("services.sync.prefs.sync.browser.download.manager.retention", true);

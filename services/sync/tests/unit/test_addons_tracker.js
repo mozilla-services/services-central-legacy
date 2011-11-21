@@ -10,12 +10,22 @@ Cu.import("resource://gre/modules/AddonManager.jsm");
 
 loadAddonTestFunctions();
 startupManager();
+Svc.Prefs.set("addon.ignoreRepositoryChecking", true);
 
 Engines.register(AddonsEngine);
 let engine = Engines.get("addons");
 let tracker = engine._tracker;
 
 const addon1ID = "addon1@tests.mozilla.org";
+
+function cleanup_and_advance() {
+  Svc.Obs.notify("weave:engine:stop-tracking");
+
+  tracker.resetScore();
+  tracker.clearChangedIDs();
+
+  run_next_test();
+}
 
 function run_test() {
   initTestLogging("Trace");
@@ -59,10 +69,8 @@ add_test(function test_track_install() {
   do_check_eq(addon.syncGUID, changed[0]);
   do_check_eq(SCORE_INCREMENT_XLARGE, tracker.score);
 
-  tracker.resetScore();
-  tracker.clearChangedIDs();
-
-  run_next_test();
+  addon.uninstall();
+  cleanup_and_advance();
 });
 
 add_test(function test_track_uninstall() {
@@ -76,10 +84,7 @@ add_test(function test_track_uninstall() {
   do_check_eq(addon.syncGUID, changed[0]);
   do_check_eq(SCORE_INCREMENT_XLARGE, tracker.score);
 
-  tracker.resetScore();
-  tracker.clearChangedIDs();
-
-  run_next_test();
+  cleanup_and_advance();
 });
 
 /*

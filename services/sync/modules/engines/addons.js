@@ -319,7 +319,7 @@ AddonsStore.prototype = {
     //      since they act like global extensions.
     //   4) Are installed from AMO
 
-    this._log.info("Raw Addon: " + JSON.stringify(addon));
+    //this._log.info("Raw Addon: " + JSON.stringify(addon));
 
     let syncable = addon &&
                    this._syncableTypes.indexOf(addon.type) != -1 &&
@@ -617,6 +617,47 @@ AddonsStore.prototype = {
 };
 
 
+/**
+ * The following are callbacks registered with the AddonManager.
+ *
+ * We have 2 listeners: AddonListener and InstallListener. We are a listener
+ * for both.
+ *
+ * When an add-on is installed, listeners are called in the following order:
+ *
+ *  IL.onInstallStarted, AL.onInstalling, IL.onInstallEnded, AL.onInstalled
+ *
+ * For non-restartless add-ons, an application restart may occur between
+ * IL.onInstallEnded and AL.onInstalled. Unfortunately, Sync likely will
+ * not be lodaded when AL.onInstalled is fired shortly after application
+ * start, so it won't see this event. Therefore, for add-ons requiring a
+ * restart, Sync treats the IL.onInstallEnded event as good enough to
+ * denote an install. For restartless add-ons, Sync assumes AL.onInstalled
+ * will follow shortly after IL.onInstallEnded and thus is ignores
+ * IL.onInstallEnded.
+ *
+ * For uninstalls, we see AL.onUninstalling then AL.onUninstalled. Like
+ * installs, the events could be separated by an application restart and Sync
+ * may not see the onUninstalled event. Again, if we require a restart, we
+ * react to onUninstalling. If not, we assume we'll get onUninstalled.
+ *
+ * Enabling and disabling work by sending:
+ *
+ *   AL.onEnabling, AL.onEnabled
+ *   AL.onDisabling, AL.onDisabled
+ *
+ * Again, they may be separated by a restart, so we heed the requiresRestart
+ * flag.
+ *
+ * Actions can be undone. All undoable actions notify the same
+ * AL.onOperationCancelled event. We treat this event like any other.
+ *
+ * Restartless add-ons have interesting behavior during uninstall. These
+ * add-ons are first disabled then they are actually uninstalled. So, the
+ * tracker will see onDisabling and onDisabled. The onUninstalling and
+ * onUninstalled events only come after the Addon Manager is closed or another
+ * view is switched to.
+ */
 function AddonsTracker(name) {
   Tracker.call(this, name);
   Svc.Obs.add("weave:engine:start-tracking", this);
@@ -632,12 +673,14 @@ AddonsTracker.prototype = {
         if (!this._enabled) {
           this._enabled = true;
           AddonManager.addAddonListener(this);
+          AddonManager.addInstallListener(this);
         }
         break;
       case "weave:engine:stop-tracking":
         if (this._enabled) {
           this._enabled = false;
           AddonManager.removeAddonListener(this);
+          AddonManager.removeInstallListener(this);
         }
         break;
     }
@@ -658,37 +701,57 @@ AddonsTracker.prototype = {
     this._log.debug("All startup changes: " + JSON.stringify(changes));
 
     if (!Object.keys(changes).length) {
-      this._log.info("No add-on changes on application startup detected");
+      this._log.info("No add-on changes on application startup detected.");
       return;
     }
 
-    // TODO handle uninstall case properly. Currently, we don't have the
-    // syncGUID of uninstalled add-ons. Bug 702819 tracks.
-    let ids = {};
-    for each (let list in changes) {
-      for each (let id in list) {
-        ids[id] = true;
+    let changedIDs = {};
+    for (let [type, ids] in Iterator(changes)) {
+      // TODO handle uninstall case properly. Currently, we don't have the
+      // syncGUID of uninstalled add-ons. Bug 702819 tracks.
+      if (type == AddonManager.STARTUP_CHANGE_UNINSTALLED) {
+        this._log.warn("Add-on uninstalls on startup not currently tracked!");
+
+        for each (let id in ids) {
+          this._log.warn("Unable to track uninstall: " + id);
+        }
+
+        continue;
+      }
+
+      for each (let id in ids) {
+        changedIDs[id] = true;
       }
     }
 
-    // TODO remove next line before shipping.
+    // TODO remove next line before shipping. It is for debugging.
     this._log.info("Detected changed add-ons on application startup: " +
-                   Object.keys(ids));
+                   Object.keys(changedIDs));
 
     let updated = false;
 
     let cb = Async.makeSyncCallback();
-    AddonManager.getAddonsByIDs(Object.keys(ids), cb);
+    AddonManager.getAddonsByIDs(Object.keys(changedIDs), cb);
     let addons = Async.waitForSyncCallback(cb);
 
-    for (let addon in addons) {
-      if (!store.isAddonSyncable(addon)) {
-        continue;
-      }
+    for each (let addon in addons) {
+      delete changedIDs[addon.id];
 
-      this._log.debug("Marking add-on as changed from startup: " + addon.id);
-      this.addChangedID(addon.syncGUID);
-      updated = true;
+      if (!store.isAddonSyncable(addon)) {
+        this._log.debug(
+          "Ignoring startup add-on change for unsyncable add-on: " + addon.id);
+      } else {
+        this._log.debug("Tracking add-on change from startup: " + addon.id);
+        this.addChangedID(addon.syncGUID);
+        updated = true;
+      }
+    }
+
+    // We shouldn't have any IDs left. If we do, then something weird is going
+    // on. That corner case should be addressed before we get here.
+    for each (let id in Object.keys(changedIDs)) {
+      this._log.error("Addon changed on startup not present in Addon " +
+                      "Manager: " + id);
     }
 
     if (updated) {
@@ -699,33 +762,60 @@ AddonsTracker.prototype = {
   /**
    * This is a callback that is invoked by the AddonManager listener.
    */
-  _trackAddon: function _trackAddon(addon, action, params) {
-    this._log.trace(action + " called for " + addon.id);
+  _trackAddon: function _trackAddon(addon, action, requiresRestart) {
+    // Since this is called as an observer, we explicitly trap errors and
+    // log them to ourselves so we don't see errors reported elsewhere.
+    try {
+      this._log.debug("Tracked change " + action + " to " + addon.id);
 
-    let store = Engines.get("addons")._store;
-    if (!store.isAddonSyncable(addon)) {
-      this._log.trace(
-        "Ignoring add-on change because it isn't syncable: " + addon.id);
-      return;
+      if (requiresRestart != undefined && !requiresRestart) {
+        this._log.debug("Ignoring notification because restartless");
+        return;
+      }
+
+      let store = Engines.get("addons")._store;
+      if (!store.isAddonSyncable(addon)) {
+        this._log.trace(
+          "Ignoring add-on change because it isn't syncable: " + addon.id);
+        return;
+      }
+
+      this.addChangedID(addon.syncGUID);
+      this.score += SCORE_INCREMENT_XLARGE;
     }
-
-    this.addChangedID(addon.syncGUID);
-    this.score += SCORE_INCREMENT_XLARGE;
+    catch (ex) {
+      this._log.warn("Exception: " + Utils.exceptionStr(ex));
+    }
   },
 
-  /**
-   * The following are callbacks registered with the AddonManager.
-   */
+  // AddonListeners
   onEnabled: function onEnabled(addon) {
     this._trackAddon(addon, "onEnabled");
+  },
+  onEnabling: function onEnabling(addon, requiresRestart) {
+    this._trackAddon(addon, "onEnabling", requiresRestart);
   },
   onDisabled: function onDisabled(addon) {
     this._trackAddon(addon, "onDisabled");
   },
+  onDisabling: function onDisabling(addon, requiresRestart) {
+    this._trackAddon(addon, "onDisabling", requiresRestart);
+  },
   onInstalled: function onInstalled(addon) {
     this._trackAddon(addon, "onInstalled");
   },
+  onOperationCancelled: function onOperationCancelled(addon) {
+    this._trackAddon(addon, "onOperationCancelled");
+  },
   onUninstalled: function onUninstalled(addon) {
     this._trackAddon(addon, "onUninstalled");
+  },
+  onUninstalling: function onUninstalling(addon, requiresRestart) {
+    this._trackAddon(addon, "onUninstalling", requiresRestart);
+  },
+
+  // InstallListeners
+  onInstallEnded: function onInstallEnded(install, addon) {
+    this._trackAddon(addon, "onInstallEnded");
   }
 };

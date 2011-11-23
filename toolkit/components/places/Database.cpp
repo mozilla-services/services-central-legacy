@@ -33,6 +33,7 @@
  *   Drew Willcoxon <adw@mozilla.com>
  *   Philipp von Weitershausen <philipp@weitershausen.de>
  *   Paolo Amadini <http://www.amadzone.org/>
+ *   Richard Newman <rnewman@mozilla.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -632,6 +633,13 @@ Database::InitSchema(bool* aDatabaseMigrated)
 
       // Firefox 8 uses schema version 12.
 
+      // Firefox 11 uses schema version 13.
+
+      if (currentSchemaVersion < 13) {
+        rv = MigrateV13Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
       // Schema Upgrades must add migration code here.
     }
   }
@@ -694,6 +702,8 @@ Database::InitSchema(bool* aDatabaseMigrated)
 
     // moz_favicons.
     rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_FAVICONS);
+    NS_ENSURE_SUCCESS(rv, rv);
+    rv = mMainConn->ExecuteSimpleSQL(CREATE_IDX_MOZ_FAVICONS_GUID);
     NS_ENSURE_SUCCESS(rv, rv);
 
     // moz_anno_attributes.
@@ -926,7 +936,7 @@ Database::MigrateV7Up()
   mozStorageTransaction transaction(mMainConn, false);
 
   // We need an index on lastModified to catch quickly last modified bookmark
-  // title for tag container's children. This will be useful for sync too.
+  // title for tag container's children. This will be useful for Sync, too.
   bool lastModIndexExists = false;
   nsresult rv = mMainConn->IndexExists(
     NS_LITERAL_CSTRING("moz_bookmarks_itemlastmodifiedindex"),
@@ -1238,8 +1248,8 @@ Database::MigrateV11Up()
     rv = mMainConn->ExecuteSimpleSQL(CREATE_IDX_MOZ_BOOKMARKS_GUID);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    // moz_placess grew a guid column.  Add the column, but do not populate it
-    // with anything just yet.  We will do that soon.
+    // moz_places grew a guid column. Add the column, but do not populate it
+    // with anything just yet. We will do that soon.
     rv = mMainConn->ExecuteSimpleSQL(NS_LITERAL_CSTRING(
       "ALTER TABLE moz_places "
       "ADD COLUMN guid TEXT"
@@ -1256,6 +1266,33 @@ Database::MigrateV11Up()
 
   return NS_OK;
 }
+
+nsresult
+Database::MigrateV13Up()
+{
+  MOZ_ASSERT(NS_IsMainThread());
+
+  // For existing profiles, we may not have a moz_favicons.guid column,
+  // or lastModified.
+  nsCOMPtr<mozIStorageStatement> hasGuidStatement;
+  nsresult rv = mMainConn->CreateStatement(NS_LITERAL_CSTRING(
+      "SELECT guid FROM moz_favicons"
+    ), getter_AddRefs(hasGuidStatement));
+
+  if (NS_FAILED(rv)) {
+    rv = mMainConn->ExecuteSimpleSQL(NS_LITERAL_CSTRING(
+      "ALTER TABLE moz_favicons "
+      "ADD COLUMN guid TEXT"
+    ));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    // Also create the indices.
+    rv = mMainConn->ExecuteSimpleSQL(CREATE_IDX_MOZ_FAVICONS_GUID);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+  return NS_OK;
+}
+
 
 void
 Database::Shutdown()

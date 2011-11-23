@@ -443,8 +443,11 @@ nsFaviconService::SetFaviconData(nsIURI* aFaviconURI, const PRUint8* aData,
       rv = stmt->GetInt64(0, &id);
       NS_ENSURE_SUCCESS(rv, rv);
       statement = mDB->GetStatement(
-        "UPDATE moz_favicons SET data = :data, mime_type = :mime_type, "
-                                "expiration = :expiration "
+        "UPDATE moz_favicons SET "
+               "data       = :data, "
+               "guid       = COALESCE(:guid, guid), "
+               "mime_type  = :mime_type, "
+               "expiration = :expiration "
         "WHERE id = :icon_id"
       );
       NS_ENSURE_STATE(statement);
@@ -461,9 +464,9 @@ nsFaviconService::SetFaviconData(nsIURI* aFaviconURI, const PRUint8* aData,
     else {
       // Insert a new entry.
       statement = mDB->GetStatement(
-        "INSERT INTO moz_favicons (id, url, data, mime_type, expiration) "
-        "VALUES (:icon_id, :icon_url, :data, :mime_type, :expiration)"
-      );
+       "INSERT INTO moz_favicons (id, url, data, mime_type, expiration, guid) "
+       "VALUES (:icon_id, :icon_url, :data, :mime_type, :expiration, "
+               "COALESCE(:guid, GENERATE_GUID()))");
       NS_ENSURE_STATE(statement);
 
       rv = statement->BindNullByName(NS_LITERAL_CSTRING("icon_id"));

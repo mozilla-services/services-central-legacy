@@ -343,6 +343,140 @@ AddonsStore.prototype = {
   },
 
   /**
+   * Obtain an AddonInstall object from an AddonSearchResult instance.
+   *
+   * The callback will be invoked with the result of the operation. The
+   * callback receives 2 arguments, error and result. Error will be falsey
+   * on success or some kind of error value otherwise. The result argument
+   * will be an AddonInstall on success or null on failure. It is possible
+   * for the error to be falsey but result to be null. This could happen if
+   * an install was not found.
+   *
+   * @param addon
+   *        AddonSearchResult to obtain install from.
+   * @param cb
+   *        Function to be called with result of operation.
+   */
+  getInstallFromSearchResult: function getInstallFromSearchResult(addon, cb) {
+    if (addon.install) {
+      cb(null, add.install);
+      return;
+    }
+
+    this._log.debug("Manually obtaining install for " + addon.id);
+
+    // TODO do we need extra verification on sourceURI source?
+    AddonManager.getInstallForURL(
+      addon.sourceURI.spec,
+      function handleInstall(install) {
+        cb(null, install);
+      },
+      "application/x-xpinstall",
+      undefined,
+      addon.name,
+      addon.iconURL,
+      addon.version
+    );
+  },
+
+  /**
+   * Installs an add-on from an AddonSearchResult instance.
+   *
+   * When complete it calls a callback with 2 arguments, error and result.
+   *
+   * If error is falesy, result is an object. If error is truthy, result is
+   * null.
+   *
+   * The result object has the following keys:
+   *   requiresRestart  Boolean indicating whether install requires restart.
+   *
+   * @param addon
+   *        AddonSearchResult to install add-on from.
+   * @param cb
+   *        Function to be invoked with result of operation.
+   */
+  installAddonFromSearchResult:
+    function installAddonFromSearchResult(addon, cb) {
+    this._log.info("Trying to install add-on from search result: " + addon.id);
+
+    this.getInstallFromSearchResult(addon, function(error, install) {
+      if (error) {
+        cb(error, null);
+        return;
+      }
+
+      if (!install) {
+        cb("AddonInstall not available: " + addon.id, null);
+        return;
+      }
+
+      try {
+        this._log.info("Installing " + addon.id);
+
+        let restart = addon.operationRequiringRestart &
+          AddonManager.OP_NEEDS_RESTART_INSTALL;
+
+        install.install();
+        cb(null, {requiresRestart: restart});
+      }
+      catch (ex) {
+        this._log.error("Error installing add-on: " + Utils.exceptionstr(ex));
+        cb(ex, null);
+      }
+    });
+  },
+
+  /**
+   * Installs multiple add-ons specified by their IDs.
+   *
+   * The callback will be called when activity on all add-ons is complete. The
+   * callback receives 2 arguments, error and result. If error is truthy, it
+   * contains an error value and result is null. If it is falsely, result
+   * is an object containining additional information on each add-on.
+   *
+   * @param ids
+   *        Array of add-on string IDs to install.
+   * @param cb
+   *        Function to be called when all actions are complete.
+   */
+  installAddonsFromIDs: function installAddonsFromIDs(ids, cb) {
+
+    AddonRepository.getAddonsByIDs(ids, {
+      searchSucceeded: function searchSucceeded(addons, addonsLength, total) {
+        this._log.info("Found " + addonsLength + "/" + ids.length +
+                       "add-ons during repository search.");
+
+        let ourResult = {
+
+        };
+
+        if (!addonsLength) {
+          cb(null, ourResult);
+          return;
+        }
+
+        let finishedCount = 0;
+        let installCallback = function installCallback(error, result) {
+          finishedCount++;
+
+          if (finishedCount >= addonsLength) {
+            cb(null, ourResult);
+          }
+        }.bind(this);
+
+        for (let i = 0; i < addonsLength; i++) {
+          this.installAddonFromSearchResult(addons[i], installCallback);
+        }
+
+      }.bind(this),
+
+      searchFailed: function searchFailed() {
+        cb("AddonRepository search failed", null);
+      }.bind(this)
+    });
+  },
+
+  /**
    * Applies all incoming record changes to the local client.
    *
    * The logic for applying incoming records is split up into two phases:
@@ -563,91 +697,10 @@ AddonsStore.prototype = {
     // to find something.
     let install_ids = Object.keys(changes.install);
     if (install_ids.length) {
-      this._log.info("Attempting to install add-ons: " + install_ids);
 
-      // The eventual callback once installation processing has finished.
-      // It serves as a wait condition. This is needed because the current
-      // function is synchronous. Once we have an asynchronous sync API, we
-      // can do the right thing and invoke the appropriate callback from the
-      // AddonRepository callback.
-      let completionHandler = function installCompletionHandler() {};
-
-      let store = this;
-
-      // Installs an add-on from a AddonSearchResult instance. If the
-      // installer isn't found in the search result, we try to obtain the
-      // installer ourself.
-      let installAddon = function installAddon(addon) {
-        this._log.debug("About to install " + addon.id);
-
-        let install = addon.install;
-
-        // Ideally, AddonRepository has install populated. If it doesn't,
-        // we fall back to fetching manually. It is yet another async
-        // call made synchronous.
-        if (!install) {
-          // TODO we need extra verification of source URI here, I think.
-          this._log.debug("Manually fetching install: " + addon.id);
-          let cb = Async.makeSyncCallback();
-          AddonManager.getInstallForURL(addon.sourceURI.spec, cb,
-                                        "application/x-xpinstall", undefined,
-                                        addon.name, addon.iconURL,
-                                        addon.version);
-          install = Async.waitForSyncCallback(cb);
-        }
-
-        if (!install) {
-          this._log.warn("Could not obtain install for add-on: " + addon.id);
-          // TODO record failed GUID
-          return;
-        }
-
-        if (addon.operationsRequiringRestart & AddonManager.OP_NEEDS_RESTART_INSTALL) {
-          requiresRestart[addon.id] = true;
-        }
-
-        // TODO assign proper GUID to new add-on
-        this._log.info("Installing " + addon.id);
-        install.install();
-      }.bind(this);
-
-      AddonRepository.getAddonsByIDs(install_ids, {
-        searchSucceeded: function searchSucceeded(addons, addonsLength,
-                                                  totalResults) {
-          this._log.info("Found " + addonsLength + " add-ons during " +
-                         "repository search.");
-
-          for each (let addon in addons) {
-            try {
-              installAddon(addon);
-              this._sleep(0);
-            }
-            catch (ex) {
-              this._log.error("Exception: " + Utils.exceptionStr(ex));
-              // TODO capture into failedGUIDs
-            }
-          }
-
-          if (failedGUIDs.length) {
-            this._log.debug("Could not get installation information for: " + failedGUIDs);
-          }
-
-          completionHandler();
-
-        }.bind(store),
-        searchFailed: function searchFailed() {
-          this._log.warn("AddonRepository search failed.");
-
-          for (let id in changes.install) {
-            failedGUIDs.push(id);
-          }
-        }.bind(store)
-      });
-
-      // Wait for our eventual callback to get invoked before proceeding.
-      let cb = Async.makeSyncCallback();
-      Async.waitForSyncCallback(cb);
-
+      let cb = Async.makeSpinningCallback();
+      this.installAddonsFromIDs(install_ids, cb);
+      cb.wait();
     }
 
     if (requiresRestart.length) {
@@ -803,7 +856,7 @@ AddonsTracker.prototype = {
     // log them to ourselves so we don't see errors reported elsewhere.
     try {
       if (this.ignoreAll) {
-        this._log.debug(action + " + of " + addon.id + " ignored because " +
+        this._log.debug(action + " of " + addon.id + " ignored because " +
                         "ignoreall is set.");
         return;
       }
@@ -817,7 +870,7 @@ AddonsTracker.prototype = {
 
       let store = Engines.get("addons")._store;
       if (!store.isAddonSyncable(addon)) {
-        this._log.trace(
+        this._log.debug(
           "Ignoring add-on change because it isn't syncable: " + addon.id);
         return;
       }

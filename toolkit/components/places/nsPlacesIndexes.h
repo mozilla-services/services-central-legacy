@@ -145,5 +145,4 @@
     "itemattributeindex", "moz_items_annos", "item_id, anno_attribute_id", "UNIQUE" \
   )
 
-
 #endif // nsPlacesIndexes_h__

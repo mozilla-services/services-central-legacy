@@ -554,6 +554,7 @@ AddonsStore.prototype = {
       this._sleep(0);
     }
 
+    let failedIDs   = [];
     let failedGUIDs = [];
 
     // Finally, we install add-ons.
@@ -564,33 +565,41 @@ AddonsStore.prototype = {
     if (install_ids.length) {
       this._log.info("Attempting to install add-ons: " + install_ids);
 
-      let cb = Async.makeSyncCallback();
-      AddonRepository.getAddonsByIDs(install_ids, {
-        searchSucceeded: cb,
-        searchFailed: cb
-      }, false);
+      // The eventual callback once installation processing has finished.
+      // It serves as a wait condition. This is needed because the current
+      // function is synchronous. Once we have an asynchronous sync API, we
+      // can do the right thing and invoke the appropriate callback from the
+      // AddonRepository callback.
+      let completionHandler = function installCompletionHandler() {};
 
-      // Result will be array of addons on searchSucceeded or undefined on
-      // searchFailed.
-      let install_addons = Async.waitForSyncCallback(cb);
+      let store = this;
 
-      if (!install_addons) {
-        this._log.debug("Addon repository search failed.");
-        // Return the failed GUIDs.
-        return [guid for each (guid in changes.install)];
-      }
-
-      let length = install_addons.length;
-      this._log.info("Found " + length + " add-ons during repository search.");
-      for (let i = 0; i < length; i++) {
-        let addon = install_addons[i];
-
+      // Installs an add-on from a AddonSearchResult instance. If the
+      // installer isn't found in the search result, we try to obtain the
+      // installer ourself.
+      let installAddon = function installAddon(addon) {
         this._log.debug("About to install " + addon.id);
 
-        if (!addon.install) {
-          this._log.debug("Could not get install object for " + addon.id);
-          failedGUIDs.push(addon.syncGUID);
-          continue;
+        let install = addon.install;
+
+        // Ideally, AddonRepository has install populated. If it doesn't,
+        // we fall back to fetching manually. It is yet another async
+        // call made synchronous.
+        if (!install) {
+          // TODO we need extra verification of source URI here, I think.
+          this._log.debug("Manually fetching install: " + addon.id);
+          let cb = Async.makeSyncCallback();
+          AddonManager.getInstallForURL(addon.sourceURI.spec, cb,
+                                        "application/x-xpinstall", undefined,
+                                        addon.name, addon.iconURL,
+                                        addon.version);
+          install = Async.waitForSyncCallback(cb);
+        }
+
+        if (!install) {
+          this._log.warn("Could not obtain install for add-on: " + addon.id);
+          // TODO record failed GUID
+          return;
         }
 
         if (addon.operationsRequiringRestart & AddonManager.OP_NEEDS_RESTART_INSTALL) {
@@ -599,13 +608,46 @@ AddonsStore.prototype = {
 
         // TODO assign proper GUID to new add-on
         this._log.info("Installing " + addon.id);
-        addon.install.install();
-        this._sleep(0);
-      }
+        install.install();
+      }.bind(this);
 
-      if (failedGUIDs.length) {
-        this._log.debug("Could not get installation information for: " + failedGUIDs);
-      }
+      AddonRepository.getAddonsByIDs(install_ids, {
+        searchSucceeded: function searchSucceeded(addons, addonsLength,
+                                                  totalResults) {
+          this._log.info("Found " + addonsLength + " add-ons during " +
+                         "repository search.");
+
+          for each (let addon in addons) {
+            try {
+              installAddon(addon);
+              this._sleep(0);
+            }
+            catch (ex) {
+              this._log.error("Exception: " + Utils.exceptionStr(ex));
+              // TODO capture into failedGUIDs
+            }
+          }
+
+          if (failedGUIDs.length) {
+            this._log.debug("Could not get installation information for: " + failedGUIDs);
+          }
+
+          completionHandler();
+
+        }.bind(store),
+        searchFailed: function searchFailed() {
+          this._log.warn("AddonRepository search failed.");
+
+          for (let id in changes.install) {
+            failedGUIDs.push(id);
+          }
+        }.bind(store)
+      });
+
+      // Wait for our eventual callback to get invoked before proceeding.
+      let cb = Async.makeSyncCallback();
+      Async.waitForSyncCallback(cb);
+
     }
 
     if (requiresRestart.length) {
@@ -710,8 +752,6 @@ AddonsTracker.prototype = {
       // TODO handle uninstall case properly. Currently, we don't have the
       // syncGUID of uninstalled add-ons. Bug 702819 tracks.
       if (type == AddonManager.STARTUP_CHANGE_UNINSTALLED) {
-        this._log.warn("Add-on uninstalls on startup not currently tracked!");
-
         for each (let id in ids) {
           this._log.warn("Unable to track uninstall: " + id);
         }
@@ -723,10 +763,6 @@ AddonsTracker.prototype = {
         changedIDs[id] = true;
       }
     }
-
-    // TODO remove next line before shipping. It is for debugging.
-    this._log.info("Detected changed add-ons on application startup: " +
-                   Object.keys(changedIDs));
 
     let updated = false;
 
@@ -766,6 +802,12 @@ AddonsTracker.prototype = {
     // Since this is called as an observer, we explicitly trap errors and
     // log them to ourselves so we don't see errors reported elsewhere.
     try {
+      if (this.ignoreAll) {
+        this._log.debug(action + " + of " + addon.id + " ignored because " +
+                        "ignoreall is set.");
+        return;
+      }
+
       this._log.debug("Tracked change " + action + " to " + addon.id);
 
       if (requiresRestart != undefined && !requiresRestart) {

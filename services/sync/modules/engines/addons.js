@@ -776,31 +776,9 @@ AddonsStore.prototype = {
  */
 function AddonsTracker(name) {
   Tracker.call(this, name);
-  Svc.Obs.add("weave:engine:start-tracking", this);
-  Svc.Obs.add("weave:engine:stop-tracking", this);
 }
 AddonsTracker.prototype = {
   __proto__: Tracker.prototype,
-
-  _enabled: false,
-  observe: function(aSubject, aTopic, aData) {
-    switch (aTopic) {
-      case "weave:engine:start-tracking":
-        if (!this._enabled) {
-          this._enabled = true;
-          AddonManager.addAddonListener(this);
-          AddonManager.addInstallListener(this);
-        }
-        break;
-      case "weave:engine:stop-tracking":
-        if (this._enabled) {
-          this._enabled = false;
-          AddonManager.removeAddonListener(this);
-          AddonManager.removeInstallListener(this);
-        }
-        break;
-    }
-  },
 
   /**
    * Obtains changes made during startup and adds them to the tracker.
@@ -913,36 +891,5 @@ AddonsTracker.prototype = {
     catch (ex) {
       this._log.warn("Exception: " + Utils.exceptionStr(ex));
     }
-  },
-
-  // AddonListeners
-  onEnabled: function onEnabled(addon) {
-    this._trackAddon(addon, "onEnabled");
-  },
-  onEnabling: function onEnabling(addon, requiresRestart) {
-    this._trackAddon(addon, "onEnabling", requiresRestart);
-  },
-  onDisabled: function onDisabled(addon) {
-    this._trackAddon(addon, "onDisabled");
-  },
-  onDisabling: function onDisabling(addon, requiresRestart) {
-    this._trackAddon(addon, "onDisabling", requiresRestart);
-  },
-  onInstalled: function onInstalled(addon) {
-    this._trackAddon(addon, "onInstalled");
-  },
-  onOperationCancelled: function onOperationCancelled(addon) {
-    this._trackAddon(addon, "onOperationCancelled");
-  },
-  onUninstalled: function onUninstalled(addon) {
-    this._trackAddon(addon, "onUninstalled");
-  },
-  onUninstalling: function onUninstalling(addon, requiresRestart) {
-    this._trackAddon(addon, "onUninstalling", requiresRestart);
-  },
-
-  // InstallListeners
-  onInstallEnded: function onInstallEnded(install, addon) {
-    this._trackAddon(addon, "onInstallEnded");
   }
 };

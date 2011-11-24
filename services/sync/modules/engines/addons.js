@@ -713,10 +713,13 @@ AddonsStore.prototype = {
 
 
 /**
- * The following are callbacks registered with the AddonManager.
+ * The add-ons tracker tracks changes to add-ons as reported by AddonManager
+ * listeners. It is complicated due to the lack of a getChangesSince()
+ * AddonManager API.
  *
- * We have 2 listeners: AddonListener and InstallListener. We are a listener
- * for both.
+ * There are 2 classes of listeners in the AddonManager: AddonListener and
+ * InstallListener. The class is a listener for both (member functions just
+ * get called directly).
  *
  * When an add-on is installed, listeners are called in the following order:
  *
@@ -752,6 +755,24 @@ AddonsStore.prototype = {
  * tracker will see onDisabling and onDisabled. The onUninstalling and
  * onUninstalled events only come after the Addon Manager is closed or another
  * view is switched to.
+ *
+ * To further complicate things, the tracker will see some notifications before
+ * changes hit the database. In the case of non-restartless add-ons,
+ * IL.onInstallEnded is the observed event and this is called *before* the
+ * add-on has hit the database. In the case of restartless add-ons,
+ * AL.onInstalled is fired after the database is populated. What this means
+ * is the tracker knows a particular ID has changed, but when a sync comes
+ * along and the store calls AddonManager.getAddonBySyncGUID(), that may fail
+ * to retrieve anything because the add-on hasn't been inserted into the
+ * database yet! If we were to do nothing, the sync engine would treat this
+ * as a deleted record and the install event would never make it to a record.
+ *
+ * Fortunately, the tracker knows what the state should be based on the events
+ * it has seen. The tracker maintains state on syncGUIDs that should eventually
+ * be in a certain state. During a sync, the tracker is consulted. The tracker
+ * can effectively override the AddonManager, saying "Don't trust data for this
+ * add-on. But, if the AddonManager and I agree, you can trust the
+ * AddonManager."
  */
 function AddonsTracker(name) {
   Tracker.call(this, name);
@@ -787,13 +808,17 @@ AddonsTracker.prototype = {
    * This is typically called when the engine first starts upon application
    * start-up. It only needs to be called once during the lifetime of the
    * application.
+   *
+   * It is worth explicitly calling out that startup changes are changes made
+   * to the Addons Manager performed at application startup because the
+   * encountered state differed from what was in the providers. Startup changes
+   * are not changes to non-restartless add-ons, for example. This is a subtle
+   * but very important distinction!
    */
   _trackStartupChanges: function _trackStartupChanges(store) {
     this._log.debug("Obtaining add-ons modified on application startup");
 
     let changes = AddonManager.getAllStartupChanges();
-    // TODO remove next line before landing
-    this._log.debug("All startup changes: " + JSON.stringify(changes));
 
     if (!Object.keys(changes).length) {
       this._log.info("No add-on changes on application startup detected.");
@@ -849,12 +874,15 @@ AddonsTracker.prototype = {
   },
 
   /**
-   * This is a callback that is invoked by the AddonManager listener.
+   * This is the callback that is indirectly invoked by the AddonManager
+   * listeners. It is called by one of the listener proxy functions below.
    */
   _trackAddon: function _trackAddon(addon, action, requiresRestart) {
     // Since this is called as an observer, we explicitly trap errors and
     // log them to ourselves so we don't see errors reported elsewhere.
     try {
+      // This would be checked in addChangedID(), but we short circuit faster
+      // and avoid performing needless work.
       if (this.ignoreAll) {
         this._log.debug(action + " of " + addon.id + " ignored because " +
                         "ignoreall is set.");
@@ -863,6 +891,10 @@ AddonsTracker.prototype = {
 
       this._log.debug("Tracked change " + action + " to " + addon.id);
 
+      // We assume that every event for non-restartless add-ons is
+      // followed by another event and that this follow-up event is the most
+      // appropriate to react to. Currently we ignore onEnabling, onDisabling,
+      // and onUninstalling for non-restartless add-ons.
       if (requiresRestart != undefined && !requiresRestart) {
         this._log.debug("Ignoring notification because restartless");
         return;

@@ -262,17 +262,36 @@ ServerCollection.prototype = {
     return this._wbos[id];
   },
 
+  /**
+   * @return the payload of the WBO that corresponds to the provided `id`, or
+   *         `undefined` if the WBO does not exist.
+   */
   payload: function payload(id) {
-    return this.wbo(id).payload;
+    let wbo = this.wbo(id);
+    if (!wbo) {
+      return undefined;
+    }
+    return wbo.payload;
   },
 
   /**
    * Insert the provided WBO under its ID.
    *
+   * The timestamp of the collection is updated to either the current time, or
+   * the provided `timestamp`, if the current timestamp is not greater.
+   *
+   * @param timestamp
+   *        The timestamp to use to update our current last modified time.
+   *
    * @return the provided WBO.
    */
-  insertWBO: function insertWBO(wbo) {
-    return this._wbos[wbo.id] = wbo;
+  insertWBO: function insertWBO(wbo, timestamp) {
+    this._wbos[wbo.id] = wbo;
+    let ts = timestamp || new_timestamp();
+    if (ts > this.timestamp) {
+      this.timestamp = ts;
+    }
+    return wbo;
   },
 
   /**
@@ -289,7 +308,7 @@ ServerCollection.prototype = {
    * @return the inserted WBO.
    */
   insert: function insert(id, payload, modified) {
-    return this.insertWBO(new ServerWBO(id, payload, modified));
+    return this.insertWBO(new ServerWBO(id, payload, modified), modified);
   },
 
   _inResultSet: function(wbo, options) {
@@ -573,11 +592,13 @@ SyncServer.prototype = {
    * @param cb
    *        A callback function (of no arguments) which is invoked after
    *        startup.
+   *
+   * @return this SyncServer instance, to allow chaining.
    */
   start: function start(port, cb) {
     if (this.started) {
       this._log.warn("Warning: server already started on " + this.port);
-      return;
+      return this;
     }
     if (port) {
       this.port = port;
@@ -588,6 +609,7 @@ SyncServer.prototype = {
       if (cb) {
         cb();
       }
+      return this;
     } catch (ex) {
       _("==========================================");
       _("Got exception starting Sync HTTP server on port " + this.port);
@@ -662,6 +684,7 @@ SyncServer.prototype = {
   },
 
   createCollection: function createCollection(username, collection, wbos) {
+    this._log.debug("createCollection(" + username + ", " + collection + "…)");
     if (!(username in this.users)) {
       throw new Error("Unknown user.");
     }

@@ -158,7 +158,11 @@ function dropIcon(url, cb) {
 
 function run_test() {
   initTestLogging("Trace");
-  for each (let item in ["Engine.Favicons", "Store.Favicons", "Record.Favicons"]) {
+  for each (let item in ["Engine.Favicons",
+                         "Store.Favicons",
+                         "Record.Favicons",
+                         "AsyncResource",
+                         "Test.Server"]) {
     Log4Moz.repository.getLogger("Sync." + item).level = Log4Moz.Level.Trace;
   }
   run_next_test();
@@ -289,49 +293,34 @@ add_test(function test_favicon_sync() {
   Service.password   = "ilovejane";
   Service.passphrase = "bbbbbabcdeabcdeabcdeabcdea";
 
-  let engines = {favicons: {version: e.version,
-                            syncID: e.syncID}};
-
-  let global    = new ServerWBO('global', {syncID: Service.syncID,
-                                           storageVersion: STORAGE_VERSION,
-                                           engines: engines});
-  let keys      = new ServerWBO("keys");
-  let favicons  = new ServerCollection({}, true);
-
-  let collectionsHelper = track_collections_helper();
-  let upd               = collectionsHelper.with_updated_collection;
-  let collections       = collectionsHelper.collections;
-
-  let server = httpd_setup({
-    "/1.1/johndoe/info/collections":    collectionsHelper.handler,
-    "/1.1/johndoe/storage/meta/global": upd("meta",     global.handler()),
-    "/1.1/johndoe/storage/crypto/keys": upd("crypto",   keys.handler()),
-    "/1.1/johndoe/storage/favicons":    upd("favicons", favicons.handler())
-  });
+  new FakeCryptoService();
+  let server   = new SyncServer().start();
+  let johndoe  = server.registerUser("johndoe", "password");
 
   try {
     _("Initial setup.");
-    Service.login();
     do_check_true(e.enabled);
-    e.sync();
+    Service.sync();
 
-    new FakeCryptoService();
     _("Put a record on the server.");
     let payload = {id:         faviconGUID,
                    url:        TEST_FAVICON_URI,
                    expiration: Date.now() + EXPIRATION_OFFSET,
                    icon:       ICON_16_DATAURL};
 
-    let faviconWBO = new ServerWBO(faviconGUID, encryptPayload(payload));
-    favicons.wbos[faviconGUID] = faviconWBO;
-    let ts1 = new_timestamp();
-    collectionsHelper.update_collection("favicons", ts1);
-    faviconWBO.modified = ts1;
+    let favicons = johndoe.createCollection("favicons");
+    favicons.insert(faviconGUID, payload);
+    do_check_true(!!favicons.payload(faviconGUID));
+    do_check_eq(0, favicons.keys().indexOf(faviconGUID));
+    do_check_eq(favicons.timestamp, favicons.wbo(faviconGUID).modified);
+    do_check_eq(favicons.timestamp, server.infoCollections("johndoe").favicons);
 
     _("Syncing favicons...");
     do_check_true(e.enabled);
-    e.sync();
-    do_check_neq(faviconWBO.payload, undefined);
+    Service.sync();
+    _("A");
+    do_check_true(!!favicons.payload(faviconGUID));
+    _("B");
     do_check_true(s.itemExists(faviconGUID));
 
     _("Testing via getFaviconData.");
@@ -371,7 +360,7 @@ add_test(function test_favicon_sync() {
   }
 });
 
-add_test(function test_favicon_upload_download() {
+no_add_test(function test_favicon_upload_download() {
   _("Test that FaviconsEngine will upload and download.");
   let e = Engines.get("favicons");
   let s = e._store;
@@ -397,131 +386,111 @@ add_test(function test_favicon_upload_download() {
   Service.password   = "ilovejane";
   Service.passphrase = "bbbbbabcdeabcdeabcdeabcdea";
 
-  let engines = {favicons: {version: e.version,
-                            syncID: e.syncID}};
+  new FakeCryptoService();
+  let server   = new SyncServer().start();
+  let johndoe  = server.registerUser("johndoe", "password");
+  johndoe.createCollection("favicons");
 
-  let global    = new ServerWBO('global', {syncID: Service.syncID,
-                                           storageVersion: STORAGE_VERSION,
-                                           engines: engines});
-  let keys      = new ServerWBO("keys");
-  let bookmarks = new ServerCollection({}, true);
-  let clients   = new ServerCollection({}, true);
-  let favicons  = new ServerCollection({}, true);
+  _("Initial setup.");
+  do_check_true(e.enabled);
+  Service.sync();
+  do_check_true(e.enabled);
 
-  let collectionsHelper = track_collections_helper();
-  let upd               = collectionsHelper.with_updated_collection;
-  let collections       = collectionsHelper.collections;
+  _("Add record locally.");
+  _("Adding a folder...");
+  let fxuri = Utils.makeURI("http://getfirefox.com/");
+  let folderID = PlacesUtils.bookmarks.createFolder(
+    PlacesUtils.bookmarks.toolbarFolder, "Folder 1", 0);
 
-  let server = httpd_setup({
-    "/1.1/johndoe/info/collections":    collectionsHelper.handler,
-    "/1.1/johndoe/storage/meta/global": upd("meta",     global.handler()),
-    "/1.1/johndoe/storage/crypto/keys": upd("crypto",   keys.handler()),
-    "/1.1/johndoe/storage/bookmarks":   upd("bookmarks", bookmarks.handler()),
-    "/1.1/johndoe/storage/clients":     upd("clients", clients.handler()),
-    "/1.1/johndoe/storage/favicons":    upd("favicons", favicons.handler())
-  });
+  _("Adding a bookmark...");
+  let bookmarkID = PlacesUtils.bookmarks.insertBookmark(
+    folderID, fxuri, PlacesUtils.bookmarks.DEFAULT_INDEX, "Get Firefox!");
 
-    _("Initial setup.");
-    Service.login();
-    do_check_true(e.enabled);
-    e.sync();
+  _("Prepare to add favicon.");
+  let faviconURI = Utils.makeURI(TEST_FAVICON_URI);
+  let expiration = Date.now() + EXPIRATION_OFFSET;
 
-    new FakeCryptoService();
+  _("Add an observer so we see the onItemChanged, and can proceed with the test.");
+  let svc = Cc["@mozilla.org/browser/nav-bookmarks-service;1"]
+              .getService(Components.interfaces.nsINavBookmarksService);
+  let obs = {
+    onBeginUpdateBatch: function () {},
+    onEndUpdateBatch:   function () {},
+    onItemAdded:        function () {},
 
-    _("Add record locally.");
-    _("Adding a folder...");
-    let fxuri = Utils.makeURI("http://getfirefox.com/");
-    let folderID = PlacesUtils.bookmarks.createFolder(
-      PlacesUtils.bookmarks.toolbarFolder, "Folder 1", 0);
-
-    _("Adding a bookmark...");
-    let bookmarkID = PlacesUtils.bookmarks.insertBookmark(
-      folderID, fxuri, PlacesUtils.bookmarks.DEFAULT_INDEX, "Get Firefox!");
-
-    _("Prepare to add favicon.");
-    let faviconURI = Utils.makeURI(TEST_FAVICON_URI);
-    let expiration = Date.now() + EXPIRATION_OFFSET;
-
-    _("Add an observer so we see the onItemChanged, and can proceed with the test.");
-    let svc = Cc["@mozilla.org/browser/nav-bookmarks-service;1"]
-                .getService(Components.interfaces.nsINavBookmarksService);
-    let obs = {
-      onBeginUpdateBatch: function () {},
-      onEndUpdateBatch:   function () {},
-      onItemAdded:        function () {},
-
-      onItemChanged: function (id, prop, isAnno, val, lastModified, itemType,
-                               parentId, guid, parentGUID) {
-        if (prop != "favicon") {
-          return;
-        }
-        do_check_eq(id, bookmarkID);
-        do_check_eq(val, TEST_FAVICON_URI);
-
-        try {
-          _("Syncing favicons...");
-          e.sync();
-
-          _("Check that the favicon made it to the server.");
-          _("WBOs: " + JSON.stringify(favicons.wbos));
-          _("Wanted: " + faviconGUID);
-          do_check_true(faviconGUID in favicons.wbos);
-          let payload = JSON.parse(favicons.wbos[faviconGUID].payload);
-          let ciphertext = JSON.parse(payload.ciphertext);
-          do_check_eq(ciphertext.icon, ICON_16_DATAURL);
-
-          _("Check that we can download, apply, and get the same stored values.");
-
-          _("Cleaning up prior to syncing...");
-          cleanup();
-
-          _("Ensure the local record is gone.");
-          let err;
-          try {
-            Svc.Favicons.getFaviconDataAsDataURL(faviconURI);
-          } catch (ex) {
-            err = ex;
-          }
-          do_check_eq(err.result, Components.results.NS_ERROR_NOT_AVAILABLE);
-
-          _("Syncing...");
-          e.sync();
-
-          _("Checking that the record now exists in both places...");
-          do_check_true(faviconGUID in favicons.wbos);
-          do_check_true(s.itemExists(faviconGUID));
-          let stored = Svc.Favicons.getFaviconDataAsDataURL(faviconURI);
-          do_check_eq(stored, ICON_16_DATAURL);
-
-          Utils.nextTick(run_next_test);
-
-        } catch (ex) {
-          _("Exception in test: " + Utils.exceptionStr(ex));
-          do_throw(ex);
-        } finally {
-          svc.removeObserver(obs);
-          Svc.Prefs.resetBranch("");
-          Records.clearCache();
-          server.stop(run_next_test);
-        }
+    onItemChanged: function (id, prop, isAnno, val, lastModified, itemType,
+                             parentId, guid, parentGUID) {
+      if (prop != "favicon") {
+        return;
       }
-    };
-    svc.addObserver(obs, false);
+      do_check_eq(id, bookmarkID);
+      do_check_eq(val, TEST_FAVICON_URI);
 
-    Svc.Favicons.setFaviconDataFromDataURL(faviconURI, ICON_16_DATAURL, expiration);
+      try {
+        _("Syncing favicons...");
+        e.sync();
+        let favicons = johndoe.collection("favicons");
 
-    // Find the favicon's GUID prior to syncing.
-    faviconGUID = e._store._faviconGUIDForURL(faviconURI, function (err, guid) {
-      do_check_true(!err);
-      _("Stored GUID is " + guid);
-      faviconGUID = guid;
+        _("Check that the favicon made it to the server.");
+        _("WBOs: " + JSON.stringify(favicons.keys()));
+        _("Wanted: " + faviconGUID);
+        do_check_true(!!favicons.wbo(faviconGUID));
+        let payload = JSON.parse(favicons.payload(faviconGUID));
+        let ciphertext = JSON.parse(payload.ciphertext);
+        do_check_eq(ciphertext.icon, ICON_16_DATAURL);
 
-      // Link to the bookmark.
-      PlacesUtils.favicons.setFaviconUrlForPage(fxuri, faviconURI);
-    });
+        _("Check that we can download, apply, and get the same stored values.");
+
+        _("Cleaning up prior to syncing...");
+        cleanup();
+
+        _("Ensure the local record is gone.");
+        let err;
+        try {
+          Svc.Favicons.getFaviconDataAsDataURL(faviconURI);
+        } catch (ex) {
+          err = ex;
+        }
+        do_check_eq(err.result, Components.results.NS_ERROR_NOT_AVAILABLE);
+
+        _("Syncing...");
+        e.sync();
+
+        _("Checking that the record now exists in both places...");
+        do_check_true(!!favicons.wbo(faviconGUID));
+        do_check_true(s.itemExists(faviconGUID));
+        let stored = Svc.Favicons.getFaviconDataAsDataURL(faviconURI);
+        do_check_eq(stored, ICON_16_DATAURL);
+
+        Utils.nextTick(run_next_test);
+
+      } catch (ex) {
+        _("Exception in test: " + Utils.exceptionStr(ex));
+        do_throw(ex);
+      } finally {
+        svc.removeObserver(obs);
+        Svc.Prefs.resetBranch("");
+        Records.clearCache();
+        server.stop(run_next_test);
+      }
+    }
+  };
+  svc.addObserver(obs, false);
+
+  Svc.Favicons.setFaviconDataFromDataURL(faviconURI, ICON_16_DATAURL, expiration);
+
+  // Find the favicon's GUID prior to syncing.
+  faviconGUID = e._store._faviconGUIDForURL(faviconURI, function (err, guid) {
+    do_check_true(!err);
+    _("Stored GUID is " + guid);
+    faviconGUID = guid;
+
+    // Link to the bookmark.
+    PlacesUtils.favicons.setFaviconUrlForPage(fxuri, faviconURI);
+  });
 });
 
-add_test(function test_favicon_wipe() {
+no_add_test(function test_favicon_wipe() {
   _("Test that wiping removes icons.");
   let e = Engines.get("favicons");
   let s = e._store;
@@ -535,6 +504,8 @@ add_test(function test_favicon_wipe() {
   do_check_empty(s.getAllIDs());
   run_next_test();
 });
+
+function no_add_test() {}
 
 // TODO: test expiration on one machine propagating as a spurious delete to others.
 // We should treat expiration as a non-event; allow the other clients to expire their own.

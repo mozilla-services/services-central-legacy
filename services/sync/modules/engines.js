@@ -760,7 +760,7 @@ SyncEngine.prototype = {
 
   // Process incoming records
   _processIncoming: function SyncEngine__processIncoming() {
-    this._log.trace("Downloading & applying server changes");
+    this._log.info("Downloading & applying server changes");
 
     // Figure out how many total items to fetch this sync; do less on mobile.
     let batchSize = Infinity;
@@ -787,6 +787,8 @@ SyncEngine.prototype = {
     // Reset previousFailed for each sync since previously failed items may not fail again.
     this.previousFailed = [];
 
+    this._log.info("AAA");
+
     // Used (via exceptions) to allow the record handler/reconciliation/etc.
     // methods to signal that they would like processing of incoming records to
     // cease.
@@ -807,6 +809,7 @@ SyncEngine.prototype = {
       applyBatch = [];
     }
 
+    this._log.info("BBB");
     function doApplyBatchAndPersistFailed() {
       // Apply remaining batch.
       if (applyBatch.length) {
@@ -821,6 +824,7 @@ SyncEngine.prototype = {
       }
     }
 
+    this._log.info("CCC");
     // Not binding this method to 'this' for performance reasons. It gets
     // called for every incoming record.
     let self = this;
@@ -907,6 +911,7 @@ SyncEngine.prototype = {
       self._store._sleep(0);
     };
 
+    this._log.info("DDD: " + this.lastModified + ", " + this.lastSync);
     // Only bother getting data from the server if there's new things
     if (this.lastModified == null || this.lastModified > this.lastSync) {
       let resp = newitems.get();
@@ -1205,10 +1210,14 @@ SyncEngine.prototype = {
   _sync: function SyncEngine__sync() {
     try {
       this._syncStartup();
+      this._log.info("XXX NOTIFYING");
       Observers.notify("weave:engine:sync:status", "process-incoming");
+      this._log.info("XXX pI");
       this._processIncoming();
+      this._log.info("XXX uO");
       Observers.notify("weave:engine:sync:status", "upload-outgoing");
       this._uploadOutgoing();
+      this._log.info("XXX FINISH");
       this._syncFinish();
     } finally {
       this._syncCleanup();

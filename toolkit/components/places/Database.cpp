@@ -1287,9 +1287,31 @@ Database::MigrateV13Up()
       "ADD COLUMN guid TEXT"
     ));
     NS_ENSURE_SUCCESS(rv, rv);
+    rv = mMainConn->ExecuteSimpleSQL(NS_LITERAL_CSTRING(
+      "ALTER TABLE moz_favicons "
+      "ADD COLUMN lastModified INTEGER"
+    ));
+    NS_ENSURE_SUCCESS(rv, rv);
 
     // Also create the indices.
     rv = mMainConn->ExecuteSimpleSQL(CREATE_IDX_MOZ_FAVICONS_GUID);
+    NS_ENSURE_SUCCESS(rv, rv);
+    rv = mMainConn->ExecuteSimpleSQL(CREATE_IDX_MOZ_FAVICONS_LASTMODIFIED);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    // Compute reasonable default values for existing favicons.
+    // Take their expiration time (a timestamp in microseconds), subtracting
+    // MAX_FAVICON_EXPIRATION to yield a value. If this is in the future, clamp
+    // it to the current time.
+    // If expiration is null, lastModified defaults to 0.
+    // lastModified is stored in microseconds.
+    // TODO: is this the granularity that we want for Sync or other uses?
+    rv = mMainConn->ExecuteSimpleSQL(NS_LITERAL_CSTRING(
+      "UPDATE moz_favicons SET lastModified = MIN("
+       "(expiration - " MAX_FAVICON_EXPIRATION_STR "), "
+       "(strftime('%s000000','now','localtime','utc'))) "
+      "WHERE lastModified = 0 AND expiration IS NOT NULL"
+    ));
     NS_ENSURE_SUCCESS(rv, rv);
   }
   return NS_OK;

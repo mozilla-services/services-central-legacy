@@ -710,6 +710,15 @@ BookmarksStore.prototype = {
           PlacesUtils.annotations.EXPIRE_NEVER);
       }
 
+      if (record.faviconURI) {
+        this._log.trace("Applying favicon URI " + record.faviconURI);
+        let fURI = record.faviconURI;
+        if (!fURI.spec) {
+          fURI = Utils.makeURI(record.faviconURI);
+        }
+        PlacesUtils.favicons.setFaviconUrlForPage(uri, fURI);
+      }
+
     } break;
     case "folder":
       newId = PlacesUtils.bookmarks.createFolder(
@@ -1268,6 +1277,7 @@ BookmarksStore.prototype = {
 function BookmarksTracker(name) {
   Tracker.call(this, name);
 
+  this._log.info("Adding places-shutdown and tracking observers.");
   Svc.Obs.add("places-shutdown", this);
   Svc.Obs.add("weave:engine:start-tracking", this);
   Svc.Obs.add("weave:engine:stop-tracking", this);
@@ -1280,6 +1290,7 @@ BookmarksTracker.prototype = {
     switch (topic) {
       case "weave:engine:start-tracking":
         if (!this._enabled) {
+          this._log.info("Adding bookmarks observer.");
           PlacesUtils.bookmarks.addObserver(this, true);
           Svc.Obs.add("bookmarks-restore-begin", this);
           Svc.Obs.add("bookmarks-restore-success", this);
@@ -1289,6 +1300,7 @@ BookmarksTracker.prototype = {
         break;
       case "weave:engine:stop-tracking":
         if (this._enabled) {
+          this._log.info("Removing bookmarks observer.");
           PlacesUtils.bookmarks.removeObserver(this);
           Svc.Obs.remove("bookmarks-restore-begin", this);
           Svc.Obs.remove("bookmarks-restore-success", this);
@@ -1322,6 +1334,48 @@ BookmarksTracker.prototype = {
     Ci.nsINavBookmarkObserver_MOZILLA_1_9_1_ADDITIONS,
     Ci.nsISupportsWeakReference
   ]),
+
+  /**
+   * The favicons engine does not itself watch for changes; that would be
+   * redundant, and would make a mockery of disabling either history or
+   * bookmarks sync. Instead, this engine notifies the favicons tracker on
+   * potential favicon changes, and trusts that the right thing will occur.
+   */
+  notifyFaviconsEngine: function notifyFaviconsEngine(itemId, guid, faviconURL,
+                                                      lastModified) {
+    let faviconEngine = Engines.get("favicons");
+    if (!faviconEngine) {
+      this._log.warn("Unable to find favicons engine. Not notifying.");
+      return;
+    }
+    this._log.trace("Notifying favicons engine of bookmark event.");
+
+    if (!faviconURL) {
+      let log = this._log;
+      // Just added. Let's see if we can find it. We might not get the
+      // notification.
+      // TODO: do this more efficiently.
+      Utils.nextTick(function () {
+        let itemURL = PlacesUtils.bookmarks.getBookmarkURI(itemId);
+        try {
+          log.trace("Calling getFaviconURLForPage for " + itemURL.spec);
+          Svc.Favicons.getFaviconURLForPage(itemURL, {
+            onFaviconDataAvailable: function(aURI, aDataLen, aData, aMimeType) {
+              if (aURI) {
+                faviconEngine.notifyFaviconChange(aURI.spec);
+              }
+            }
+          });
+        } catch (ex) {
+          log.warn("Got exception " + Utils.exceptionStr(ex) +
+                   " fetching favicon URL in notification handler.");
+          return;
+        }
+      });
+    } else {
+      faviconEngine.notifyFaviconChange(faviconURL);
+    }
+  },
 
   /**
    * Add a bookmark GUID to be uploaded and bump up the sync score.
@@ -1393,12 +1447,16 @@ BookmarksTracker.prototype = {
   onItemAdded: function BMT_onItemAdded(itemId, folder, index,
                                         itemType, uri, title, dateAdded,
                                         guid, parentGuid) {
+
+    this._log.info("onItemAdded: " + itemId + " uri = " + uri.spec);
     if (this._ignore(itemId, folder, guid))
       return;
 
     this._log.trace("onItemAdded: " + itemId);
     this._add(itemId, guid);
     this._add(folder, parentGuid);
+    this._log.debug("Notifying favicons engine of new item.");
+    this.notifyFaviconsEngine(itemId, guid, null, dateAdded);
   },
 
   onItemRemoved: function BMT_onItemRemoved(itemId, parentId, index, type, uri,
@@ -1457,6 +1515,7 @@ BookmarksTracker.prototype = {
   onItemChanged: function BMT_onItemChanged(itemId, property, isAnno, value,
                                             lastModified, itemType, parentId,
                                             guid, parentGuid) {
+    this._log.trace("Got onItemChanged: " + property + ".");
     // Quicker checks first.
     if (this.ignoreAll)
       return;
@@ -1465,9 +1524,11 @@ BookmarksTracker.prototype = {
       // Ignore annotations except for the ones that we sync.
       return;
 
-    // Ignore favicon changes to avoid unnecessary churn.
-    if (property == "favicon")
+    // Pass on favicon changes to the favicon engine.
+    if (property == "favicon") {
+      this.notifyFaviconsEngine(itemId, guid, value, lastModified);
       return;
+    }
 
     if (this._ignore(itemId, parentId, guid))
       return;

@@ -1137,6 +1137,7 @@ let _sessionCID = Services.appinfo.ID == SEAMONKEY_ID ?
   "@mozilla.org/browser/sessionstore;1";
 
 [["Form", "@mozilla.org/satchel/form-history;1", "nsIFormHistory2"],
+ ["Favicons", "@mozilla.org/browser/favicon-service;1", "nsIFaviconService"],
  ["Idle", "@mozilla.org/widget/idleservice;1", "nsIIdleService"],
  ["KeyFactory", "@mozilla.org/security/keyobjectfactory;1", "nsIKeyObjectFactory"],
  ["Session", _sessionCID, "nsISessionStore"]

@@ -557,7 +557,7 @@ pref("font.default.x-western", "SwissA");
 #ifdef MOZ_SERVICES_SYNC
 // sync service
 pref("services.sync.client.type", "mobile");
-pref("services.sync.registerEngines", "Tab,Bookmarks,Form,History,Password,Prefs");
+pref("services.sync.registerEngines", "Tab,Favicons,Bookmarks,Form,History,Password,Prefs");
 pref("services.sync.autoconnectDelay", 5);
 
 // prefs to sync by default

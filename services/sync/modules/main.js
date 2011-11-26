@@ -44,6 +44,7 @@ let lazies = {
   "engines.js":           ['Engines', 'Engine', 'SyncEngine', 'Store'],
   "engines/bookmarks.js": ['BookmarksEngine', 'BookmarksSharingManager'],
   "engines/clients.js":   ["Clients"],
+  "engines/favicons.js":  ["FaviconsEngine"],
   "engines/forms.js":     ["FormEngine"],
   "engines/history.js":   ["HistoryEngine"],
   "engines/prefs.js":     ["PrefsEngine"],

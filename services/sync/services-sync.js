@@ -44,6 +44,7 @@ pref("services.sync.log.logger.network.resources", "Debug");
 pref("services.sync.log.logger.service.jpakeclient", "Debug");
 pref("services.sync.log.logger.engine.bookmarks", "Debug");
 pref("services.sync.log.logger.engine.clients", "Debug");
+pref("services.sync.log.logger.engine.favicons", "Debug");
 pref("services.sync.log.logger.engine.forms", "Debug");
 pref("services.sync.log.logger.engine.history", "Debug");
 pref("services.sync.log.logger.engine.passwords", "Debug");

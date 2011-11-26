@@ -705,6 +705,8 @@ Database::InitSchema(bool* aDatabaseMigrated)
     NS_ENSURE_SUCCESS(rv, rv);
     rv = mMainConn->ExecuteSimpleSQL(CREATE_IDX_MOZ_FAVICONS_GUID);
     NS_ENSURE_SUCCESS(rv, rv);
+    rv = mMainConn->ExecuteSimpleSQL(CREATE_IDX_MOZ_FAVICONS_LASTMODIFIED);
+    NS_ENSURE_SUCCESS(rv, rv);
 
     // moz_anno_attributes.
     rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_ANNO_ATTRIBUTES);

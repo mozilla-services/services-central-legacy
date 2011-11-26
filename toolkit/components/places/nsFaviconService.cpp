@@ -75,14 +75,6 @@
 #define MAX_FAVICON_CACHE_SIZE 256
 #define FAVICON_CACHE_REDUCE_COUNT 64
 
-/**
- * The maximum time we will keep a favicon around.  We always ask the cache, if
- * we can, but default to this value if we do not get a time back, or the time
- * is more in the future than this.
- * Currently set to one week from now.
- */
-#define MAX_FAVICON_EXPIRATION ((PRTime)7 * 24 * 60 * 60 * PR_USEC_PER_SEC)
-
 // The MIME type of the default favicon and favicons created by
 // OptimizeFaviconImage.
 #define DEFAULT_MIME_TYPE "image/png"
@@ -210,7 +202,7 @@ nsFaviconService::SetFaviconUrlForPage(nsIURI* aPageURI, nsIURI* aFaviconURI)
   bool hasData = false;
   {
     nsCOMPtr<mozIStorageStatement> stmt = mDB->GetStatement(
-      "SELECT id, length(data), expiration FROM moz_favicons "
+      "SELECT id, length(data), expiration, lastModified FROM moz_favicons "
       "WHERE url = :icon_url"
     );
     NS_ENSURE_STATE(stmt);
@@ -238,8 +230,9 @@ nsFaviconService::SetFaviconUrlForPage(nsIURI* aPageURI, nsIURI* aFaviconURI)
   if (iconId == -1) {
     // We did not find any entry for this icon, so create a new one.
     nsCOMPtr<mozIStorageStatement> stmt = mDB->GetStatement(
-      "INSERT INTO moz_favicons (id, url, data, mime_type, expiration) "
-      "VALUES (:icon_id, :icon_url, :data, :mime_type, :expiration)"
+      "INSERT INTO moz_favicons (id, url, data, mime_type, expiration, lastModified, guid) "
+      "VALUES (:icon_id, :icon_url, :data, :mime_type, :expiration, "
+              ":lastModified, COALESCE(:guid, GENERATE_GUID()))"
     );
     NS_ENSURE_STATE(stmt);
     mozStorageStatementScoper scoper(stmt);
@@ -253,6 +246,9 @@ nsFaviconService::SetFaviconUrlForPage(nsIURI* aPageURI, nsIURI* aFaviconURI)
     rv = stmt->BindNullByName(NS_LITERAL_CSTRING("mime_type"));
     NS_ENSURE_SUCCESS(rv, rv);
     rv = stmt->BindNullByName(NS_LITERAL_CSTRING("expiration"));
+    NS_ENSURE_SUCCESS(rv, rv);
+    // TODO: rnewman: this is probably wrong.
+    rv = stmt->BindNullByName(NS_LITERAL_CSTRING("lastModified"));
     NS_ENSURE_SUCCESS(rv, rv);
     rv = stmt->Execute();
     NS_ENSURE_SUCCESS(rv, rv);
@@ -449,6 +445,7 @@ nsFaviconService::SetFaviconData(nsIURI* aFaviconURI, const PRUint8* aData,
                "mime_type  = :mime_type, "
                "expiration = :expiration "
         "WHERE id = :icon_id"
+        // TODO: rnewman: lastModified, guid?
       );
       NS_ENSURE_STATE(statement);
 
@@ -464,9 +461,10 @@ nsFaviconService::SetFaviconData(nsIURI* aFaviconURI, const PRUint8* aData,
     else {
       // Insert a new entry.
       statement = mDB->GetStatement(
-       "INSERT INTO moz_favicons (id, url, data, mime_type, expiration, guid) "
+       "INSERT INTO moz_favicons (id, url, data, mime_type, expiration, lastModified, guid) "
        "VALUES (:icon_id, :icon_url, :data, :mime_type, :expiration, "
-               "COALESCE(:guid, GENERATE_GUID()))");
+               ":lastModified, COALESCE(:guid, GENERATE_GUID()))"
+      );
       NS_ENSURE_STATE(statement);
 
       rv = statement->BindNullByName(NS_LITERAL_CSTRING("icon_id"));
@@ -544,6 +542,8 @@ nsFaviconService::SetFaviconDataFromDataURL(nsIURI* aFaviconURI,
   // SetFaviconData can now do the dirty work 
   rv = SetFaviconData(aFaviconURI, buffer, available, mimeType, aExpiration);
   nsMemory::Free(buffer);
+
+  // TODO: set lastModified here. We should really take it as an argument...
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;

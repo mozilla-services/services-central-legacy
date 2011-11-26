@@ -78,6 +78,17 @@
 // mInPrivateBrowsing member
 #define PRIVATEBROWSING_NOTINITED (bool(0xffffffff))
 
+// The maximum time we will keep a favicon around.  We always ask the cache, if
+// we can, but default to this value if we do not get a time back, or the time
+// is more in the future than this.
+// Currently set to one week from now.
+// Defined here, rather than in one of the favicons files, so that
+// nsNavHistory.cpp can use it during migration.
+#define MAX_FAVICON_EXPIRATION ((PRTime)7 * 24 * 60 * 60 * PR_USEC_PER_SEC)
+
+// So we can include this in query strings. Apologies for the redundancy!
+#define MAX_FAVICON_EXPIRATION_STR "604800000000"
+
 // Clamp title and URL to generously large, but not too large, length.
 // See bug 319004 for details.
 #define URI_LENGTH_MAX 65536

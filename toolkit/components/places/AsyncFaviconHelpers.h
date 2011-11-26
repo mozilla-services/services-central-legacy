@@ -21,6 +21,7 @@
  *
  * Contributor(s):
  *   Marco Bonardo <mak77@bonardo.net> (original author)
+ *   Richard Newman <rnewman@mozilla.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -72,6 +73,7 @@ struct IconData
   IconData()
   : id(0)
   , expiration(0)
+  , lastModified(0)
   , fetchMode(FETCH_NEVER)
   , status(ICON_STATUS_UNKNOWN)
   {
@@ -83,6 +85,7 @@ struct IconData
   nsCString data;
   nsCString mimeType;
   PRTime expiration;
+  PRTime lastModified;
   enum AsyncFaviconFetchMode fetchMode;
   PRUint16 status; // This is a bitset, see ICON_STATUS_* defines above.
   nsCString guid;

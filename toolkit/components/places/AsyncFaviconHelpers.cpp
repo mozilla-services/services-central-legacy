@@ -59,14 +59,6 @@
 
 #define CONTENT_SNIFFING_SERVICES "content-sniffing-services"
 
-/**
- * The maximum time we will keep a favicon around.  We always ask the cache, if
- * we can, but default to this value if we do not get a time back, or the time
- * is more in the future than this.
- * Currently set to one week from now.
- */
-#define MAX_FAVICON_EXPIRATION ((PRTime)7 * 24 * 60 * 60 * PR_USEC_PER_SEC)
-
 using namespace mozilla::places;
 using namespace mozilla::storage;
 
@@ -200,7 +192,7 @@ FetchIconInfo(nsRefPtr<Database>& aDB,
                   "This should not be called on the main thread");
 
   nsCOMPtr<mozIStorageStatement> stmt = aDB->GetStatement(
-    "SELECT id, expiration, data, mime_type "
+    "SELECT id, expiration, data, mime_type, lastModified "
     "FROM moz_favicons WHERE url = :icon_url"
   );
   NS_ENSURE_STATE(stmt);
@@ -244,6 +236,13 @@ FetchIconInfo(nsRefPtr<Database>& aDB,
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
+  // Last modified defaults to 0, but can technically be NULL.
+  rv = stmt->GetIsNull(4, &isNull);
+  NS_ENSURE_SUCCESS(rv, rv);
+  if (!isNull) {
+    rv = stmt->GetInt64(4, &_icon.lastModified);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
   return NS_OK;
 }
 
@@ -666,6 +665,7 @@ AsyncFetchAndSetIconFromNetwork::OnStopRequest(nsIRequest* aRequest,
   }
 
   mIcon.expiration = GetExpirationTimeFromChannel(mChannel);
+  mIcon.lastModified = 0;        // TODO: this needs to be set to a reasonable value.
 
   rv = OptimizeIconSize(mIcon, favicons);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -709,7 +709,7 @@ AsyncAssociateIconToPage::Run()
                   "This should not be called on the main thread");
 
   nsresult rv = FetchPageInfo(mDB, mPage);
-  if (rv == NS_ERROR_NOT_AVAILABLE){
+  if (rv == NS_ERROR_NOT_AVAILABLE) {
     // We have never seen this page.  If we can add the page to history,
     // we will try to do it later, otherwise just bail out.
     if (!mPage.canAddToHistory) {
@@ -730,9 +730,9 @@ AsyncAssociateIconToPage::Run()
     // GUID.
     nsCOMPtr<mozIStorageStatement> stmt = mDB->GetStatement(
       "INSERT OR REPLACE INTO moz_favicons "
-        "(id, url, data, mime_type, expiration, guid) "
+        "(id, url, data, mime_type, expiration, lastModified, guid) "
       "VALUES ((SELECT id FROM moz_favicons WHERE url = :icon_url), "
-              ":icon_url, :data, :mime_type, :expiration "
+              ":icon_url, :data, :mime_type, :expiration, :lastModified, "
               "COALESCE(:guid, "
                        "(SELECT guid FROM moz_favicons "
                         "WHERE url = :icon_url), "
@@ -748,6 +748,8 @@ AsyncAssociateIconToPage::Run()
     rv = stmt->BindUTF8StringByName(NS_LITERAL_CSTRING("mime_type"), mIcon.mimeType);
     NS_ENSURE_SUCCESS(rv, rv);
     rv = stmt->BindInt64ByName(NS_LITERAL_CSTRING("expiration"), mIcon.expiration);
+    NS_ENSURE_SUCCESS(rv, rv);
+    rv = stmt->BindInt64ByName(NS_LITERAL_CSTRING("lastModified"), mIcon.lastModified);
     NS_ENSURE_SUCCESS(rv, rv);
 
     // Binding a GUID allows us to override the current (or generated) GUID.

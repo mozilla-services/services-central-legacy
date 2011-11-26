@@ -128,6 +128,7 @@
     ", data BLOB" \
     ", mime_type VARCHAR(32)" \
     ", expiration LONG" \
+    ", lastModified INTEGER DEFAULT 0" \
     ", guid TEXT" \
   ")" \
 )

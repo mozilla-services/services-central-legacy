@@ -22,6 +22,7 @@
  *
  * Contributor(s):
  *   Marco Bonardo <mak77@bonardo.net> (Original Author)
+ *   Richard Newman <rnewman@mozilla.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -152,6 +153,11 @@
 #define CREATE_IDX_MOZ_FAVICONS_GUID \
   CREATE_PLACES_IDX( \
     "guid_uniqueindex", "moz_favicons", "guid", "UNIQUE" \
+  )
+
+#define CREATE_IDX_MOZ_FAVICONS_LASTMODIFIED \
+  CREATE_PLACES_IDX( \
+    "lastmodifiedindex", "moz_favicons", "lastModified", "" \
   )
 
 #endif // nsPlacesIndexes_h__

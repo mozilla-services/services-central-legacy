@@ -338,8 +338,13 @@ FaviconsStore.prototype = {
     statement.executeAsync(cb);
   },
 
-  changeItemID: function changeItemID(oldID, newID) {
-    throw new Error("changeItemID is nonsensical for favicons.");
+  changeItemID: function changeItemID(oldGUID, newGUID) {
+    const query = "UPDATE moz_favicons " +
+                  "SET guid = :guid WHERE guid = :oldGUID";
+    let statement = this._getStatement(query);
+    statement.params.guid    = newGUID;
+    statement.params.oldGUID = oldGUID;
+    Async.querySpinningly(statement, null);
   },
 
   // TODO: sortindex...

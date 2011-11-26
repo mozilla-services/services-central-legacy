@@ -54,6 +54,7 @@ function test_initial_state()
 
   do_check_false(db.indexExists("moz_bookmarks_guid_uniqueindex"));
   do_check_false(db.indexExists("moz_places_guid_uniqueindex"));
+  do_check_false(db.indexExists("moz_favicons_lastmodifiedindex"));
 
   // There should be five item annotations for a bookmark guid.
   stmt = db.createStatement(
@@ -295,6 +296,7 @@ function test_final_state()
 
   do_check_true(db.indexExists("moz_bookmarks_guid_uniqueindex"));
   do_check_true(db.indexExists("moz_places_guid_uniqueindex"));
+  do_check_true(db.indexExists("moz_favicons_lastmodifiedindex"));
 
   do_check_eq(db.schemaVersion, CURRENT_SCHEMA_VERSION);
 

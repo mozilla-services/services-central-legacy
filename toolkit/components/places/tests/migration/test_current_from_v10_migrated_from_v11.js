@@ -101,6 +101,12 @@ function test_place_guids_non_null()
   run_next_test();
 }
 
+function test_favicons_guids_and_lastModified() {
+  do_check_true(db.indexExists("moz_favicons_lastmodifiedindex"));
+  do_check_true(db.indexExists("moz_favicons_guidindex"));
+  run_next_test();
+}
+
 function test_final_state()
 {
   // We open a new database mostly so that we can check that the settings were

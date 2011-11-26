@@ -115,7 +115,10 @@ PlacesItem.prototype = {
 
 Utils.deferGetSet(PlacesItem,
                   "cleartext",
-                  ["hasDupe", "parentid", "parentName", "type"]);
+                  ["hasDupe", "parentid", "parentName", "type",
+                   // Use the (unique) favicon URI. There's no advantage to
+                   // using the GUID here.
+                   "faviconURI"]);
 
 function Bookmark(collection, id, type) {
   PlacesItem.call(this, collection, id, type || "bookmark");
@@ -982,7 +985,8 @@ BookmarksStore.prototype = {
     let parent = PlacesUtils.bookmarks.getFolderIdForItem(placeId);
     switch (PlacesUtils.bookmarks.getItemType(placeId)) {
     case PlacesUtils.bookmarks.TYPE_BOOKMARK:
-      let bmkUri = PlacesUtils.bookmarks.getBookmarkURI(placeId).spec;
+      let uri    = PlacesUtils.bookmarks.getBookmarkURI(placeId);
+      let bmkUri = uri.spec;
       if (bmkUri.search(/^place:/) == 0) {
         record = new BookmarkQuery(collection, id);
 
@@ -1020,6 +1024,16 @@ BookmarksStore.prototype = {
       record.keyword = PlacesUtils.bookmarks.getKeywordForBookmark(placeId);
       record.description = this._getDescription(placeId);
       record.loadInSidebar = this._isLoadInSidebar(placeId);
+
+      try {
+        // TODO: eventually this should use mozIAsyncFavicons. In order to do
+        // this, we must first create the universe. And implement this engine
+        // asynchronously. But not necessarily in that order.
+        record.faviconURI = PlacesUtils.favicons.getFaviconForPage(uri);
+      } catch (ex) {
+        // Throws NS_ERROR_NOT_AVAILABLE when page not found or no favicon.
+        this._log.trace("Caught " + Utils.exceptionStr(ex) + " fetching favicon for " + id);
+      }
       break;
 
     case PlacesUtils.bookmarks.TYPE_FOLDER:

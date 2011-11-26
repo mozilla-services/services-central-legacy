@@ -8,6 +8,7 @@
  */
 
 Svc.DefaultPrefs.set("registerEngines", "Bookmarks,Favicons");
+Cu.import("resource://services-sync/async.js");
 Cu.import("resource://services-sync/record.js");
 Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/engines.js");
@@ -15,6 +16,9 @@ Cu.import("resource://services-sync/service.js");
 Cu.import("resource://services-sync/util.js");
 Cu.import("resource://services-sync/engines/favicons.js");
 
+const TEST_GUID_A       = Utils.makeGUID();
+const TEST_GUID_B       = Utils.makeGUID();
+const TEST_GUID_C       = Utils.makeGUID();
 const TEST_URI          = "http://test.com/";
 const TEST_FAVICON_URI  = "http://test.com/sync/favicon.ico";
 const EXPIRATION_OFFSET = 500000;
@@ -132,18 +136,21 @@ function makeIncomingRecord(guid, expiration) {
   return incoming;
 }
 
+function getStatement(query) {
+  let db = PlacesUtils.history.QueryInterface(Ci.nsPIPlacesDatabase)
+                     .DBConnection;
+  return db.createAsyncStatement(query);
+}
+
 /**
  * Clean up after ourselves.
  */
 function dropIcon(url, cb) {
   let drop = "DELETE FROM moz_favicons WHERE url = :iconURL";
-  let db = PlacesUtils.history.QueryInterface(Ci.nsPIPlacesDatabase)
-                     .DBConnection;
-  let statement = db.createAsyncStatement(drop);
+  let statement = getStatement(drop);
   statement.params.iconURL = url;
   statement.executeAsync({
     handleCompletion: function (reason) {
-      statement.finalize();
       cb();
     }
   });
@@ -169,7 +176,7 @@ add_test(function test_favicon_store() {
     PlacesUtils.bookmarks.DEFAULT_INDEX, "Test bookmark"
   );
 
-  let guid = TEST_FAVICON_URI;
+  let guid = TEST_GUID_A;
   do_check_eq(ICON_16_DATA.length, ICON_16_LEN);
 
   let expiration = Date.now() + EXPIRATION_OFFSET;
@@ -178,7 +185,7 @@ add_test(function test_favicon_store() {
   do_check_false(s.itemExists(guid));
   do_check_false(guid in s.getAllIDs());
 
-  s.storeFavicon(TEST_FAVICON_URI, ICON_16_DATAURL, expiration,
+  s.storeFavicon(guid, TEST_FAVICON_URI, ICON_16_DATAURL, expiration,
     function (err) {
       do_check_true(!err);
 
@@ -194,11 +201,12 @@ add_test(function test_favicon_store() {
       _("All IDs: " + JSON.stringify(s.getAllIDs()));
       do_check_true(guid in s.getAllIDs());
 
+      Utils.nextTick(function () {
       _("Verify retrieval of expiration.");
-      s.faviconExpiry(TEST_FAVICON_URI, function (err, result) {
-        _("faviconExpiry callback: " + err + ", " + result);
+      do_check_true(s.itemExists(guid));
+      s.faviconExpiry(guid, function (err, result) {
+        _("faviconExpiry callback for " + guid + ": " + err + ", " + result);
         do_check_true(!err);
-        do_check_true(s.itemExists(guid));
         do_check_eq(result, expiration);
 
         _("Verify fetching other metadata.");
@@ -210,6 +218,7 @@ add_test(function test_favicon_store() {
           run_next_test();
         });
       });
+      });
     });
 });
 
@@ -217,22 +226,35 @@ add_test(function test_favicon_engine_reconciliation() {
   _("Test that reconciliation occurs through expiration times.");
   let e = new FaviconsEngine();
 
-  let guid     = TEST_FAVICON_URI;       // TODO: real GUID
+  let guid     = TEST_GUID_A;
   let incoming = makeIncomingRecord(guid, 1234);
 
-  // Prior test adds the favicon, and the timestamp is newer than ours.
-  do_check_false(e._reconcile(incoming));
+  _("Prior test adds the favicon, and the timestamp is newer than ours.");
+  e.__reconcile(incoming, function (err, result) {
+    do_check_true(!err);
+    _("Result is " + result);
+    do_check_false(result);
 
-  // But if we fast-forward the timestamp...
-  incoming.expiration = Date.now() + 2 * EXPIRATION_OFFSET;
-  do_check_true(e._reconcile(incoming));
+    _("But if we fast-forward the timestamp...");
+    incoming.expiration = Date.now() + 2 * EXPIRATION_OFFSET;
+    e.__reconcile(incoming, function (err, result) {
+      do_check_true(!err);
+      do_check_true(result);
 
-  // Drop the icon, and we need to apply the incoming record regardless of
-  // expiration.
-  incoming.expiration = 1;
-  dropIcon(TEST_FAVICON_URI, function () {
-    do_check_true(e._reconcile(incoming));
-    run_next_test();
+      _("Drop the icon, and we need to apply the incoming record regardless of " +
+        "expiration.");
+      incoming.expiration = 1;
+      dropIcon(TEST_FAVICON_URI, function () {
+        _("dropIcon callback.");
+        e.__reconcile(incoming, function (err, result) {
+          _("Reconciliation result: " + result);
+          do_check_true(!err);
+          do_check_true(result);
+
+          run_next_test();
+        });
+      });
+    });
   });
 });
 
@@ -240,7 +262,7 @@ add_test(function test_favicon_store_create_remove() {
   _("Test that FaviconsStore.create will store data, and remove will remove it.");
   let s = new FaviconsEngine()._store;
 
-  let guid = TEST_FAVICON_URI;       // TODO: real GUID
+  let guid = TEST_GUID_B;
   let expiration = Date.now() + EXPIRATION_OFFSET;
   let incoming = makeIncomingRecord(guid, expiration);
   do_check_false(s.itemExists(guid));
@@ -258,7 +280,7 @@ add_test(function test_favicon_sync() {
   let s = e._store;
   e.enabled = true;
 
-  let faviconGUID = TEST_FAVICON_URI;       // TODO: real GUID
+  let faviconGUID = TEST_GUID_C;
   do_check_false(s.itemExists(faviconGUID));
 
   Service.serverURL  = "http://localhost:8080/";
@@ -367,8 +389,7 @@ add_test(function test_favicon_upload_download() {
   cleanup();
   Svc.Obs.notify("weave:engine:start-tracking");   // We skip usual startup...
 
-  let faviconGUID = TEST_FAVICON_URI;       // TODO: real GUID
-  do_check_false(s.itemExists(faviconGUID));
+  let faviconGUID;   // Will be set later.
 
   Service.serverURL  = "http://localhost:8080/";
   Service.clusterURL = "http://localhost:8080/";
@@ -443,6 +464,7 @@ add_test(function test_favicon_upload_download() {
 
           _("Check that the favicon made it to the server.");
           _("WBOs: " + JSON.stringify(favicons.wbos));
+          _("Wanted: " + faviconGUID);
           do_check_true(faviconGUID in favicons.wbos);
           let payload = JSON.parse(favicons.wbos[faviconGUID].payload);
           let ciphertext = JSON.parse(payload.ciphertext);
@@ -487,7 +509,31 @@ add_test(function test_favicon_upload_download() {
     svc.addObserver(obs, false);
 
     Svc.Favicons.setFaviconDataFromDataURL(faviconURI, ICON_16_DATAURL, expiration);
-    PlacesUtils.favicons.setFaviconUrlForPage(fxuri, faviconURI);
+
+    // Find the favicon's GUID prior to syncing.
+    faviconGUID = e._store._faviconGUIDForURL(faviconURI, function (err, guid) {
+      do_check_true(!err);
+      _("Stored GUID is " + guid);
+      faviconGUID = guid;
+
+      // Link to the bookmark.
+      PlacesUtils.favicons.setFaviconUrlForPage(fxuri, faviconURI);
+    });
+});
+
+add_test(function test_favicon_wipe() {
+  _("Test that wiping removes icons.");
+  let e = Engines.get("favicons");
+  let s = e._store;
+  let t = e._tracker;
+  e.enabled = true;
+
+  let ids = s.getAllIDs();
+  _("Existing IDs: " + JSON.stringify(ids));
+  do_check_true(Object.keys(ids).length > 0);
+  s.wipe();
+  do_check_empty(s.getAllIDs());
+  run_next_test();
 });
 
 // TODO: test expiration on one machine propagating as a spurious delete to others.

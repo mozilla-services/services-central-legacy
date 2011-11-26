@@ -88,21 +88,27 @@ FaviconsEngine.prototype = {
   },
 
   /**
+   * Asynchronous version of reconciliation. Calls callback with (error, bool).
+   */
+  __reconcile: function __reconcile(item, cb) {
+    let store = this._store;
+    store.faviconExpiry(item.id, function (err, localExpiration) {
+      let result = !localExpiration ||
+                   (item.expiration && (localExpiration < item.expiration));
+      cb(err, result);
+    });
+  },
+
+  /**
    * Return true if the server data should be applied.
    * If we have a local version, and it's got an expiry time further in the
    * future, keep the local one.
    * TODO: switch to using a lastModified timestamp instead.
    */
   _reconcile: function _reconcile(item) {
-    let store = this._store;
     let cb = Async.makeSpinningCallback();
-    store.faviconExpiry(item.id, cb);
-
-    let localExpiration = cb.wait();
-    let result = !localExpiration ||
-                 (item.expiration && (localExpiration < item.expiration));
-    this._log.trace("FI: _reconcile(" + JSON.stringify(item) + ") => " + result);
-    return result;
+    this.__reconcile(item, cb);
+    return cb.wait();
   },
 
   /**
@@ -110,9 +116,14 @@ FaviconsEngine.prototype = {
    * Could do this through actual notifications, of course.
    */
   notifyFaviconChange: function notifyFaviconChange(faviconURL) {
-    this._log.debug("Got notifyFaviconChange notification for " +
+    // TODO: it would be nice if this were asynchronous, but for now we spin to
+    // make it easier to test.
+    let cb = Async.makeSpinningCallback();
+    this._store._faviconGUIDForURL(faviconURL, cb);
+    let guid = cb.wait();
+    this._log.debug("Got notifyFaviconChange notification for " + guid + ": " +
                     faviconURL);
-    this._tracker.addChangedFaviconURL(faviconURL);
+    this._tracker.addChangedID(guid);
   }
 }
 
@@ -129,15 +140,21 @@ function FaviconsStore(name) {
 }
 FaviconsStore.prototype = {
   __proto__: Store.prototype,
+  _itemExistsCols: ["id"],
+  _getAllIDsCols:  ["guid"],
+
+  _statements: {},
 
   // Utilities.
   _getStatement: function _getStatement(query) {
-    // TODO: statement reuse.
     // We use the history connection *because that's what the Favicon Service
     // uses*!
     let db = PlacesUtils.history.QueryInterface(Ci.nsPIPlacesDatabase)
                         .DBConnection;
-    return db.createAsyncStatement(query);
+    if (query in this._statements) {
+      return this._statements[query];
+    }
+    return this._statements[query] = db.createAsyncStatement(query);
   },
 
   // Shared bits for faviconExpiry and retrieveRecordByGUID callback objects.
@@ -181,7 +198,6 @@ FaviconsStore.prototype = {
    * Invokes the provided callback with the record when complete.
    */
   _populateRecordIcon: function _populateRecordIcon(record, callback) {
-    this._log.info("Invoking _populateRecordIcon for " + record.id + ".");
     if (!record) {
       return callback(new Error("record is " + record));
     }
@@ -215,25 +231,40 @@ FaviconsStore.prototype = {
   },
 
   _create: function _create(record, callback) {
-    // TODO: set ID.
-    this.storeFavicon(record.url,
+    this.storeFavicon(record.id,
+                      record.url,
                       record.icon,
                       record.expiration,
                       callback);
   },
 
   _remove: function _remove(record, callback) {
-    if (!record.id) {
-      callback(new Error("No GUID by which to remove..."));
-    }
-    this._log.trace("Removing favicon record " + record.id);
-
     // TODO: what happens if I remove a favicon from the DB that's still
     // referenced by places items?
-    const query = "DELETE FROM moz_favicons " +
-                  "WHERE url = :guid";               // TODO
-    let statement = this._getStatement(query);
+
+    let guid = record.id;
+    let url  = record.url;
+    if (!guid) {
+      callback(new Error("No GUID by which to remove..."));
+    }
+
+    let statement;
+    if (url) {
+      // We delete by URL as well as by GUID. This catches records that haven't
+      // yet been allocated a GUID.
+      let query = "DELETE FROM moz_favicons " +
+                  "WHERE guid = :guid " +
+                     "OR  url = :url";
+      statement = this._getStatement(query);
+      statement.params.url = url;
+    } else {
+      let query = "DELETE FROM moz_favicons " +
+                  "WHERE guid = :guid";
+      statement = this._getStatement(query);
+    }
     statement.params.guid = record.id;
+    this._log.trace("Removing favicon record " + record.id);
+
     let cb = {
       __proto__: this._singleResultCb,
       callback:  callback,
@@ -266,16 +297,16 @@ FaviconsStore.prototype = {
   },
 
   itemExists: function itemExists(id) {
+    if (!id) {
+      return false;   // TODO: throw instead?
+    }
+    this._log.trace("itemExists(" + id + ")");
     const query = "SELECT id FROM moz_favicons " +
-                  "WHERE url = :iconURL " +
+                  "WHERE guid = :guid " +
                   "LIMIT 1";
     let statement = this._getStatement(query);
-    statement.params.iconURL = id; // TODO: we use URL == id for now.
-    return !!Async.querySpinningly(statement, ["id"])[0];
-  },
-
-  retrieveRecordByGUID: function retrieveRecordByGUID(guid) {
-    return Async.callSpinningly(this, this._retrieveRecordByGUID.bind(this, guid));
+    statement.params.guid = id;
+    return !!Async.querySpinningly(statement, this._itemExistsCols)[0];
   },
 
   /**
@@ -284,7 +315,7 @@ FaviconsStore.prototype = {
    */
   _retrieveRecordByGUID: function _retrieveRecordByGUID(guid, callback) {
     const query = "SELECT id, url, expiration, mime_type FROM moz_favicons " +
-                  "WHERE url = :guid " +
+                  "WHERE guid = :guid " +
                   "LIMIT 1";
 
     let statement = this._getStatement(query);
@@ -298,7 +329,7 @@ FaviconsStore.prototype = {
           return null;
         }
         return {faviconid:  result.getResultByName("id"),
-                guid:       result.getResultByName("url"),  // TODO
+                guid:       guid,
                 url:        result.getResultByName("url"),
                 mime:       result.getResultByName("mime_type"),
                 expiration: result.getResultByName("expiration")};
@@ -307,21 +338,19 @@ FaviconsStore.prototype = {
     statement.executeAsync(cb);
   },
 
-
   changeItemID: function changeItemID(oldID, newID) {
     throw new Error("changeItemID is nonsensical for favicons.");
   },
 
   // TODO: sortindex...
   getAllIDs: function getAllIDs() {
-    const query = "SELECT DISTINCT url FROM moz_favicons";
+    const query = "SELECT DISTINCT guid FROM moz_favicons";
     let statement = this._getStatement(query);
-    let recs = Async.querySpinningly(statement, ["url"]);
+    let recs = Async.querySpinningly(statement, this._getAllIDsCols);
 
-    // TODO: GUID.
     let result = {};
     for each (let rec in recs) {
-      result[rec.url] = true;
+      result[rec.guid] = true;
     }
     return result;
   },
@@ -329,7 +358,7 @@ FaviconsStore.prototype = {
   wipe: function wipe() {
     const query = "DELETE FROM moz_favicons";
     let statement = this._getStatement(query);
-    Async.querySpinningly(statement, []);
+    Async.querySpinningly(statement, null);
   },
 
   /**
@@ -342,13 +371,13 @@ FaviconsStore.prototype = {
    * encountered during fetch.
    */
   faviconExpiry: function faviconExpiry(guid, callback) {
+    this._log.trace("Looking up expiry for " + guid);
     const query = "SELECT id, expiration FROM moz_favicons " +
-                  // TODO: guid not URL.
-                  "WHERE url = :iconURL " +
+                  "WHERE guid = :guid " +
                   "LIMIT 1";
 
     let statement = this._getStatement(query);
-    statement.params.iconURL = guid;
+    statement.params.guid = guid;
     let cb = {
       __proto__: this._singleResultCb,
       callback: callback,
@@ -360,12 +389,46 @@ FaviconsStore.prototype = {
     statement.executeAsync(cb);
   },
 
+  _faviconGUIDForURL: function _faviconGUIDForURL(url, callback) {
+    let spec = url.spec ? url.spec : url;
+    const query = "SELECT guid FROM moz_favicons " +
+                  "WHERE url = :url " +
+                  "LIMIT 1";
+    let statement = this._getStatement(query);
+    statement.params.url  = spec;
+    let cb = {
+      __proto__: this._singleResultCb,
+      callback: callback,
+      statement: statement,
+      transform: function (result) {
+        return result ? result.getResultByName("guid") : null;
+      }
+    };
+    statement.executeAsync(cb);
+  },
+
+  /**
+   * Set the GUID field for the provided favicon URL.
+   */
+  _setFaviconGUIDForURL: function _setFaviconGUIDForURL(url, guid, callback) {
+    const query = "UPDATE moz_favicons " +
+                  "SET guid = :guid WHERE url = :url";
+    let statement = this._getStatement(query);
+    statement.params.url  = url;
+    statement.params.guid = guid;
+    let cb = {
+      __proto__: this._singleResultCb,
+      callback: callback,
+      statement: statement
+    };
+    statement.executeAsync(cb);
+  },
+
   /**
    * Store the provided favicon data into the database.
    * At present this function is internally synchronous.
    */
-  // TODO: need to specify GUID.
-  storeFavicon: function storeFavicon(url, dataURL, expiration, callback) {
+  storeFavicon: function storeFavicon(guid, url, dataURL, expiration, callback) {
     try {
       // Yes, this is a synchronous call. We don't want to replicate all of the
       // work that nsFaviconService.cpp does; wait until mozIAsyncFavicons
@@ -373,6 +436,10 @@ FaviconsStore.prototype = {
       this._log.debug("Invoking Svc.Favicons.setFaviconDataFromDataURL(" +
                       [url, dataURL, expiration] + ");");
       Svc.Favicons.setFaviconDataFromDataURL(Utils.makeURI(url), dataURL, expiration);
+
+      // We haven't exposed the ID or GUID through the favicons API, so set
+      // these via a SQL backchannel.
+      this._setFaviconGUIDForURL(url, guid);
       callback();
     } catch (ex if ex.result === Components.results.NS_ERROR_FAILURE) {
       // Throws NS_ERROR_FAILURE if the favicon is overbloated and won't be saved
@@ -385,11 +452,5 @@ function FaviconsTracker(name) {
   Tracker.call(this, name);
 }
 FaviconsTracker.prototype = {
-  __proto__: Tracker.prototype,
-
-  addChangedFaviconURL: function addChangedFaviconURL(faviconURL) {
-    // TODO: GUID lookup.
-    let guid = faviconURL;
-    this.addChangedID(guid);
-  }
+  __proto__: Tracker.prototype
 }

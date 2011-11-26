@@ -25,12 +25,14 @@ function run_test() {
   run_next_test();
 }
 
+function no_add_test() {}
+
 /**
  * We really, really care about the notifications that we get from the
  * bookmarks and history systems. This test verifies that we get onItemChanged
  * when a bookmark favicon changes, without going through the engine itself.
  */
-add_test(function test_bookmark_notifications() {
+no_add_test(function test_bookmark_notifications() {
   _("Testing fundamental bookmark notifications.");
 
   let svc = Cc["@mozilla.org/browser/nav-bookmarks-service;1"]
@@ -92,6 +94,7 @@ add_test(function test_bookmark_addition() {
     "engine being notified.");
 
   let [bookmarksEngine, faviconsEngine] = prepareEngines();
+  let faviconsStore = faviconsEngine._store;
   Svc.Obs.notify("weave:engine:start-tracking");   // We skip usual startup...
 
   let oldNotifyFaviconChange = faviconsEngine.notifyFaviconChange;
@@ -104,8 +107,35 @@ add_test(function test_bookmark_addition() {
     bookmarksEngine._tracker.score = 0;
 
     _("Make sure the favicon is marked as changed.");
-    do_check_true(!!faviconsEngine.getChangedIDs()[faviconURL]);
-    run_next_test();
+
+    // We don't know the ID, because it's generated on insertion. Instead,
+    // verify that we have some changed IDs, and that one of them maps to the
+    // favicon URL that we know.
+    let changedIDs = Object.keys(faviconsEngine.getChangedIDs());
+    _("Changed IDs: " + changedIDs);
+    do_check_true(changedIDs.length > 0);
+
+    // Callback-driven walk of a list of GUIDs. Make sure that one of them is
+    // our favicon.
+    function checkGUIDs(guids) {
+      if (!guids.length) {
+        do_throw("No remaining GUIDs to check!");
+        return;
+      }
+      let guid = guids.pop();
+      faviconsStore._retrieveRecordByGUID(guid, function (err, record) {
+        if (err) {
+          do_throw("Got error retrieving record: " + Utils.exceptionStr());
+          return;
+        }
+        if (record.url == faviconURL) {
+          Utils.nextTick(run_next_test);
+          return;
+        }
+        checkGUIDs(guids);
+      });
+    }
+    checkGUIDs(changedIDs);
   };
 
   _("Adding a folder...");

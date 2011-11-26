@@ -46,6 +46,7 @@ const Cu = Components.utils;
 const Cr = Components.results;
 
 const HISTORY_TTL = 5184000; // 60 days
+const ATTRIBUTE_FAVICON = Ci.nsINavHistoryObserver.ATTRIBUTE_FAVICON;
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://services-sync/constants.js");
@@ -375,13 +376,27 @@ HistoryStore.prototype = {
   },
 
   createRecord: function createRecord(id, collection) {
-    let foo = this._findURLByGUID(id);
+    let page = this._findURLByGUID(id);
     let record = new HistoryRec(collection, id);
-    if (foo) {
-      record.histUri = foo.url;
-      record.title = foo.title;
-      record.sortindex = foo.frecency;
-      record.visits = this._getVisits(record.histUri);
+    if (page) {
+      record.histUri   = page.url;
+      record.title     = page.title;
+      record.sortindex = page.frecency;
+      record.visits    = this._getVisits(record.histUri);
+
+      // Populate favicon.
+      try {
+        // TODO: eventually this should use mozIAsyncFavicons. In order to do
+        // this, we must first create the universe. And implement this engine
+        // asynchronously. But not necessarily in that order.
+        // TODO: extend _findURLByGUID to fetch the favicon URL, too...
+        let uri = Utils.makeURI(page.url);
+        record.faviconURI = PlacesUtils.favicons.getFaviconForPage(uri);
+      } catch (ex) {
+        // Throws NS_ERROR_NOT_AVAILABLE when page not found or no favicon.
+        this._log.trace("Caught " + Utils.exceptionStr(ex) +
+                        " fetching favicon for " + id);
+      }
     } else {
       record.deleted = true;
     }
@@ -427,7 +442,6 @@ HistoryTracker.prototype = {
 
   onBeginUpdateBatch: function HT_onBeginUpdateBatch() {},
   onEndUpdateBatch: function HT_onEndUpdateBatch() {},
-  onPageChanged: function HT_onPageChanged() {},
   onTitleChanged: function HT_onTitleChanged() {},
   onDeleteVisits: function () {},
   onDeleteURI: function () {},
@@ -438,6 +452,28 @@ HistoryTracker.prototype = {
    */
   _upScoreXLarge: function HT__upScoreXLarge() {
     this.score += SCORE_INCREMENT_XLARGE;
+  },
+
+  onPageChanged: function onPageChanged(uri, attribute, value) {
+    if (attribute != ATTRIBUTE_FAVICON) {
+      return;
+    }
+    // Poke the favicons tracker to handle a (potentially) changed favicon.
+    //
+    // TODO: it would seem that this is a lot of redundant work: most changing
+    // history items will not be changing because the favicon has changed, but
+    // merely because they now have one, no?
+    //
+    // TODO: also track the changing page?
+    let faviconEngine = Engines.get("favicons");
+    if (!faviconEngine) {
+      this._log.warn("Unable to find favicons engine. Not notifying.");
+      return;
+    }
+    this._log.trace("Notifying favicons engine of history event.");
+    this._log.trace("URI is: " + uri.spec);
+    this._log.trace("Value is " + value);
+    faviconEngine.notifyFaviconChange(value);
   },
 
   onVisit: function HT_onVisit(uri, vid, time, session, referrer, trans, guid) {

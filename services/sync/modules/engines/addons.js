@@ -58,16 +58,13 @@
  *  - User enabling and disabling
  */
 
-// TODO need TPS unit tests
-// TODO need unit tests for installing (requires stubbed-out AMO)
-// TODO need test for incompatible add-ons
-
 "use strict";
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
 const Cu = Components.utils;
 
+Cu.import("resource://services-sync/addonsreconciler.js");
 Cu.import("resource://services-sync/engines.js");
 Cu.import("resource://services-sync/record.js");
 Cu.import("resource://services-sync/util.js");
@@ -82,7 +79,7 @@ const EXPORTED_SYMBOLS = ["AddonsEngine"];
 const ADDON_REPOSITORY_WHITELIST_HOSTNAME = "addons.mozilla.org";
 
 /**
- * AddonsRec represents the state of an add-on in an application.
+ * AddonRecord represents the state of an add-on in an application.
  *
  * Each add-on has its own record for each application ID it is installed
  * on.
@@ -101,7 +98,7 @@ const ADDON_REPOSITORY_WHITELIST_HOSTNAME = "addons.mozilla.org";
  *    The application ID this record is associated with. Clients currently
  *    ignore records from other application IDs.
  *
- *  userEnabled
+ *  enabled
  *    Boolean stating whether add-on is enabled or disabled by the user.
  *
  *  deleted
@@ -111,19 +108,19 @@ const ADDON_REPOSITORY_WHITELIST_HOSTNAME = "addons.mozilla.org";
  *    Boolean stating whether the add-on is provided by the AddonRepository
  *    API.
  */
-function AddonsRec(collection, id) {
+function AddonRecord(collection, id) {
   CryptoWrapper.call(this, collection, id);
 }
-AddonsRec.prototype = {
+AddonRecord.prototype = {
   __proto__: CryptoWrapper.prototype,
-  _logName: "Record.Addons"
+  _logName: "Record.Addon"
 };
 
-Utils.deferGetSet(AddonsRec, "cleartext", ["addonID",
-                                           "applicationID",
-                                           "userEnabled",
-                                           "deleted",
-                                           "isAddonRepository"]);
+Utils.deferGetSet(AddonRecord, "cleartext", ["addonID",
+                                             "applicationID",
+                                             "enabled",
+                                             "deleted",
+                                             "isAddonRepository"]);
 
 /**
  * The AddonsEngine handles synchronization of add-ons between clients.
@@ -145,19 +142,47 @@ Utils.deferGetSet(AddonsRec, "cleartext", ["addonID",
 function AddonsEngine() {
   SyncEngine.call(this, "Addons");
 
-  // This assumes that the engine is instantiated at most once in each app.
-  // If this ever changes, this will yield duplicate change records.
-  Utils.nextTick(function() {
-    this._tracker._trackStartupChanges(this._store);
-  }, this);
+  this._reconciler = new AddonsReconciler();
+
+  let cb = Async.makeSpinningCallback();
+  this._reconciler.loadState(null, cb);
+  cb.wait();
 }
 AddonsEngine.prototype = {
   __proto__:              SyncEngine.prototype,
   _storeObj:              AddonsStore,
   _trackerObj:            AddonsTracker,
-  _recordObj:             AddonsRec,
+  _recordObj:             AddonRecord,
   version:                1,
-  applyIncomingBatchSize: ADDONS_STORE_BATCH_SIZE
+
+  _reconciler: null,
+
+  _findDupe: function _findDupe(item) {
+    let id = item.addonID;
+
+    let addons = this._reconciler.addons();
+    if (!(id in addons)) {
+      return null;
+    }
+
+    let addon = addons[id];
+    if (addon.guid != item.id) {
+      return addon.guid;
+    }
+
+    return null;
+  },
+
+  _syncStartup: function _syncStartup() {
+    // We refresh state before calling parent because syncStartup in the parent
+    // looks for changed IDs, which is dependent on add-on state being up to
+    // date.
+    let cb = Async.makeSpinningCallback();
+    this._reconciler.refreshGlobalState(cb);
+    cb.wait();
+
+    SyncEngine._syncStartup.call(this);
+  },
 };
 
 /**
@@ -172,18 +197,58 @@ AddonsStore.prototype = {
   // Define the add-on types (.type) that we support.
   _syncableTypes: ["extension", "theme"],
 
+  get reconciler() {
+    return Engines.get("addons")._reconciler;
+  },
+
   /**
-   * Obtain the set of all known records IDs
+   * Provides core Store API to create/install an add-on from a record.
    */
-  getAllIDs: function getAllIDs() {
-    let addons = this._getAddons();
-    let allids = {};
+  create: function create(record) {
+    let cb = Async.makeSpinningCallback();
+    this.installAddonsFromIDs([record.addonID], cb);
+    cb.wait();
+  },
 
-    for (let i = 0; i < addons.length; i++) {
-      allids[addons[i].syncGUID] = true;
-    };
+  /**
+   * Provides core Store API to remove/uninstall an add-on from a record.
+   */
+  remove: function remove(record) {
+    let addon = this.getAddonByID(record.addonID);
+    if (!addon) {
+      return;
+    }
 
-    return allids;
+    this._log.debug("Uninstalling add-on: " + addon.id);
+    addon.uninstall();
+
+    // This may take a while, so we pause the event loop.
+    this._sleep(0);
+  },
+
+  update: function update(record) {
+    let addon = this.getAddonByID(record.addonID);
+    if (!addon) {
+      // TODO log error?
+      return;
+    }
+
+    if (record.enabled == addon.userDisabled) {
+      this._log.info("Updating userEnabled flag: " + addon.id);
+
+      addon.userDisabled = !record.enabled;
+      this._sleep(0);
+    }
+  },
+
+  itemExists: function itemExists(guid) {
+    let addon = this.reconciler.getAddonStateFromSyncGUID(guid);
+
+    if (!addon) {
+      return false;
+    }
+
+    return !!addon.installed;
   },
 
   /**
@@ -194,13 +259,13 @@ AddonsStore.prototype = {
    * @param collection
    *        Collection to add record to.
    *
-   * @return AddonsRec instance
+   * @return AddonRecord instance
    */
   createRecord: function createRecord(guid, collection) {
-    let record = new AddonsRec(collection, guid);
+    let record = new AddonRecord(collection, guid);
     record.applicationID = Services.appinfo.ID;
 
-    let addon = this._getAddonFromGUID(guid);
+    let addon = this.reconciler.getAddonStateFromSyncGUID(guid);
 
     // If we don't know about this GUID, we assume it has been deleted.
     if (!addon) {
@@ -209,8 +274,7 @@ AddonsStore.prototype = {
     }
 
     record.addonID           = addon.id;
-    record.applicationID     = Services.appinfo.ID;
-    record.userEnabled       = !addon.userDisabled;
+    record.enabled           = addon.enabled;
     record.deleted           = false;
 
     // This needs to be dynamic when add-ons don't come from AddonRepository.
@@ -225,17 +289,28 @@ AddonsStore.prototype = {
    * This implements a core API of the store.
    */
   changeItemID: function changeItemID(oldID, newID) {
-    let addon = this._getAddonFromGUID(oldID);
+    let addon = this.getAddonByGUID(oldID);
     if (addon) {
       addon.syncGUID = newID;
     }
   },
 
   /**
-   * Determine whether an add-on with the specified ID exists
+   * Obtain the set of all syncable add-on Sync GUIDs.
+   *
+   * This implements a core Store API.
    */
-  itemExists: function itemExists(syncGUID) {
-    return (this._getAddonFromGUID(syncGUID) != undefined);
+  getAllIDs: function getAllIDs() {
+    let ids = {};
+
+    let addons = this.reconciler.addons;
+    for each (let addon in addons) {
+      if (self._isSyncableAddon(addon)) {
+        ids[addon.guid] = true;
+      }
+    }
+
+    return ids;
   },
 
   /**
@@ -245,47 +320,29 @@ AddonsStore.prototype = {
    * error, it logs the error and keeps trying with other add-ons.
    */
   wipe: function wipe() {
-    let requiresRestart = [];
-
-    let addons = this._getAddons();
-    let length = addons.length;
-    for (let i = 0; i < length; i++) {
-      let addon = addons[i];
-
-      if (addon.operationsRequiringRestart & AddonManager.OP_NEEDS_RESTART_UNINSTALL) {
-        requiresRestart.push(addon.id);
+    for (let id in this.getAllIDs()) {
+      let addon = this.getAddonByID(id);
+      if (!addon) {
+        continue;
       }
 
       this._log.info("Uninstalling add-on as part of wipe: " + addon.id);
       Utils.catch(addon.uninstall)();
     }
-
-    if (requiresRestart.length) {
-      this._notify("addons:restart-required", requiresRestart);
-    }
   },
 
-  /**
-   * Obtain the locally-installed, visible add-ons in the current profile.
-   *
-   * @return Array of DBAddonInternal
-   */
-  _getAddons: function _getAddons() {
-    let cb = Async.makeSyncCallback();
-    AddonManager.getAllAddons(cb);
-    let result = Async.waitForSyncCallback(cb);
-
-    return result.filter(this.isAddonSyncable, this);
-  },
+  /***************************************************************************
+   * Functions below are unique to this store and not part of the Store API  *
+   ***************************************************************************/
 
   /**
    * Obtain an add-on from its database ID
    *
    * @param id
-   *        Add-on ID (from the extensions DB)
-   * @return DBAddonInternal or undefined if not found
+   *        Add-on ID
+   * @return Addon or undefined if not found
    */
-  _getAddonFromId: function _getAddonFromId(id) {
+  getAddonByID: function getAddonByID(id) {
     let cb = Async.makeSyncCallback();
     AddonManager.getAddonByID(id, cb);
     return Async.waitForSyncCallback(cb);
@@ -298,7 +355,7 @@ AddonsStore.prototype = {
    *         Add-on Sync GUID
    * @return DBAddonInternal or null
    */
-  _getAddonFromGUID: function _getAddonFromGUID(guid) {
+  getAddonByGUID: function getAddonByGUID(guid) {
     let cb = Async.makeSyncCallback();
     AddonManager.getAddonBySyncGUID(guid, cb);
     return Async.waitForSyncCallback(cb);
@@ -474,422 +531,37 @@ AddonsStore.prototype = {
         cb("AddonRepository search failed", null);
       }.bind(this)
     });
-  },
-
-  /**
-   * Applies all incoming record changes to the local client.
-   *
-   * The logic for applying incoming records is split up into two phases:
-   *
-   *  1. Collect all needed changes for incoming records
-   *  2. Apply them
-   *
-   * It is written this way to make the logic clearer and to make testing
-   * easier.
-   *
-   * @param records
-   *        Array of AddonsRec to apply.
-   */
-  applyIncomingBatch: function applyIncomingBatch(records) {
-    let addons = {};
-    this._getAddons().forEach(function(addon) {
-      addons[addon.id] = addon;
-    });
-
-    let changes = this._assembleChangesFromRecords(records, addons);
-    return this._applyChanges(changes, addons);
-  },
-
-  /**
-   * Assembles changes to be applied for a set of records.
-   *
-   * This takes an array of records (presumably those passed into
-   * applyIncomingBatch) and ascertains what changes need to happen.
-   *
-   * @param  records
-   *         Array of records to process
-   * @param  addons
-   *         Array of locally-installed add-ons. If not defined, will be
-   *         populated automatically.
-   * @return Object describing changes that need to be applied
-   */
-  _assembleChangesFromRecords:
-    function _assembleChangesFromRecords(records, addons) {
-
-    if (addons === undefined) {
-      addons = {};
-      this._getAddons().forEach(function(addon) {
-        addons[addon.id] = addon;
-      });
-    }
-
-    // Some of these are used as sets (because no set type).
-    let uninstall_ids = {}; // add-on ID -> true
-    let updated_guids = {}; // add-on ID -> new GUID
-    let install_ids   = {}; // add-on ID -> GUID
-    let enable_ids    = {}; // add-on ID -> true
-    let disable_ids   = {}; // add-on ID -> true
-
-    // Examine each incoming record and record actions that need to be
-    // taken. It is important that this actual loop not do anything too
-    // expensive, as it executes synchronously to the event loop.
-    for each (let record in records) {
-      let guid = record.id;
-      let id = record.addonID;
-
-      let addon = addons[id];
-
-      // We always overwrite the local add-on GUID with the remote one
-      // if they are different. Local GUIDs should exist, as they are
-      // created automagically when add-ons are inserted into the database.
-      if (addon && addon.syncGUID != guid) {
-        updated_guids[id] = guid;
-      }
-
-      // Now move on to real add-on management tasks.
-
-      // Ignore records for other application types because we don't care
-      // about them at this time.
-      if (record.applicationID != Services.appinfo.ID) {
-        continue;
-      }
-
-      // Remote deletion results in local deletion.
-      if (record.deleted) {
-        if (addon) {
-          uninstall_ids[id] = true;
-        } else {
-          this._log.debug("Addon " + id + " is not installed locally. "
-                          + "Ignoring delete request");
-        }
-
-        continue;
-      }
-
-      // If we don't have this add-on locally, we mark it for install.
-      if (!addon) {
-        this._log.debug("Marking add-on for install: " + id);
-        install_ids[id] = guid;
-        continue;
-      }
-
-      // Catch enable/disable actions.
-      if (!record.userEnabled && !addon.userDisabled) {
-        this._log.debug("Marking add-on for disabling: " + id);
-        disable_ids[id] = true;
-        continue;
-      }
-
-      if (record.userEnabled && addon.userDisabled) {
-        this._log.debug("Marking add-on for enabling: " + id);
-        enable_ids[id] = true;
-        continue;
-      }
-
-      // If we get here, it should mean that the modified time and only the
-      // modified time was the thing that changed. If it isn't, we have a bug.
-    }
-
-    // After we've collected all changes, we reconcile this list to eliminate
-    // redundancies.
-
-    // Uninstall requests take priority over all others.
-    for (let id in uninstall_ids) {
-      delete install_ids[id];
-      delete enable_ids[id];
-      delete disable_ids[id];
-      delete updated_guids[id];
-    }
-
-    return {
-      guid:      updated_guids,
-      uninstall: uninstall_ids,
-      install:   install_ids,
-      enable:    enable_ids,
-      disable:   disable_ids
-    };
-  },
-
-  /**
-   * Applies assembled record changes.
-   *
-   * This function takes the output of _assembleChangesFromRecords() and turns
-   * it into application changes.
-   *
-   * @param  changes
-   *         Object describing changes that need to be made
-   * @param  addons
-   *         Array of locally-installed add-ons. If not defined, will be
-   *         populated automatically.
-   *         addons
-   */
-  _applyChanges: function _applyChanges(changes, addons) {
-    if (addons === undefined) {
-      addons = {};
-      this._getAddons().forEach(function(addon) {
-        addons[addon.id] = addon;
-      });
-    }
-
-    // _assembleChangesFromRecords() ensures that all requested changes aren't
-    // in a state of conflict. So, it should be safe to attempt any change
-    // operation in any order. That being said, we start with the changes least
-    // likely to cause errors just so we error on the side of getting as much
-    // done as possible.
-    //
-    // Addon APIs are not asynchronous. Since we can't work around the issue,
-    // we spin the event loop after each operation.
-
-    // GUID changes are pretty cheap, so we start with them.
-    // Unfortunately, their API is synchronous.
-    for (let [id, guid] in Iterator(changes.guid)) {
-      let addon = addons[id];
-      this._log.debug("Updating GUID: " + addon.syncGUID + " -> " + guid);
-      addon.syncGUID = guid;
-      this._sleep(0);
-    }
-
-    let requiresRestart = {};
-
-    // Enabling and disabling is the next least-likely to fail.
-    for (let id in changes.enable) {
-      let addon = addons[id];
-
-      if (addon.operationsRequiringRestart & AddonManager.OP_NEEDS_RESTART_ENABLE) {
-        requiresRestart[id] = true;
-      }
-
-      addon.userDisabled = false;
-      this._sleep(0);
-    }
-
-    for (let id in changes.disable) {
-      let addon = addons[id];
-
-      if (addon.operationsRequiringRestart & AddonManager.OP_NEEDS_RESTART_DISABLE) {
-        requiresRestart[id] = true;
-      }
-
-      addon.userDisabled = true;
-      this._sleep(0);
-    }
-
-    // Uninstall removed add-ons.
-    for (let id in changes.uninstall) {
-      let addon = addons[id];
-
-      this._log.debug("Uninstalling addon: " + addon.id);
-
-      if (addon.operationsRequiringRestart & AddonManager.OP_NEEDS_RESTART_UNINSTALL) {
-        requiresRestart[id] = true;
-      }
-
-      addon.uninstall();
-      this._sleep(0);
-    }
-
-    let failedIDs   = [];
-    let failedGUIDs = [];
-
-    // Finally, we install add-ons.
-    // We will eventually want to install add-ons that are not on AMO. Until
-    // then, we search for an add-on using its registered channels and hope
-    // to find something.
-    let install_ids = Object.keys(changes.install);
-    if (install_ids.length) {
-
-      let cb = Async.makeSpinningCallback();
-      this.installAddonsFromIDs(install_ids, cb);
-      cb.wait();
-    }
-
-    if (requiresRestart.length) {
-      this._notify("addons:restart-required", Object.keys(requiresRestart));
-    }
-
-    return failedGUIDs;
   }
 };
 
-
-/**
- * The add-ons tracker tracks changes to add-ons as reported by AddonManager
- * listeners. It is complicated due to the lack of a getChangesSince()
- * AddonManager API.
- *
- * There are 2 classes of listeners in the AddonManager: AddonListener and
- * InstallListener. The class is a listener for both (member functions just
- * get called directly).
- *
- * When an add-on is installed, listeners are called in the following order:
- *
- *  IL.onInstallStarted, AL.onInstalling, IL.onInstallEnded, AL.onInstalled
- *
- * For non-restartless add-ons, an application restart may occur between
- * IL.onInstallEnded and AL.onInstalled. Unfortunately, Sync likely will
- * not be lodaded when AL.onInstalled is fired shortly after application
- * start, so it won't see this event. Therefore, for add-ons requiring a
- * restart, Sync treats the IL.onInstallEnded event as good enough to
- * denote an install. For restartless add-ons, Sync assumes AL.onInstalled
- * will follow shortly after IL.onInstallEnded and thus is ignores
- * IL.onInstallEnded.
- *
- * For uninstalls, we see AL.onUninstalling then AL.onUninstalled. Like
- * installs, the events could be separated by an application restart and Sync
- * may not see the onUninstalled event. Again, if we require a restart, we
- * react to onUninstalling. If not, we assume we'll get onUninstalled.
- *
- * Enabling and disabling work by sending:
- *
- *   AL.onEnabling, AL.onEnabled
- *   AL.onDisabling, AL.onDisabled
- *
- * Again, they may be separated by a restart, so we heed the requiresRestart
- * flag.
- *
- * Actions can be undone. All undoable actions notify the same
- * AL.onOperationCancelled event. We treat this event like any other.
- *
- * Restartless add-ons have interesting behavior during uninstall. These
- * add-ons are first disabled then they are actually uninstalled. So, the
- * tracker will see onDisabling and onDisabled. The onUninstalling and
- * onUninstalled events only come after the Addon Manager is closed or another
- * view is switched to.
- *
- * To further complicate things, the tracker will see some notifications before
- * changes hit the database. In the case of non-restartless add-ons,
- * IL.onInstallEnded is the observed event and this is called *before* the
- * add-on has hit the database. In the case of restartless add-ons,
- * AL.onInstalled is fired after the database is populated. What this means
- * is the tracker knows a particular ID has changed, but when a sync comes
- * along and the store calls AddonManager.getAddonBySyncGUID(), that may fail
- * to retrieve anything because the add-on hasn't been inserted into the
- * database yet! If we were to do nothing, the sync engine would treat this
- * as a deleted record and the install event would never make it to a record.
- *
- * Fortunately, the tracker knows what the state should be based on the events
- * it has seen. The tracker maintains state on syncGUIDs that should eventually
- * be in a certain state. During a sync, the tracker is consulted. The tracker
- * can effectively override the AddonManager, saying "Don't trust data for this
- * add-on. But, if the AddonManager and I agree, you can trust the
- * AddonManager."
- */
 function AddonsTracker(name) {
   Tracker.call(this, name);
 }
 AddonsTracker.prototype = {
   __proto__: Tracker.prototype,
 
-  /**
-   * Obtains changes made during startup and adds them to the tracker.
-   *
-   * This is typically called when the engine first starts upon application
-   * start-up. It only needs to be called once during the lifetime of the
-   * application.
-   *
-   * It is worth explicitly calling out that startup changes are changes made
-   * to the Addons Manager performed at application startup because the
-   * encountered state differed from what was in the providers. Startup changes
-   * are not changes to non-restartless add-ons, for example. This is a subtle
-   * but very important distinction!
-   */
-  _trackStartupChanges: function _trackStartupChanges(store) {
-    this._log.debug("Obtaining add-ons modified on application startup");
-
-    let changes = AddonManager.getAllStartupChanges();
-
-    if (!Object.keys(changes).length) {
-      this._log.info("No add-on changes on application startup detected.");
-      return;
-    }
-
-    let changedIDs = {};
-    for (let [type, ids] in Iterator(changes)) {
-      // TODO handle uninstall case properly. Currently, we don't have the
-      // syncGUID of uninstalled add-ons. Bug 702819 tracks.
-      if (type == AddonManager.STARTUP_CHANGE_UNINSTALLED) {
-        for each (let id in ids) {
-          this._log.warn("Unable to track uninstall: " + id);
-        }
-
-        continue;
-      }
-
-      for each (let id in ids) {
-        changedIDs[id] = true;
-      }
-    }
-
-    let updated = false;
-
-    let cb = Async.makeSyncCallback();
-    AddonManager.getAddonsByIDs(Object.keys(changedIDs), cb);
-    let addons = Async.waitForSyncCallback(cb);
-
-    for each (let addon in addons) {
-      delete changedIDs[addon.id];
-
-      if (!store.isAddonSyncable(addon)) {
-        this._log.debug(
-          "Ignoring startup add-on change for unsyncable add-on: " + addon.id);
-      } else {
-        this._log.debug("Tracking add-on change from startup: " + addon.id);
-        this.addChangedID(addon.syncGUID);
-        updated = true;
-      }
-    }
-
-    // We shouldn't have any IDs left. If we do, then something weird is going
-    // on. That corner case should be addressed before we get here.
-    for each (let id in Object.keys(changedIDs)) {
-      this._log.error("Addon changed on startup not present in Addon " +
-                      "Manager: " + id);
-    }
-
-    if (updated) {
-      this.score += SCORE_INCREMENT_XLARGE;
-    }
+  get reconciler() {
+    return Engines.get("addons")._reconciler;
   },
 
   /**
-   * This is the callback that is indirectly invoked by the AddonManager
-   * listeners. It is called by one of the listener proxy functions below.
+   * This callback is executed whenever the AddonsReconciler sends out a change
+   * notification. See AddonsReconciler.addChangeListener().
    */
-  _trackAddon: function _trackAddon(addon, action, requiresRestart) {
-    // Since this is called as an observer, we explicitly trap errors and
-    // log them to ourselves so we don't see errors reported elsewhere.
-    try {
-      // This would be checked in addChangedID(), but we short circuit faster
-      // and avoid performing needless work.
-      if (this.ignoreAll) {
-        this._log.debug(action + " of " + addon.id + " ignored because " +
-                        "ignoreall is set.");
-        return;
-      }
+  changeHandler: function changeHandler(date, change, addon) {
+    this.addChangedID(addon.guid, date.getTime() / 1000);
+    this.score += SCORE_INCREMENT_XLARGE;
+  },
 
-      this._log.debug("Tracked change " + action + " to " + addon.id);
+  observe: function(subject, topic, data) {
+    switch (topic) {
+      case "weave:engine:start-tracking":
+        this.reconciler.addChangeListener(this.changeHandler);
+        break;
 
-      // We assume that every event for non-restartless add-ons is
-      // followed by another event and that this follow-up event is the most
-      // appropriate to react to. Currently we ignore onEnabling, onDisabling,
-      // and onUninstalling for non-restartless add-ons.
-      if (requiresRestart != undefined && !requiresRestart) {
-        this._log.debug("Ignoring notification because restartless");
-        return;
-      }
-
-      let store = Engines.get("addons")._store;
-      if (!store.isAddonSyncable(addon)) {
-        this._log.debug(
-          "Ignoring add-on change because it isn't syncable: " + addon.id);
-        return;
-      }
-
-      this.addChangedID(addon.syncGUID);
-      this.score += SCORE_INCREMENT_XLARGE;
-    }
-    catch (ex) {
-      this._log.warn("Exception: " + Utils.exceptionStr(ex));
+      case "weave:engine:stop-tracking":
+        this.reconciler.removeChangeListener(this.changeHandler);
+        break;
     }
   }
 };

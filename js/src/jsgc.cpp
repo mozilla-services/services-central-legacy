@@ -1632,7 +1632,7 @@ RunLastDitchGC(JSContext *cx)
 inline bool
 IsGCAllowed(JSContext *cx)
 {
-    return !JS_ON_TRACE(cx) && !JS_THREAD_DATA(cx)->waiveGCQuota;
+    return !JS_THREAD_DATA(cx)->waiveGCQuota;
 }
 
 /* static */ void *
@@ -2034,6 +2034,18 @@ MarkContext(JSTracer *trc, JSContext *acx)
     MarkRoot(trc, acx->iterValue, "iterValue");
 }
 
+void
+MarkWeakReferences(GCMarker *gcmarker)
+{
+    JS_ASSERT(gcmarker->isMarkStackEmpty());
+    while (WatchpointMap::markAllIteratively(gcmarker) ||
+           WeakMapBase::markAllIteratively(gcmarker) ||
+           Debugger::markAllIteratively(gcmarker)) {
+        gcmarker->drainMarkStack();
+    }
+    JS_ASSERT(gcmarker->isMarkStackEmpty());
+}
+
 JS_REQUIRES_STACK void
 MarkRuntime(JSTracer *trc)
 {
@@ -2058,11 +2070,6 @@ MarkRuntime(JSTracer *trc)
     for (GCCompartmentsIter c(rt); !c.done(); c.next()) {
         if (c->activeAnalysis)
             c->markTypes(trc);
-
-#ifdef JS_TRACER
-        if (c->hasTraceMonitor())
-            c->traceMonitor()->mark(trc);
-#endif
     }
 
     for (ThreadDataIter i(rt); !i.empty(); i.popFront())
@@ -2519,22 +2526,17 @@ EndMarkPhase(JSContext *cx, GCMarker *gcmarker, JSGCInvocationKind gckind)
 {
     JSRuntime *rt = cx->runtime;
 
-    gcmarker->setMarkColor(GRAY);
-    if (JSTraceDataOp op = rt->gcGrayRootsTraceOp)
-        (*op)(gcmarker, rt->gcGrayRootsData);
-    gcmarker->drainMarkStack();
-    gcmarker->setMarkColor(BLACK);
+    JS_ASSERT(gcmarker->isMarkStackEmpty());
+    MarkWeakReferences(gcmarker);
 
-    /*
-     * Mark weak roots.
-     */
-    while (WatchpointMap::markAllIteratively(gcmarker) ||
-           WeakMapBase::markAllIteratively(gcmarker) ||
-           Debugger::markAllIteratively(gcmarker))
-    {
+    if (JSTraceDataOp op = rt->gcGrayRootsTraceOp) {
+        gcmarker->setMarkColorGray();
+        (*op)(gcmarker, rt->gcGrayRootsData);
         gcmarker->drainMarkStack();
+        MarkWeakReferences(gcmarker);
     }
 
+    JS_ASSERT(gcmarker->isMarkStackEmpty());
     rt->gcIncrementalTracer = NULL;
 
     rt->gcStats.endPhase(gcstats::PHASE_MARK);
@@ -2678,6 +2680,9 @@ MarkAndSweep(JSContext *cx, JSGCInvocationKind gckind)
     rt->gcIsNeeded = false;
     rt->gcTriggerCompartment = NULL;
 
+    /* Reset weak map list. */
+    rt->gcWeakMapList = NULL;
+
     /* Reset malloc counter. */
     rt->resetGCMallocBytes();
 
@@ -2729,21 +2734,7 @@ LetOtherGCFinish(JSContext *cx)
 
     size_t requestDebit = cx->thread()->data.requestDepth ? 1 : 0;
     JS_ASSERT(requestDebit <= rt->requestCount);
-#ifdef JS_TRACER
-    JS_ASSERT_IF(requestDebit == 0, !JS_ON_TRACE(cx));
-#endif
     if (requestDebit != 0) {
-#ifdef JS_TRACER
-        if (JS_ON_TRACE(cx)) {
-            /*
-             * Leave trace before we decrease rt->requestCount and notify the
-             * GC. Otherwise the GC may start immediately after we unlock while
-             * this thread is still on trace.
-             */
-            AutoUnlockGC unlock(rt);
-            LeaveTrace(cx);
-        }
-#endif
         rt->requestCount -= requestDebit;
         if (rt->requestCount == 0)
             JS_NOTIFY_REQUEST_DONE(rt);
@@ -2954,7 +2945,6 @@ GCCycle(JSContext *cx, JSCompartment *comp, JSGCInvocationKind gckind)
     rt->gcRegenShapes = false;
     rt->setGCLastBytes(rt->gcBytes, gckind);
     rt->gcCurrentCompartment = NULL;
-    rt->gcWeakMapList = NULL;
 
     for (CompartmentsIter c(rt); !c.done(); c.next())
         c->setGCLastBytes(c->gcBytes, gckind);
@@ -2974,11 +2964,6 @@ js_GC(JSContext *cx, JSCompartment *comp, JSGCInvocationKind gckind, gcstats::Re
      */
     if (rt->state != JSRTS_UP && gckind != GC_LAST_CONTEXT)
         return;
-
-    if (JS_ON_TRACE(cx)) {
-        JS_ASSERT(gckind != GC_LAST_CONTEXT);
-        return;
-    }
 
 #ifdef JS_GC_ZEAL
     struct AutoVerifyBarriers {
@@ -3051,7 +3036,6 @@ void
 TraceRuntime(JSTracer *trc)
 {
     JS_ASSERT(!IS_GC_MARKING_TRACER(trc));
-    LeaveTrace(trc->context);
 
 #ifdef JS_THREADSAFE
     {
@@ -3117,7 +3101,6 @@ IterateCompartmentsArenasCells(JSContext *cx, void *data,
                                IterateCellCallback cellCallback)
 {
     CHECK_REQUEST(cx);
-    LeaveTrace(cx);
 
     JSRuntime *rt = cx->runtime;
     JS_ASSERT(!rt->gcRunning);
@@ -3148,7 +3131,6 @@ IterateChunks(JSContext *cx, void *data, IterateChunkCallback chunkCallback)
 {
     /* :XXX: Any way to common this preamble with IterateCompartmentsArenasCells? */
     CHECK_REQUEST(cx);
-    LeaveTrace(cx);
 
     JSRuntime *rt = cx->runtime;
     JS_ASSERT(!rt->gcRunning);
@@ -3170,8 +3152,6 @@ IterateCells(JSContext *cx, JSCompartment *compartment, AllocKind thingKind,
 {
     /* :XXX: Any way to common this preamble with IterateCompartmentsArenasCells? */
     CHECK_REQUEST(cx);
-
-    LeaveTrace(cx);
 
     JSRuntime *rt = cx->runtime;
     JS_ASSERT(!rt->gcRunning);
@@ -3390,8 +3370,6 @@ StartVerifyBarriers(JSContext *cx)
     if (rt->gcVerifyData)
         return;
 
-    LeaveTrace(cx);
-
     AutoLockGC lock(rt);
     AutoGCSession gcsession(cx);
 
@@ -3517,8 +3495,6 @@ CheckEdge(JSTracer *jstrc, void *thing, JSGCTraceKind kind)
 static void
 EndVerifyBarriers(JSContext *cx)
 {
-    LeaveTrace(cx);
-
     JSRuntime *rt = cx->runtime;
 
     AutoLockGC lock(rt);

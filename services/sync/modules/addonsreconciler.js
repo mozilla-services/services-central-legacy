@@ -203,15 +203,20 @@ AddonsReconciler.prototype = {
   loadState: function loadState(path, callback) {
     let file = path || DEFAULT_STATE_FILE;
     Utils.jsonLoad(file, this, function(json) {
+      this._addons = {};
+      this._changes = [];
+
       if (json != undefined) {
         this._addons = json.addons;
-        this._changes = json.changes;
+
+        for each (let change in json.changes) {
+          this._changes.push([new Date(change[0]), change[1], change[2]]);
+        }
+
         if (callback) {
           callback(false, true);
         }
       } else {
-        this._addons = {};
-        this._changes = [];
         if (callback) {
           callback(false, false);
         }
@@ -230,7 +235,10 @@ AddonsReconciler.prototype = {
    *         passed to callback.
    */
   saveState: function saveState(path, callback) {
-    let state = {addons: this._addons, changes: this._changes};
+    let state = {addons: this._addons, changes: []};
+    for each (let change in this._changes) {
+      state.changes.push([change[0].getTime(), change[1], change[2]]);
+    }
 
     Utils.jsonSave(path || DEFAULT_STATE_FILE, this, state, callback);
   },
@@ -346,7 +354,7 @@ AddonsReconciler.prototype = {
 
   addChange: function addChange(date, change, addon) {
     this._log.info("Change recorded for " + addon.id);
-    this._changes.push([date.getTime(), change, addon.id]);
+    this._changes.push([date, change, addon.id]);
 
     for each (let listener in this._listeners) {
       try {
@@ -368,13 +376,11 @@ AddonsReconciler.prototype = {
    *   change_type - One of CHANGE_* constants.
    */
   getChangesSinceDate: function getChangesSinceDate(date) {
-    let time = date.getTime();
-
     let length = this._changes.length;
     for (let i = 0; i < length; i++) {
       let entry = this._changes[i];
 
-      if (entry[0] < time) {
+      if (entry[0] < date) {
         continue;
       }
 
@@ -391,12 +397,10 @@ AddonsReconciler.prototype = {
    *        Entries older than this Date will be removed.
    */
   pruneChangesBeforeDate: function pruneChangesBeforeDate(date) {
-    let time = date.getTime();
-
     while (this._changes.length > 0) {
       let entry = this._changes[0];
 
-      if (entry[0] < time) {
+      if (entry[0] < date) {
         delete this._changes[0];
       } else {
         return;

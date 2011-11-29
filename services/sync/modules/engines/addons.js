@@ -150,7 +150,7 @@ AddonsEngine.prototype = {
   version:                1,
 
   _reconciler: null,
-  _reconciler_state_loaded: false,
+  _reconcilerStateLoaded: false,
 
   _findDupe: function _findDupe(item) {
     let id = item.addonID;
@@ -168,36 +168,55 @@ AddonsEngine.prototype = {
     return null;
   },
 
+  /**
+   * We override getChangedIDs to pull in tracker changes plus changes from the
+   * reconciler log.
+   */
+  getChangedIDs: function getChangedIDs() {
+    let changes = {};
+    for (let [id, modified] in Iterator(this._tracker.changedIDs)) {
+      changes[id] = modified;
+    }
+
+    let lastSyncDate = new Date(this.lastSync * 1000);
+    let reconcilerChanges = this._reconciler.getChangesSinceDate(lastSyncDate);
+    this._log.debug("Reconciler changes: " + JSON.stringify(reconcilerChanges));
+    let addons = this._reconciler.addons;
+    for each (let change in reconcilerChanges) {
+      let changeTime = change[0];
+      let id = change[2];
+
+      if (!(id in addons)) {
+        continue;
+      }
+
+      // Keep newest modified time.
+      if (id in changes && changeTime < changes[id]) {
+          continue;
+      }
+
+      this._log.debug("Adding changed add-on from changes log: " + id);
+      let addon = addons[id];
+      changes[addon.guid] = changeTime.getTime() / 1000;
+    }
+
+    return changes;
+  },
+
   _syncStartup: function _syncStartup() {
     // We refresh state before calling parent because syncStartup in the parent
     // looks for changed IDs, which is dependent on add-on state being up to
     // date.
-    this._log.debug("in syncStartup()");
-    if (!this._reconciler_state_loaded) {
+    if (!this._reconcilerStateLoaded) {
       let cb = Async.makeSpinningCallback();
       this._reconciler.loadState(null, cb);
       cb.wait();
-      this._reconciler_state_loaded = true;
+      this._reconcilerStateLoaded = true;
     }
 
     let cb = Async.makeSpinningCallback();
     this._reconciler.refreshGlobalState(cb);
     cb.wait();
-
-    // Manually update tracker with changes since last sync.
-    let lastDate = new Date(this.lastSync * 1000);
-    let changes = this._reconciler.getChangesSinceDate(lastDate);
-    let addons = this._reconciler.addons;
-    for each (let change in changes) {
-      let id = change[2];
-      if (!(id in addons)) {
-        continue;
-      }
-
-      this._log.debug("Adding changed add-on from changes log: " + id);
-      let addon = addons[id];
-      this._tracker.addChangedID(addon.guid, new Date(change[0]));
-    }
 
     SyncEngine.prototype._syncStartup.call(this);
   },

@@ -76,6 +76,9 @@ const EXPORTED_SYMBOLS = ["AddonsEngine"];
 
 const ADDON_REPOSITORY_WHITELIST_HOSTNAME = "addons.mozilla.org";
 
+// 7 days in milliseconds.
+const PRUNE_ADDON_CHANGES_THRESHOLD = 60 * 60 * 24 * 7 * 1000;
+
 /**
  * AddonRecord represents the state of an add-on in an application.
  *
@@ -117,7 +120,6 @@ AddonRecord.prototype = {
 Utils.deferGetSet(AddonRecord, "cleartext", ["addonID",
                                              "applicationID",
                                              "enabled",
-                                             "deleted",
                                              "isAddonRepository"]);
 
 /**
@@ -180,7 +182,6 @@ AddonsEngine.prototype = {
 
     let lastSyncDate = new Date(this.lastSync * 1000);
     let reconcilerChanges = this._reconciler.getChangesSinceDate(lastSyncDate);
-    this._log.debug("Reconciler changes: " + JSON.stringify(reconcilerChanges));
     let addons = this._reconciler.addons;
     for each (let change in reconcilerChanges) {
       let changeTime = change[0];
@@ -203,6 +204,10 @@ AddonsEngine.prototype = {
     return changes;
   },
 
+  /**
+   * Override start of sync function to refresh add-on global state and pull
+   * in any missing changes.
+   */
   _syncStartup: function _syncStartup() {
     // We refresh state before calling parent because syncStartup in the parent
     // looks for changed IDs, which is dependent on add-on state being up to
@@ -220,6 +225,39 @@ AddonsEngine.prototype = {
 
     SyncEngine.prototype._syncStartup.call(this);
   },
+
+  /**
+   * Override applyIncoming to filter out records we can't handle.
+   */
+  applyIncoming: function applyIncoming(record) {
+    // Ignore records not belonging to our application ID because that is the
+    // current policy.
+    if (record.applicationID != Services.appinfo.ID) {
+      this._log.info("Ignoring incoming record from other App ID: " +
+                      record.id);
+      return;
+    }
+
+    // Ignore records that aren't from the official add-on repository, as that
+    // is our current policy.
+    if (!record.isAddonRepository) {
+      this._log.info("Ignoring incoming record not from addon repository: " +
+                     record.id);
+      return;
+    }
+
+    SyncEngine.prototype.applyIncoming.call(this, record);
+  },
+
+  /**
+   * Override end of sync to perform a little housekeeping on the reconciler.
+   */
+  _syncCleanup: function _syncCleanup() {
+    let ms = 1000 * this.lastSync - PRUNE_ADDON_CHANGES_THRESHOLD;
+    this._reconciler.pruneChangesBeforeDate(new Date(ms));
+
+    SyncEngine.prototype._syncCleanup.call(this);
+  }
 };
 
 /**
@@ -312,7 +350,6 @@ AddonsStore.prototype = {
 
     record.addonID           = addon.id;
     record.enabled           = addon.enabled;
-    record.deleted           = false;
 
     // This needs to be dynamic when add-ons don't come from AddonRepository.
     record.isAddonRepository = true;

@@ -359,8 +359,9 @@ AddonsStore.prototype = {
 
     let addon = this.reconciler.getAddonStateFromSyncGUID(guid);
 
-    // If we don't know about this GUID, we assume it has been deleted.
-    if (!addon) {
+    // If we don't know about this GUID or if it has been uninstalled, we mark
+    // the record as deleted.
+    if (!addon || !addon.installed) {
       record.deleted = true;
       return record;
     }
@@ -381,9 +382,13 @@ AddonsStore.prototype = {
    */
   changeItemID: function changeItemID(oldID, newID) {
     let addon = this.getAddonByGUID(oldID);
-    if (addon) {
-      addon.syncGUID = newID;
+    if (!addon) {
+      this._log.debug("Cannot change item ID because old add-on not present: " +
+                      oldID);
+      return;
     }
+
+    addon.syncGUID = newID;
 
     let state = this.reconciler.addons[addon.id];
     if (state) {

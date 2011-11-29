@@ -345,6 +345,10 @@ AddonsReconciler.prototype = {
 
     let record = this._addons[id];
 
+    if (!record.installed) {
+      record.installed = true;
+    }
+
     if (record.enabled != enabled) {
       record.enabled = enabled;
       let change = enabled ? CHANGE_ENABLED : CHANGE_DISABLED;
@@ -472,8 +476,17 @@ AddonsReconciler.prototype = {
         case "onDisabling":
         case "onDisabled":
         case "onInstalled":
+        case "onOperationCancelled":
           this.rectifyStateFromAddon(addon);
           break;
+
+        case "onUninstalling":
+        case "onUninstalled":
+          let id = addon.id;
+          if (id in this._addons) {
+            this._addons[id].installed = false;
+            this.addChange(new Date(), CHANGE_UNINSTALLED, addon);
+          }
       }
 
       this.saveState(null, null);

@@ -151,9 +151,12 @@ AddonsEngine.prototype = {
   _recordObj:             AddonRecord,
   version:                1,
 
-  _reconciler: null,
+  _reconciler:            null,
   _reconcilerStateLoaded: false,
 
+  /**
+   * Override parent method to find add-ons by ID, not Sync GUID.
+   */
   _findDupe: function _findDupe(item) {
     let id = item.addonID;
 
@@ -212,16 +215,7 @@ AddonsEngine.prototype = {
     // We refresh state before calling parent because syncStartup in the parent
     // looks for changed IDs, which is dependent on add-on state being up to
     // date.
-    if (!this._reconcilerStateLoaded) {
-      let cb = Async.makeSpinningCallback();
-      this._reconciler.loadState(null, cb);
-      cb.wait();
-      this._reconcilerStateLoaded = true;
-    }
-
-    let cb = Async.makeSpinningCallback();
-    this._reconciler.refreshGlobalState(cb);
-    cb.wait();
+    this._refreshReconcilerState();
 
     SyncEngine.prototype._syncStartup.call(this);
   },
@@ -257,6 +251,22 @@ AddonsEngine.prototype = {
     this._reconciler.pruneChangesBeforeDate(new Date(ms));
 
     SyncEngine.prototype._syncCleanup.call(this);
+  },
+
+  /**
+   * Helper function to ensure reconciler is up to date.
+   */
+  _refreshReconcilerState: function _refreshReconcilerState() {
+     if (!this._reconcilerStateLoaded) {
+      let cb = Async.makeSpinningCallback();
+      this._reconciler.loadState(null, cb);
+      cb.wait();
+      this._reconcilerStateLoaded = true;
+    }
+
+    let cb = Async.makeSpinningCallback();
+    this._reconciler.refreshGlobalState(cb);
+    cb.wait();
   }
 };
 
@@ -273,7 +283,11 @@ AddonsStore.prototype = {
   _syncableTypes: ["extension", "theme"],
 
   get reconciler() {
-    return Engines.get("addons")._reconciler;
+    return this.engine._reconciler;
+  },
+
+  get engine() {
+    return Engines.get("addons");
   },
 
   /**
@@ -370,6 +384,11 @@ AddonsStore.prototype = {
     if (addon) {
       addon.syncGUID = newID;
     }
+
+    let state = this.reconciler.addons[addon.id];
+    if (state) {
+      state.guid = newID;
+    }
   },
 
   /**
@@ -397,6 +416,8 @@ AddonsStore.prototype = {
    * error, it logs the error and keeps trying with other add-ons.
    */
   wipe: function wipe() {
+    this.engine._refreshReconcilerState();
+
     for (let id in this.getAllIDs()) {
       let addon = this.getAddonByID(id);
       if (!addon) {

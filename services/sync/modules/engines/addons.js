@@ -13,14 +13,12 @@
  *
  * The Original Code is Firefox Sync.
  *
- * The Initial Developer of the Original Code is
- * the Mozilla Foundation.
+ * The Initial Developer of the Original Code is the Mozilla Foundation.
  * Portions created by the Initial Developer are Copyright (C) 2011
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
  *   Gregory Szorc <gps@mozilla.com>
- *   Philipp von Weitershausen <philipp@weitershausen.de>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -143,10 +141,6 @@ function AddonsEngine() {
   SyncEngine.call(this, "Addons");
 
   this._reconciler = new AddonsReconciler();
-
-  let cb = Async.makeSpinningCallback();
-  this._reconciler.loadState(null, cb);
-  cb.wait();
 }
 AddonsEngine.prototype = {
   __proto__:              SyncEngine.prototype,
@@ -156,6 +150,7 @@ AddonsEngine.prototype = {
   version:                1,
 
   _reconciler: null,
+  _reconciler_state_loaded: false,
 
   _findDupe: function _findDupe(item) {
     let id = item.addonID;
@@ -177,11 +172,19 @@ AddonsEngine.prototype = {
     // We refresh state before calling parent because syncStartup in the parent
     // looks for changed IDs, which is dependent on add-on state being up to
     // date.
+    this._log.debug("in syncStartup()");
+    if (!this._reconciler_state_loaded) {
+      let cb = Async.makeSpinningCallback();
+      this._reconciler.loadState(null, cb);
+      cb.wait();
+      this._reconciler_state_loaded = true;
+    }
+
     let cb = Async.makeSpinningCallback();
     this._reconciler.refreshGlobalState(cb);
     cb.wait();
 
-    SyncEngine._syncStartup.call(this);
+    SyncEngine.prototype._syncStartup.call(this);
   },
 };
 
@@ -305,7 +308,7 @@ AddonsStore.prototype = {
 
     let addons = this.reconciler.addons;
     for each (let addon in addons) {
-      if (self._isSyncableAddon(addon)) {
+      if (this.isAddonSyncable(addon)) {
         ids[addon.guid] = true;
       }
     }
@@ -536,6 +539,9 @@ AddonsStore.prototype = {
 
 function AddonsTracker(name) {
   Tracker.call(this, name);
+
+  Svc.Obs.add("weave:engine:start-tracking", this);
+  Svc.Obs.add("weave:engine:stop-tracking", this);
 }
 AddonsTracker.prototype = {
   __proto__: Tracker.prototype,
@@ -544,11 +550,19 @@ AddonsTracker.prototype = {
     return Engines.get("addons")._reconciler;
   },
 
+  get store() {
+    return Engines.get("addons")._store;
+  },
+
   /**
    * This callback is executed whenever the AddonsReconciler sends out a change
    * notification. See AddonsReconciler.addChangeListener().
    */
-  changeHandler: function changeHandler(date, change, addon) {
+  changeListener: function changeHandler(date, change, addon) {
+    if (!this.store.isAddonSyncable(addon)) {
+      return;
+    }
+
     this.addChangedID(addon.guid, date.getTime() / 1000);
     this.score += SCORE_INCREMENT_XLARGE;
   },
@@ -556,11 +570,11 @@ AddonsTracker.prototype = {
   observe: function(subject, topic, data) {
     switch (topic) {
       case "weave:engine:start-tracking":
-        this.reconciler.addChangeListener(this.changeHandler);
+        this.reconciler.addChangeListener(this);
         break;
 
       case "weave:engine:stop-tracking":
-        this.reconciler.removeChangeListener(this.changeHandler);
+        this.reconciler.removeChangeListener(this);
         break;
     }
   }

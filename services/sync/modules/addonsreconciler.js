@@ -195,24 +195,25 @@ AddonsReconciler.prototype = {
    *
    * @param path
    *        Path to load. ".json" is appended automatically.
-   * @param cb
+   * @param callback
    *        Callback to be executed upon file load. The callback receives a
-   *        single truthy argument signifying whether an error occurred.
+   *        truthy error argument signifying whether an error occurred and a
+   *        boolean indicating whether data was loaded.
    */
-  loadState: function loadFile(path, callback) {
-    Utils.jsonLoad(path || DEFAULT_STATE_FILE, this, function(json) {
+  loadState: function loadState(path, callback) {
+    let file = path || DEFAULT_STATE_FILE;
+    Utils.jsonLoad(file, this, function(json) {
       if (json != undefined) {
         this._addons = json.addons;
         this._changes = json.changes;
         if (callback) {
-          callback(false);
+          callback(false, true);
         }
-      }
-      else {
+      } else {
         this._addons = {};
         this._changes = [];
         if (callback) {
-          callback(true);
+          callback(false, false);
         }
       }
     });
@@ -244,7 +245,7 @@ AddonsReconciler.prototype = {
    * change.
    */
   addChangeListener: function addChangeListener(listener) {
-    if (!this.listeners.some(function(i) { return i == listener; })) {
+    if (!this._listeners.some(function(i) { return i == listener; })) {
       this._listeners.push(listener);
     }
   },
@@ -281,6 +282,7 @@ AddonsReconciler.prototype = {
    * Refreshes the global state of add-ons by querying the AddonsManager.
    */
   refreshGlobalState: function refreshGlobalState(callback) {
+    this._log.info("Refreshing global state from AddonManager.");
     AddonManager.getAllAddons(function (addons) {
       let ids = {};
 
@@ -299,7 +301,7 @@ AddonsReconciler.prototype = {
         // If the id isn't in ids, it means that the add-on has been deleted.
         if (addon.installed) {
           addon.installed = false;
-          this._changes.push([Date.now(), CHANGE_UNINSTALLED, id]);
+          this.addChange(new Date(), CHANGE_UNINSTALLED, addon);
         }
       }
 
@@ -315,7 +317,7 @@ AddonsReconciler.prototype = {
    */
   rectifyStateFromAddon: function rectifyStateFromAddon(addon) {
     let id = addon.id;
-    let enabled = addon.userEnabled;
+    let enabled = !addon.userDisabled;
     let guid = addon.syncGUID;
 
     if (!(id in this._addons)) {
@@ -343,11 +345,12 @@ AddonsReconciler.prototype = {
   },
 
   addChange: function addChange(date, change, addon) {
+    this._log.info("Change recorded for " + addon.id);
     this._changes.push([date.getTime(), change, addon.id]);
 
     for each (let listener in this._listeners) {
       try {
-        listener(date, change, addon);
+        listener.changeListener.call(listener, date, change, addon);
       } catch (ex) {
         this._log.warn("Exception calling change listener: " +
                        Utils.exceptionStr(ex));
@@ -451,6 +454,16 @@ AddonsReconciler.prototype = {
       if (requiresRestart != undefined && !requiresRestart) {
         this._log.debug("Ignoring notification because restartless");
         return;
+      }
+
+      switch (action) {
+        case "onEnabling":
+        case "onEnabled":
+        case "onDisabling":
+        case "onDisabled":
+        case "onInstalled":
+          this.rectifyStateFromAddon(addon);
+          break;
       }
 
       this.saveState(null, null);

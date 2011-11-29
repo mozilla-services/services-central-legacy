@@ -350,6 +350,12 @@ AddonsReconciler.prototype = {
       let change = enabled ? CHANGE_ENABLED : CHANGE_DISABLED;
       this.addChange(new Date(), change, record);
     }
+
+    if (record.guid != guid) {
+      record.guid = guid;
+      // We don't record a change because the Sync engine rectifies this on its
+      // own.
+    }
   },
 
   addChange: function addChange(date, change, addon) {

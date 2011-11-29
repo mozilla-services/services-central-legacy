@@ -184,6 +184,21 @@ AddonsEngine.prototype = {
     this._reconciler.refreshGlobalState(cb);
     cb.wait();
 
+    // Manually update tracker with changes since last sync.
+    let lastDate = new Date(this.lastSync * 1000);
+    let changes = this._reconciler.getChangesSinceDate(lastDate);
+    let addons = this._reconciler.addons;
+    for each (let change in changes) {
+      let id = change[2];
+      if (!(id in addons)) {
+        continue;
+      }
+
+      this._log.debug("Adding changed add-on from changes log: " + id);
+      let addon = addons[id];
+      this._tracker.addChangedID(addon.guid, new Date(change[0]));
+    }
+
     SyncEngine.prototype._syncStartup.call(this);
   },
 };

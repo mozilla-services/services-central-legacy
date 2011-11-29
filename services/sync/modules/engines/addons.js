@@ -102,12 +102,12 @@ const PRUNE_ADDON_CHANGES_THRESHOLD = 60 * 60 * 24 * 7 * 1000;
  *  enabled
  *    Boolean stating whether add-on is enabled or disabled by the user.
  *
- *  deleted
- *    Boolean stating whether the add-on is deleted.
- *
- *  isAddonRepository
- *    Boolean stating whether the add-on is provided by the AddonRepository
- *    API.
+ *  source
+ *    String indicating where an add-on is from. Currently, we only support
+ *    the value "amo" which indicates that the add-on came from the official
+ *    add-ons repository, addons.mozilla.org. In the future, we may support
+ *    installing add-ons from other sources. This provides a future-compatible
+ *    mechanism for clients to only apply records they know how to handle.
  */
 function AddonRecord(collection, id) {
   CryptoWrapper.call(this, collection, id);
@@ -120,7 +120,7 @@ AddonRecord.prototype = {
 Utils.deferGetSet(AddonRecord, "cleartext", ["addonID",
                                              "applicationID",
                                              "enabled",
-                                             "isAddonRepository"]);
+                                             "source"]);
 
 /**
  * The AddonsEngine handles synchronization of add-ons between clients.
@@ -157,7 +157,7 @@ AddonsEngine.prototype = {
   _findDupe: function _findDupe(item) {
     let id = item.addonID;
 
-    let addons = this._reconciler.addons();
+    let addons = this._reconciler.addons;
     if (!(id in addons)) {
       return null;
     }
@@ -240,9 +240,9 @@ AddonsEngine.prototype = {
 
     // Ignore records that aren't from the official add-on repository, as that
     // is our current policy.
-    if (!record.isAddonRepository) {
-      this._log.info("Ignoring incoming record not from addon repository: " +
-                     record.id);
+    if (record.source != "amo") {
+      this._log.info("Ignoring unknown add-on source (" + record.source + ")" +
+                     " for " + record.id);
       return;
     }
 
@@ -282,6 +282,9 @@ AddonsStore.prototype = {
   create: function create(record) {
     let cb = Async.makeSpinningCallback();
     this.installAddonsFromIDs([record.addonID], cb);
+
+    // This will throw if there was an error. This will get caught by the sync
+    // engine and the record will try to be applied later.
     cb.wait();
   },
 
@@ -348,11 +351,11 @@ AddonsStore.prototype = {
       return record;
     }
 
-    record.addonID           = addon.id;
-    record.enabled           = addon.enabled;
+    record.addonID = addon.id;
+    record.enabled = addon.enabled;
 
     // This needs to be dynamic when add-ons don't come from AddonRepository.
-    record.isAddonRepository = true;
+    record.source = "amo";
 
     return record;
   },
@@ -449,9 +452,6 @@ AddonsStore.prototype = {
     //   3) Not installed by a foreign entity (i.e. installed by the app)
     //      since they act like global extensions.
     //   4) Are installed from AMO
-
-    //this._log.info("Raw Addon: " + JSON.stringify(addon));
-
     let syncable = addon &&
                    this._syncableTypes.indexOf(addon.type) != -1 &&
                    addon.scope | AddonManager.SCOPE_PROFILE &&
@@ -466,8 +466,6 @@ AddonsStore.prototype = {
     let cb = Async.makeSyncCallback();
     AddonRepository.getCachedAddonByID(addon.id, cb);
     let result = Async.waitForSyncCallback(cb);
-
-    this._log.info("Cached Result: " + JSON.stringify(result));
 
     return result && result.sourceURI &&
            result.sourceURI.host == ADDON_REPOSITORY_WHITELIST_HOSTNAME;
@@ -490,7 +488,7 @@ AddonsStore.prototype = {
    */
   getInstallFromSearchResult: function getInstallFromSearchResult(addon, cb) {
     if (addon.install) {
-      cb(null, add.install);
+      cb(null, addon.install);
       return;
     }
 
@@ -519,6 +517,7 @@ AddonsStore.prototype = {
    * null.
    *
    * The result object has the following keys:
+   *   id               ID of add-on that was installed.
    *   requiresRestart  Boolean indicating whether install requires restart.
    *
    * @param addon
@@ -548,22 +547,29 @@ AddonsStore.prototype = {
           AddonManager.OP_NEEDS_RESTART_INSTALL;
 
         install.install();
-        cb(null, {requiresRestart: restart});
+        cb(null, {id: addon.id, requiresRestart: restart});
       }
       catch (ex) {
         this._log.error("Error installing add-on: " + Utils.exceptionstr(ex));
         cb(ex, null);
       }
-    });
+    }.bind(this));
   },
 
   /**
    * Installs multiple add-ons specified by their IDs.
    *
    * The callback will be called when activity on all add-ons is complete. The
-   * callback receives 2 arguments, error and result. If error is truthy, it
-   * contains an error value and result is null. If it is falsely, result
-   * is an object containining additional information on each add-on.
+   * callback receives 2 arguments, error and result.
+   *
+   * If error is truthy, it contains a string describing the overall error.
+   *
+   * result is always an object with details on the overall execution state. It
+   * contains the following keys.
+   *
+   *   installed  Array of add-on IDs that were installed
+   *   errors     Array of errors encountered. Only has elements if error is
+   *              truthy.
    *
    * @param ids
    *        Array of add-on string IDs to install.
@@ -571,14 +577,14 @@ AddonsStore.prototype = {
    *        Function to be called when all actions are complete.
    */
   installAddonsFromIDs: function installAddonsFromIDs(ids, cb) {
-
     AddonRepository.getAddonsByIDs(ids, {
       searchSucceeded: function searchSucceeded(addons, addonsLength, total) {
         this._log.info("Found " + addonsLength + "/" + ids.length +
-                       "add-ons during repository search.");
+                       " add-ons during repository search.");
 
         let ourResult = {
-
+          installed: [],
+          errors:    [],
         };
 
         if (!addonsLength) {
@@ -590,8 +596,18 @@ AddonsStore.prototype = {
         let installCallback = function installCallback(error, result) {
           finishedCount++;
 
+          if (error) {
+            ourResult.errors.push(error);
+          } else {
+            ourResult.installed.push(result.id);
+          }
+
           if (finishedCount >= addonsLength) {
-            cb(null, ourResult);
+            if (ourResult.errors.length > 0) {
+              cb("1 or more add-ons failed to install", ourResult);
+            } else {
+              cb(null, ourResult);
+            }
           }
         }.bind(this);
 

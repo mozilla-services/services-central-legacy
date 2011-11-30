@@ -29,6 +29,7 @@
                "phase20": "profile2",
                "phase21": "profile1"};
 Phase('phase01', [
+  [Sync, SYNC_WIPE_SERVER],
   [Addons.verifyNot, ['unsigned-xpi@tests.mozilla.org']],
   [Addons.install, ['unsigned-1.0.xml']],
   [Addons.verify, ['unsigned-xpi@tests.mozilla.org'], STATE_DISABLED],

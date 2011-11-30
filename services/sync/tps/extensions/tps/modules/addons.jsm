@@ -46,8 +46,6 @@ CU.import("resource://gre/modules/Services.jsm");
 CU.import("resource://services-sync/async.js");
 CU.import("resource://services-sync/util.js");
 CU.import("resource://tps/logger.jsm");
-var XPIProvider = CU.import("resource://gre/modules/XPIProvider.jsm")
-                  .XPIProvider;
 
 const ADDONSGETURL = 'http://127.0.0.1:4567/';
 const STATE_ENABLED = 1;
@@ -57,7 +55,7 @@ function GetFileAsText(file)
 {
   let channel = Services.io.newChannel(file, null, null);
   let inputStream = channel.open();
-  if (channel instanceof CI.nsIHttpChannel && 
+  if (channel instanceof CI.nsIHttpChannel &&
       channel.responseStatus != 200) {
     return "";
   }
@@ -88,25 +86,17 @@ Addon.prototype = {
   Delete: function() {
     // find our addon locally
     let cb = Async.makeSyncCallback();
-    XPIProvider.getAddonsByTypes(null, cb);
-    let results =  Async.waitForSyncCallback(cb);
-    var addon;
-    var id = this.id;
-    results.forEach(function(result) {
-      if (result.id == id) {
-        addon = result;
-      }
-    });
+    AddonManager.getAddonByID(this.id, cb);
+    let addon = Async.waitForSyncCallback(cb);
     Logger.AssertTrue(!!addon, 'could not find addon ' + this.id + ' to uninstall');
     addon.uninstall();
   },
 
   Find: function(state) {
-    let cb = Async.makeSyncCallback();
     let addon_found = false;
-    var that = this;
+    let that = this;
 
-    var log_addon = function(addon) {
+    let log_addon = function(addon) {
       that.addon = addon;
       Logger.logInfo('addon ' + addon.id + ' found, isActive: ' + addon.isActive);
       if (state == STATE_ENABLED || state == STATE_DISABLED) {
@@ -116,22 +106,18 @@ Addon.prototype = {
       }
     };
 
-    // first look in the list of all addons
-    XPIProvider.getAddonsByTypes(null, cb);
-    let addonlist = Async.waitForSyncCallback(cb);
-    addonlist.forEach(function(addon) {
-      if (addon.id == that.id) {
-        addon_found = true;
-        log_addon.call(that, addon);
-      }
-    });
-
-    if (!addon_found) {
+    let cb = Async.makeSyncCallback();
+    AddonManager.getAddonByID(this.id, cb);
+    let addon = Async.waitForSyncCallback(cb);
+    if (addon) {
+      addon_found = true;
+      log_addon.call(that, addon);
+    } else {
       // then look in the list of recent installs
-      cb = Async.makeSyncCallback();
-      XPIProvider.getInstallsByTypes(null, cb);
+      let cb = Async.makeSyncCallback();
+      AddonManager.getInstallsByTypes(null, cb);
       addonlist = Async.waitForSyncCallback(cb);
-      for (var i in addonlist) {
+      for (let i in addonlist) {
         if (addonlist[i].addon && addonlist[i].addon.id == that.id &&
             addonlist[i].state == AddonManager.STATE_INSTALLED) {
           addon_found = true;
@@ -178,7 +164,8 @@ Addon.prototype = {
 
     let addon = install_addons[0];
     Logger.logInfo(JSON.stringify(addon), null, ' ');
-    if (XPIProvider.installRequiresRestart(addon)) {
+
+    if (addon.operationsRequiringRestart & AddonManager.OP_NEEDS_RESTART_INSTALL) {
       this._addons_requiring_restart.push(addon.id);
     }
 

@@ -51,12 +51,38 @@ DOCROOT = '.'
 
 class EasyServer(ThreadingMixIn, BaseHTTPServer.HTTPServer):
     allow_reuse_address = True
-    
+
 class MozRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
     def translate_path(self, path):
-        # It appears that the default path is '/' and os.path.join makes the '/' 
+        # It appears that the default path is '/' and os.path.join makes the '/'
         o = urlparse(path)
-        return "%s%s" % ('' if sys.platform == 'win32' else '/', '/'.join([i.strip('/') for i in (DOCROOT, o.path)]))
+
+        sep = '/'
+        if sys.platform == 'win32':
+            sep = ''
+
+        ret = '%s%s' % ( sep, DOCROOT.strip('/') )
+
+        # Stub out addons.mozilla.org search API, which is used when installing
+        # add-ons. The version is hard-coded because we want tests to fail when
+        # the API updates so we can update our stubbed files with the changes.
+        if o.path.find('/en-US/firefox/api/1.5/search/guid:') == 0:
+            ids = urllib.unquote(o.path[len('/en-US/firefox/api/1.5/search/guid:'):])
+
+            if ids.count(',') > 0:
+                raise Exception('Only searching for single ids is currently supported.')
+
+            base = ids
+            at_loc = ids.find('@')
+            if at_loc > 0:
+                base = ids[0:at_loc]
+
+            ret += '/%s.xml' % base
+
+        else:
+            ret += '/%s' % o.path.strip('/')
+
+        return ret
 
     # I found on my local network that calls to this were timing out
     # I believe all of these calls are from log_message
@@ -99,13 +125,13 @@ class MozHttpd(object):
                     for fileName in fileList:
                         if fileName == webline:
                             found = True
-                
+
                 if (found == False):
-                    print "NOT FOUND: " + webline.strip()                
+                    print "NOT FOUND: " + webline.strip()
 
     def stop(self):
         if self.httpd:
             self.httpd.shutdown()
-        
+
     __del__ = stop
 

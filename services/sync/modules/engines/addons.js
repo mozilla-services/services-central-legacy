@@ -371,6 +371,8 @@ AddonsStore.prototype = {
       return record;
     }
 
+    record.modified = addon.modified.getTime() / 1000;
+
     record.addonID = addon.id;
     record.enabled = addon.enabled;
 
@@ -577,8 +579,20 @@ AddonsStore.prototype = {
         let restart = addon.operationRequiringRestart &
           AddonManager.OP_NEEDS_RESTART_INSTALL;
 
+        let listener = {
+          onInstallEnded: function(install, addon) {
+            install.removeListener(listener);
+
+            cb(null, {id: addon.id, requiresRestart: restart});
+          },
+          onInstallFailed: function(install) {
+            install.removeListener(listener);
+
+            cb("Install failed: " + install.error, null);
+          }
+        };
+        install.addListener(listener);
         install.install();
-        cb(null, {id: addon.id, requiresRestart: restart});
       }
       catch (ex) {
         this._log.error("Error installing add-on: " + Utils.exceptionstr(ex));

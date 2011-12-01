@@ -36,6 +36,7 @@ Phase("phase03", [
   [Sync]
 ]);
 Phase("phase04", [
+  [Addons.verify, [id], STATE_ENABLED],
   [Sync],
   [Addons.verify, [id], STATE_DISABLED]
 ]);

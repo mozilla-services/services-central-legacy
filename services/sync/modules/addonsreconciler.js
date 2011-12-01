@@ -208,6 +208,9 @@ AddonsReconciler.prototype = {
 
       if (json != undefined) {
         this._addons = json.addons;
+        for each (let record in this._addons) {
+          record.modified = new Date(record.modified);
+        }
 
         for each (let change in json.changes) {
           this._changes.push([new Date(change[0]), change[1], change[2]]);
@@ -235,7 +238,20 @@ AddonsReconciler.prototype = {
    *         passed to callback.
    */
   saveState: function saveState(path, callback) {
-    let state = {addons: this._addons, changes: []};
+    let state = {addons: {}, changes: []};
+
+    for (let [id, record] in Iterator(this._addons)) {
+      state[id] = {};
+      for (let [k, v] in Iterator(record)) {
+        if (k == "modified") {
+          state[id][k] = v.getTime();
+        }
+        else {
+          state[id][k] = v;
+        }
+      }
+    }
+
     for each (let change in this._changes) {
       state.changes.push([change[0].getTime(), change[1], change[2]]);
     }
@@ -327,6 +343,7 @@ AddonsReconciler.prototype = {
     let id = addon.id;
     let enabled = !addon.userDisabled;
     let guid = addon.syncGUID;
+    let now = new Date();
 
     if (!(id in this._addons)) {
       let record = {
@@ -334,12 +351,13 @@ AddonsReconciler.prototype = {
         guid: guid,
         enabled: enabled,
         installed: true,
+        modified: now,
         type: addon.type,
         scope: addon.scope,
         foreignInstall: addon.foreignInstall
       };
       this._addons[id] = record;
-      this.addChange(new Date(), CHANGE_INSTALLED, record);
+      this.addChange(now, CHANGE_INSTALLED, record);
       return;
     }
 
@@ -347,10 +365,12 @@ AddonsReconciler.prototype = {
 
     if (!record.installed) {
       record.installed = true;
+      record.modified = now;
     }
 
     if (record.enabled != enabled) {
       record.enabled = enabled;
+      record.modified = now;
       let change = enabled ? CHANGE_ENABLED : CHANGE_DISABLED;
       this.addChange(new Date(), change, record);
     }
@@ -484,8 +504,10 @@ AddonsReconciler.prototype = {
         case "onUninstalled":
           let id = addon.id;
           if (id in this._addons) {
+            let now = new Date();
             this._addons[id].installed = false;
-            this.addChange(new Date(), CHANGE_UNINSTALLED, addon);
+            this._addons[id].modified = now;
+            this.addChange(now, CHANGE_UNINSTALLED, addon);
           }
       }
 

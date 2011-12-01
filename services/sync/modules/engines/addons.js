@@ -300,6 +300,11 @@ AddonsStore.prototype = {
     // This will throw if there was an error. This will get caught by the sync
     // engine and the record will try to be applied later.
     cb.wait();
+
+    let addon = this.getAddonByID(record.addonID);
+    if (addon) {
+      addon.syncGUID = record.id;
+    }
   },
 
   /**

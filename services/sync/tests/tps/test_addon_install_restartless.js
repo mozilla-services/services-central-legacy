@@ -10,7 +10,7 @@ const restartlessID = "restartless-xpi@tests.mozilla.org";
 
 Phase("phase01", [
   [Addons.verifyNot, [restartlessID]],
-  [Addons.install, ["restartless.xml"]],
+  [Addons.install, ["restartless-xpi.xml"]],
   [Addons.verify, [restartlessID], STATE_ENABLED],
   [Sync, SYNC_WIPE_SERVER]
 ]);

@@ -178,6 +178,7 @@ AddonsEngine.prototype = {
    * reconciler log.
    */
   getChangedIDs: function getChangedIDs() {
+    this._log.debug("getChangedIDs called");
     let changes = {};
     for (let [id, modified] in Iterator(this._tracker.changedIDs)) {
       changes[id] = modified;
@@ -257,7 +258,8 @@ AddonsEngine.prototype = {
    * Helper function to ensure reconciler is up to date.
    */
   _refreshReconcilerState: function _refreshReconcilerState() {
-     if (!this._reconcilerStateLoaded) {
+    this._log.debug("Refreshing reconciler state");
+    if (!this._reconcilerStateLoaded) {
       let cb = Async.makeSpinningCallback();
       this._reconciler.loadState(null, cb);
       cb.wait();
@@ -301,8 +303,10 @@ AddonsStore.prototype = {
     // engine and the record will try to be applied later.
     cb.wait();
 
+    this._log.info("Add-on installed: " + record.addonID);
     let addon = this.getAddonByID(record.addonID);
     if (addon) {
+      this._log.info("Setting add-on Sync GUID to remote: " + record.id);
       addon.syncGUID = record.id;
     }
   },
@@ -334,7 +338,6 @@ AddonsStore.prototype = {
       this._log.info("Updating userEnabled flag: " + addon.id);
 
       addon.userDisabled = !record.enabled;
-      this._sleep(0);
     }
   },
 
@@ -691,6 +694,11 @@ AddonsTracker.prototype = {
    * notification. See AddonsReconciler.addChangeListener().
    */
   changeListener: function changeHandler(date, change, addon) {
+    // Ignore changes that occur during sync.
+    if (this.ignoreAll) {
+      return;
+    }
+
     if (!this.store.isAddonSyncable(addon)) {
       this._log.debug("Ignoring change because add-on isn't syncable: " +
                       addon.id);

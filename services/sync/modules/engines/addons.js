@@ -673,6 +673,8 @@ AddonsTracker.prototype = {
    */
   changeListener: function changeHandler(date, change, addon) {
     if (!this.store.isAddonSyncable(addon)) {
+      this._log.debug("Ignoring change because add-on isn't syncable: " +
+                      addon.id);
       return;
     }
 

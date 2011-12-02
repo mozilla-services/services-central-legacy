@@ -158,6 +158,11 @@ function AddonsReconciler() {
   AddonManager.addAddonListener(this);
   AddonManager.addInstallListener(this);
   this._listening = true;
+
+  let us = this;
+  Svc.Obs.add("xpcom-shutdown", function() {
+    us.stopListening();
+  });
 };
 AddonsReconciler.prototype = {
   /** Flag indicating whether we are listening to AddonManager events. */

@@ -150,6 +150,26 @@ function installAddon(name) {
   return installAddonFromInstall(install);
 }
 
+/**
+ * Convenience function to uninstall an add-on synchronously.
+ *
+ * @param addon
+ *        Addon instance to uninstall
+ */
+function uninstallAddon(addon) {
+  let cb = Async.makeSyncCallback();
+  let listener = {onUninstalled: function(uninstalled) {
+    if (uninstalled.id == addon.id) {
+      AddonManager.removeAddonListener(listener);
+      cb(uninstalled);
+    }
+  }};
+
+  AddonManager.addAddonListener(listener);
+  addon.uninstall();
+  Async.waitForSyncCallback(cb);
+}
+
 function FakeFilesystemService(contents) {
   this.fakeContents = contents;
   let self = this;

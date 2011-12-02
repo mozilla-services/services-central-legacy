@@ -178,7 +178,6 @@ AddonsEngine.prototype = {
    * reconciler log.
    */
   getChangedIDs: function getChangedIDs() {
-    this._log.debug("getChangedIDs called");
     let changes = {};
     for (let [id, modified] in Iterator(this._tracker.changedIDs)) {
       changes[id] = modified;
@@ -700,6 +699,7 @@ AddonsTracker.prototype = {
    * notification. See AddonsReconciler.addChangeListener().
    */
   changeListener: function changeHandler(date, change, addon) {
+    this._log.debug("changeListener invoked: " + change + " " + addon.id);
     // Ignore changes that occur during sync.
     if (this.ignoreAll) {
       return;

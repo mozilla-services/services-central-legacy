@@ -10,10 +10,12 @@ Cu.import("resource://gre/modules/AddonManager.jsm");
 
 loadAddonTestFunctions();
 startupManager();
-Svc.Prefs.set("addon.ignoreRepositoryChecking", true);
+Svc.Prefs.set("addons.ignoreRepositoryChecking", true);
 
 Engines.register(AddonsEngine);
 let engine = Engines.get("addons");
+let reconciler = engine._reconciler;
+let store = engine._store;
 let tracker = engine._tracker;
 
 const addon1ID = "addon1@tests.mozilla.org";
@@ -24,6 +26,12 @@ function cleanup_and_advance() {
   tracker.resetScore();
   tracker.clearChangedIDs();
 
+  reconciler._addons = {};
+  reconciler._changes = [];
+  let cb = Async.makeSpinningCallback();
+  reconciler.saveState(null, cb);
+  cb.wait();
+
   run_next_test();
 }
 
@@ -31,30 +39,28 @@ function run_test() {
   initTestLogging("Trace");
   Log4Moz.repository.getLogger("Sync.Engine.Addons").level = Log4Moz.Level.Trace;
 
-  installAddon("test_install1");
-
-  run_next_test();
+  cleanup_and_advance();
 }
 
 add_test(function test_empty() {
   _("Verify the tracker is empty to start with.");
-  do_check_eq(0, [id for (id in tracker.changedIDs)].length);
+
+  do_check_eq(0, Object.keys(tracker.changedIDs).length);
   do_check_eq(0, tracker.score);
 
-  run_next_test();
+  cleanup_and_advance();
 });
 
 add_test(function test_not_tracking() {
   _("Ensures the tracker doesn't do anything when it isn't tracking.");
 
-  let addon = getAddonFromAddonManagerByID(addon1ID);
-  addon.uninstall();
-  Utils.nextTick(function() {
-    do_check_eq(0, [id for (id in tracker.changedIDs)].length);
-    do_check_eq(0, tracker.score);
+  let addon = installAddon("test_install1");
+  uninstallAddon(addon);
 
-    run_next_test();
-  });
+  do_check_eq(0, Object.keys(tracker.changedIDs).length);
+  do_check_eq(0, tracker.score);
+
+  cleanup_and_advance();
 });
 
 add_test(function test_track_install() {
@@ -64,89 +70,97 @@ add_test(function test_track_install() {
 
   do_check_eq(0, tracker.score);
   let addon = installAddon("test_install1");
-  let changed = [id for (id in tracker.changedIDs)];
-  do_check_eq(1, changed.length);
-  do_check_eq(addon.syncGUID, changed[0]);
+  let changed = tracker.changedIDs;
+
+  do_check_eq(1, Object.keys(changed).length);
+  do_check_true(addon.syncGUID in changed);
   do_check_eq(SCORE_INCREMENT_XLARGE, tracker.score);
 
-  addon.uninstall();
+  uninstallAddon(addon);
   cleanup_and_advance();
 });
 
 add_test(function test_track_uninstall() {
   _("Ensure that uninstalling an add-on notifies tracker.");
 
+  let addon = installAddon("test_install1");
+  let guid = addon.syncGUID;
   do_check_eq(0, tracker.score);
-  let addon = getAddonFromAddonManagerByID(addon1ID);
-  addon.uninstall();
-  let changed = [id for (id in tracker.changedIDs)];
-  do_check_eq(1, changed.length);
-  do_check_eq(addon.syncGUID, changed[0]);
+
+  Svc.Obs.notify("weave:engine:start-tracking");
+
+  uninstallAddon(addon);
+  let changed = tracker.changedIDs;
+  do_check_eq(1, Object.keys(changed).length);
+  do_check_true(guid in changed);
   do_check_eq(SCORE_INCREMENT_XLARGE, tracker.score);
 
   cleanup_and_advance();
 });
 
+// The following don't work for an unknown reason. The listeners for disabling
+// never get invoked. Weird
+// TODO fix this
 /*
-TODO the following tests aren't working due to some weird issue. not sure
-if it is unit tests or implementation :(
-
 add_test(function test_track_user_disable() {
   _("Ensure that tracker sees disabling of add-on");
 
-  Svc.Obs.notify("weave:engine:stop-tracking");
   let addon = installAddon("test_install1");
   do_check_false(addon.userDisabled);
+
   Svc.Obs.notify("weave:engine:start-tracking");
-
   do_check_eq(0, tracker.score);
+
+  let cb = Async.makeSyncCallback();
+
+  let listener = {
+    onDisabled: function(disabled) {
+      _("onDisabled");
+      if (disabled.id == addon.id) {
+        AddonManager.removeAddonListener(listener);
+        cb();
+      }
+    },
+    onDisabling: function(disabling) {
+      _("onDisabling add-on");
+    }
+  };
+  AddonManager.addAddonListener(listener);
+
+  _("Disabling add-on");
   addon.userDisabled = true;
+  _("Disabling started...");
+  Async.waitForSyncCallback(cb);
 
-  Utils.nextTick(function() {
-    let changed = [id for (id in tracker.changedIDs)];
-    do_check_eq(1, changed.length);
-    do_check_eq(addon.syncGUID, changed[0]);
-    do_check_eq(SCORE_INCREMENT_XLARGE, tracker.score);
+  let changed = tracker.changedIDs;
+  do_check_eq(1, Object.keys(changed).length);
+  do_check_true(addon.syncGUID in changed);
+  do_check_eq(SCORE_INCREMENT_XLARGE, tracker.score);
 
-    addon.uninstall();
-    tracker.resetScore();
-    tracker.clearChangedIDs();
-
-    run_next_test();
-  });
+  uninstallAddon(addon);
+  cleanup_and_advance();
 });
 
 add_test(function test_track_enable() {
   _("Ensure that enabling a disabled add-on notifies tracker.");
 
-  Svc.Obs.notify("weave:engine:stop-tracking");
   let addon = installAddon("test_install1");
   addon.userDisabled = true;
+  store._sleep(0);
+
+  do_check_eq(0, tracker.score);
+
   Svc.Obs.notify("weave:engine:start-tracking");
+  addon.userDisabled = false;
+  store._sleep(0);
 
-  Utils.nextTick(function() {
-    do_check_eq(0, tracker.score);
+  let changed = tracker.changedIDs;
+  do_check_eq(1, Object.keys(changed).length);
+  do_check_true(addon.syncGUID in changed);
+  do_check_eq(SCORE_INCREMENT_XLARGE, tracker.score);
 
-    addon.userDisabled = false;
-    Utils.nextTick(function() {
-      let changed = [id for (id in tracker.changedIDs)];
-      do_check_eq(1, changed.length);
-      do_check_eq(addon.syncGUID, changed[0]);
-      do_check_eq(SCORE_INCREMENT_XLARGE, tracker.score);
-
-      tracker.resetScore();
-      tracker.clearChangedIDs();
-
-      run_next_test();
-    });
-  });
+  uninstallAddon(addon);
+  cleanup_and_advance();
 });
 */
-
-function end_test() {
-  let addon = getAddonFromAddonManagerById(addon1ID);
-  if (addon) {
-    addon.uninstall();
-  }
-}
 

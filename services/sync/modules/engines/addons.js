@@ -222,29 +222,6 @@ AddonsEngine.prototype = {
   },
 
   /**
-   * Override applyIncoming to filter out records we can't handle.
-   */
-  applyIncoming: function applyIncoming(record) {
-    // Ignore records not belonging to our application ID because that is the
-    // current policy.
-    if (record.applicationID != Services.appinfo.ID) {
-      this._log.info("Ignoring incoming record from other App ID: " +
-                      record.id);
-      return;
-    }
-
-    // Ignore records that aren't from the official add-on repository, as that
-    // is our current policy.
-    if (record.source != "amo") {
-      this._log.info("Ignoring unknown add-on source (" + record.source + ")" +
-                     " for " + record.id);
-      return;
-    }
-
-    SyncEngine.prototype.applyIncoming.call(this, record);
-  },
-
-  /**
    * Override end of sync to perform a little housekeeping on the reconciler.
    */
   _syncCleanup: function _syncCleanup() {
@@ -291,6 +268,30 @@ AddonsStore.prototype = {
   get engine() {
     return Engines.get("addons");
   },
+
+  /**
+   * Override applyIncoming to filter out records we can't handle.
+   */
+  applyIncoming: function applyIncoming(record) {
+    // Ignore records not belonging to our application ID because that is the
+    // current policy.
+    if (record.applicationID != Services.appinfo.ID) {
+      this._log.info("Ignoring incoming record from other App ID: " +
+                      record.id);
+      return;
+    }
+
+    // Ignore records that aren't from the official add-on repository, as that
+    // is our current policy.
+    if (record.source != "amo") {
+      this._log.info("Ignoring unknown add-on source (" + record.source + ")" +
+                     " for " + record.id);
+      return;
+    }
+
+    Store.prototype.applyIncoming.call(this, record);
+  },
+
 
   /**
    * Provides core Store API to create/install an add-on from a record.
@@ -431,11 +432,16 @@ AddonsStore.prototype = {
    * error, it logs the error and keeps trying with other add-ons.
    */
   wipe: function wipe() {
+    this._log.info("Processing wipe.");
+
+    // TODO should this wipe *all* add-ons or just the syncable ones?
     this.engine._refreshReconcilerState();
 
     for (let id in this.getAllIDs()) {
       let addon = this.getAddonByID(id);
       if (!addon) {
+        this._log.debug("Ignoring add-on because it couldn't be obtained: " +
+                        id);
         continue;
       }
 
@@ -495,7 +501,7 @@ AddonsStore.prototype = {
 
     // We provide a back door to skip the repository checking of an add-on.
     // This is utilized by the tests to make testing easier.
-    if (Svc.Prefs.get("addon.ignoreRepositoryChecking", false)) {
+    if (Svc.Prefs.get("addons.ignoreRepositoryChecking", false)) {
       return syncable;
     }
 

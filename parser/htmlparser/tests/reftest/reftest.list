@@ -1,3 +1,5 @@
+== bug535530-1.html bug535530-1-ref.html
+== view-source:bug535530-2.html bug535530-2-ref.html
 == bug566280-1.html bug566280-1-ref.html
 == bug577418-1.html bug577418-1-ref.html
 == bug582788-1.html bug582788-1-ref.html
@@ -16,3 +18,4 @@ fails-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)&&!layersGPUAccelerated) == vi
 == bug696651-1.html bug696651-1-ref.html
 == bug696651-2.html bug696651-2-ref.html
 == view-source:bug700260-1.html view-source:bug700260-1-ref.html
+== view-source:bug704667-1.html bug704667-1-ref.html

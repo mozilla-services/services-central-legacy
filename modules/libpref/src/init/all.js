@@ -418,10 +418,6 @@ pref("capability.policy.default.Location.hash.set", "allAccess");
 pref("capability.policy.default.Location.href.set", "allAccess");
 pref("capability.policy.default.Location.replace.get", "allAccess");
 
-pref("capability.policy.default.Navigator.preference", "allAccess");
-pref("capability.policy.default.Navigator.preferenceinternal.get", "UniversalPreferencesRead");
-pref("capability.policy.default.Navigator.preferenceinternal.set", "UniversalPreferencesWrite");
-
 pref("capability.policy.default.Window.blur.get", "allAccess");
 pref("capability.policy.default.Window.close.get", "allAccess");
 pref("capability.policy.default.Window.closed.get", "allAccess");
@@ -628,8 +624,6 @@ pref("javascript.options.strict.debug",     true);
 pref("javascript.options.relimit",          true);
 pref("javascript.options.methodjit.content", true);
 pref("javascript.options.methodjit.chrome",  true);
-pref("javascript.options.jitprofiling.content", true);
-pref("javascript.options.jitprofiling.chrome",  true);
 pref("javascript.options.pccounts.content", false);
 pref("javascript.options.pccounts.chrome",  false);
 pref("javascript.options.methodjit_always", false);
@@ -1468,16 +1462,9 @@ pref("dom.max_script_run_time", 10);
 
 // Hang monitor timeout after which we kill the browser, in seconds
 // (0 is disabled)
-// Temporarily disabled on mac due to bug 705154
-#ifdef XP_MACOSX
+// Disabled on all platforms per bug 705748 until the found issues are
+// resolved.
 pref("hangmonitor.timeout", 0);
-#else
-#ifndef DEBUG
-pref("hangmonitor.timeout", 30);
-#else
-pref("hangmonitor.timeout", 0);
-#endif
-#endif
 
 #ifndef DEBUG
 // How long a plugin is allowed to process a synchronous IPC message

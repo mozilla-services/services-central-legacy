@@ -275,6 +275,7 @@ AddonsReconciler.prototype = {
    */
   addChangeListener: function addChangeListener(listener) {
     if (!this._listeners.some(function(i) { return i == listener; })) {
+      this._log.debug("Adding change listener.");
       this._listeners.push(listener);
     }
   },
@@ -286,6 +287,7 @@ AddonsReconciler.prototype = {
     let pos = 0;
     while (pos < this._listeners.length) {
       if (this._listeners[pos] == listener) {
+        this._log.debug("Removing change listener.");
         this._listeners.splice(pos, 1);
       } else {
         pos++;
@@ -345,6 +347,8 @@ AddonsReconciler.prototype = {
    *        Addon instance being updated.
    */
   rectifyStateFromAddon: function rectifyStateFromAddon(addon) {
+    this._log.debug("Rectifying state for addon: " + addon.id);
+
     let id = addon.id;
     let enabled = !addon.userDisabled;
     let guid = addon.syncGUID;
@@ -484,7 +488,7 @@ AddonsReconciler.prototype = {
     // log them to ourselves so we don't see errors reported elsewhere.
     try {
       let id = addon.id;
-      this._log.debug("Listener tracked change " + action + " to " + id);
+      this._log.debug("Add-on change: " + action + " to " + id);
 
       // We assume that every event for non-restartless add-ons is
       // followed by another event and that this follow-up event is the most
@@ -510,9 +514,10 @@ AddonsReconciler.prototype = {
           let id = addon.id;
           if (id in this._addons) {
             let now = new Date();
-            this._addons[id].installed = false;
-            this._addons[id].modified = now;
-            this.addChange(now, CHANGE_UNINSTALLED, addon);
+            let record = this._addons[id];
+            record.installed = false;
+            record.modified = now;
+            this.addChange(now, CHANGE_UNINSTALLED, record);
           }
       }
 

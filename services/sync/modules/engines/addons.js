@@ -328,8 +328,13 @@ AddonsStore.prototype = {
 
   update: function update(record) {
     let addon = this.getAddonByID(record.addonID);
+
+    // This should only happen if there is a race condition between an add-on
+    // being uninstalled locally and Sync calling this function after it
+    // determines an add-on exists.
     if (!addon) {
-      // TODO log error?
+      this._log.warn("Requested to update record but add-on not found: " +
+                     record.addonID);
       return;
     }
 

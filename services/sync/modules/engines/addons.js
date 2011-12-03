@@ -321,10 +321,9 @@ AddonsStore.prototype = {
     }
 
     this._log.debug("Uninstalling add-on: " + addon.id);
-    addon.uninstall();
-
-    // This may take a while, so we pause the event loop.
-    this._sleep(0);
+    let cb = Async.makeSpinningCallback();
+    this.uninstallAddon(addon, cb);
+    cb.wait();
   },
 
   update: function update(record) {
@@ -607,6 +606,28 @@ AddonsStore.prototype = {
         cb(ex, null);
       }
     }.bind(this));
+  },
+
+  /**
+   * Uninstalls the Addon instance and invoke a callback when it is done.
+   *
+   * @param addon
+   *        Addon instance ot uninstall.
+   * @param callback
+   *        Function to be invoked when uninstall has finished. It receives a
+   *        truthy value signifying error and the add-on which was uninstalled.
+   */
+  uninstallAddon: function uninstallAddon(addon, callback) {
+    let listener = {
+      onUninstalled: function(uninstalled) {
+        if (addon.id == uninstalled.id) {
+          AddonManager.removeAddonListener(listener);
+          callback(false, addon);
+        }
+      }
+    };
+    AddonManager.addAddonListener(listener);
+    addon.uninstall();
   },
 
   /**

@@ -596,6 +596,11 @@ AddonsStore.prototype = {
             install.removeListener(listener);
 
             cb("Install failed: " + install.error, null);
+          },
+          onDownloadFailed: function(install) {
+            install.removeListener(listener);
+
+            cb("Download failed: " + install.error, null);
           }
         };
         install.addListener(listener);

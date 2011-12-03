@@ -4,9 +4,14 @@
 "use strict";
 
 Cu.import("resource://services-sync/engines/addons.js");
+Cu.import("resource://services-sync/ext/Preferences.js");
+
+const HTTP_PORT = 8888;
+
+let prefs = new Preferences();
 
 Svc.Prefs.set("addons.ignoreRepositoryChecking", true);
-
+prefs.set("extensions.getAddons.get.url", "http://localhost:8888/search/guid:%IDS%");
 loadAddonTestFunctions();
 startupManager();
 
@@ -15,8 +20,6 @@ let engine = Engines.get("addons");
 let tracker = engine._tracker;
 let store = engine._store;
 let reconciler = engine._reconciler;
-
-const uriPrefix = "http://localhost:4444/addons/";
 
 /**
  * Create a AddonsRec for this application with the fields specified.
@@ -35,6 +38,30 @@ function createRecordForThisApp(id, addonId, enabled, deleted) {
     applicationID: Services.appinfo.ID,
     source:        "amo"
   };
+}
+
+function createAndStartHTTPServer(port) {
+  try {
+    let server = new nsHttpServer();
+
+    let install1_xpi = "../../../../toolkit/mozapps/extensions/test/xpcshell/" +
+                       "addons/test_install1.xpi";
+
+    server.registerFile("/search/guid:addon1%40tests.mozilla.org",
+                        do_get_file("install1-search.xml"));
+    server.registerFile("/install1.xpi", do_get_file(install1_xpi));
+
+    server.registerFile("/search/guid:missing-xpi%40tests.mozilla.org",
+                        do_get_file("missing-xpi-search.xml"));
+
+    server.start(port);
+
+    return server;
+  } catch (ex) {
+    _("Got exception starting HTTP server on port " + port);
+    _("Error: " + Utils.exceptionStr(ex));
+    do_throw(ex);
+  }
 }
 
 function run_test() {
@@ -86,7 +113,79 @@ add_test(function test_change_item_id() {
 add_test(function test_create() {
   _("Ensure creating/installing an add-on from a record works.");
 
-  // TODO
+  let server = createAndStartHTTPServer(HTTP_PORT);
+
+  let addon = installAddon("test_install1");
+  let id = addon.id;
+  uninstallAddon(addon);
+
+  let guid = Utils.makeGUID();
+  let record = createRecordForThisApp(guid, id, true, false);
+
+  let failed = store.applyIncomingBatch([record]);
+  do_check_eq(0, failed.length);
+
+  let newAddon = getAddonFromAddonManagerByID(id);
+  do_check_neq(null, newAddon);
+  do_check_eq(guid, newAddon.syncGUID);
+  do_check_false(newAddon.userDisabled);
+
+  uninstallAddon(newAddon);
+
+  server.stop(run_next_test);
+});
+
+add_test(function test_create_missing_search() {
+  _("Ensures that failed add-on searches are handled gracefully.");
+
+  let server = createAndStartHTTPServer(HTTP_PORT);
+
+  // The handler for this ID is not installed, so a search should 404.
+  const id = "missing@tests.mozilla.org";
+  let guid = Utils.makeGUID();
+  let record = createRecordForThisApp(guid, id, true, false);
+
+  let failed = store.applyIncomingBatch([record]);
+  do_check_eq(1, failed.length);
+  do_check_eq(guid, failed[0]);
+
+  let addon = getAddonFromAddonManagerByID(id);
+  do_check_eq(null, addon);
+
+  server.stop(run_next_test);
+});
+
+add_test(function test_create_bad_install() {
+  _("Ensures that add-ons without a valid install are handled gracefully.");
+
+  let server = createAndStartHTTPServer(HTTP_PORT);
+
+  // The handler returns a search result but the XPI will 404.
+  const id = "missing-xpi@tests.mozilla.org";
+  let guid = Utils.makeGUID();
+  let record = createRecordForThisApp(guid, id, true, false);
+
+  let failed = store.applyIncomingBatch([record]);
+  do_check_eq(1, failed.length);
+  do_check_eq(guid, failed[0]);
+
+  let addon = getAddonFromAddonManagerByID(id);
+  do_check_eq(null, addon);
+
+  server.stop(run_next_test);
+});
+
+add_test(function test_remove() {
+  _("Ensure removing add-ons from deleted records works.");
+
+  let addon = installAddon("test_install1");
+  let record = createRecordForThisApp(addon.syncGUID, addon.id, true, true);
+
+  let failed = store.applyIncomingBatch([record]);
+  do_check_eq(0, failed.length);
+
+  let newAddon = getAddonFromAddonManagerByID(addon.id);
+  do_check_eq(null, newAddon);
 
   run_next_test();
 });

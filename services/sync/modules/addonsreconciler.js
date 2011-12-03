@@ -289,9 +289,10 @@ AddonsReconciler.prototype = {
         this._log.debug("Removing change listener.");
         return false;
       } else {
+        this._log.debug("Retaining change listener.");
         return true;
       }
-    });
+    }.bind(this));
   },
 
   /**

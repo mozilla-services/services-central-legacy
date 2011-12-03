@@ -284,15 +284,14 @@ AddonsReconciler.prototype = {
    * Removes a previously-installed change listener from the instance.
    */
   removeChangeListener: function removeChangeListener(listener) {
-    let pos = 0;
-    while (pos < this._listeners.length) {
-      if (this._listeners[pos] == listener) {
+    this._listeners = this._listeners.filter(function(element) {
+      if (element == listener) {
         this._log.debug("Removing change listener.");
-        this._listeners.splice(pos, 1);
+        return false;
       } else {
-        pos++;
+        return true;
       }
-    }
+    });
   },
 
   /**
@@ -494,7 +493,7 @@ AddonsReconciler.prototype = {
       // followed by another event and that this follow-up event is the most
       // appropriate to react to. Currently we ignore onEnabling, onDisabling,
       // and onUninstalling for non-restartless add-ons.
-      if (requiresRestart != undefined && !requiresRestart) {
+      if (requiresRestart === false) {
         this._log.debug("Ignoring notification because restartless");
         return;
       }

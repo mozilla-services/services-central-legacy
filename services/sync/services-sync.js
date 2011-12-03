@@ -25,8 +25,6 @@ pref("services.sync.engine.prefs", true);
 pref("services.sync.engine.tabs", true);
 pref("services.sync.engine.tabs.filteredUrls", "^(about:.*|chrome://weave/.*|wyciwyg:.*|file:.*)$");
 
-pref("services.sync.engineStatusChanged.addons", true);
-
 pref("services.sync.jpake.serverURL", "https://setup.services.mozilla.com/");
 pref("services.sync.jpake.pollInterval", 1000);
 pref("services.sync.jpake.firstMsgMaxTries", 300); // 5 minutes

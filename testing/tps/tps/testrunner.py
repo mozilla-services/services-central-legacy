@@ -98,7 +98,7 @@ class TPSTestRunner(object):
                           'browser.tabs.warnOnClose' : False,
                           'browser.warnOnQuit': False,
                           'browser.sessionstore.resume_from_crash': False,
-                          'services.sync.addon.ignoreRepositoryChecking': True,
+                          'services.sync.addons.ignoreRepositoryChecking': True,
                           'services.sync.firstSync': 'notReady',
                           'services.sync.lastversion': '1.0',
                           'services.sync.log.rootLogger': 'Trace',

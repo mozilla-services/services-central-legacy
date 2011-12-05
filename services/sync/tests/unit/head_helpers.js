@@ -1,8 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-"use strict";
-
 Cu.import("resource://services-sync/async.js");
 Cu.import("resource://services-sync/util.js");
 Cu.import("resource://services-sync/record.js");

@@ -208,6 +208,13 @@ AddonsReconciler.prototype = {
       this._changes = [];
 
       if (json != undefined) {
+        let version = json.version;
+        if (!version || version != 1) {
+          this._log.error("Could not load JSON file because version not " +
+                          "supported: " + version);
+          callback(null, false);
+        }
+
         this._addons = json.addons;
         for each (let record in this._addons) {
           record.modified = new Date(record.modified);
@@ -218,11 +225,11 @@ AddonsReconciler.prototype = {
         }
 
         if (callback) {
-          callback(false, true);
+          callback(null, true);
         }
       } else {
         if (callback) {
-          callback(false, false);
+          callback(null, false);
         }
       }
     });
@@ -239,7 +246,7 @@ AddonsReconciler.prototype = {
    *         passed to callback.
    */
   saveState: function saveState(path, callback) {
-    let state = {addons: {}, changes: []};
+    let state = {version: 1, addons: {}, changes: []};
 
     for (let [id, record] in Iterator(this._addons)) {
       state[id] = {};

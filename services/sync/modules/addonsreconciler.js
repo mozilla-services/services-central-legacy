@@ -217,8 +217,8 @@ AddonsReconciler.prototype = {
           record.modified = new Date(record.modified);
         }
 
-        for each (let change in json.changes) {
-          this._changes.push([new Date(change[0]), change[1], change[2]]);
+        for each (let [time, change, id] in json.changes) {
+          this._changes.push([new Date(time), change, id]);
         }
 
         if (callback) {

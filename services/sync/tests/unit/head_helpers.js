@@ -77,6 +77,13 @@ function initTestLogging(level) {
 // This is needed for loadAddonTestFunctions().
 let gGlobalScope = this;
 
+function ExtensionsTestPath(path) {
+  if (path[0] != "/") {
+    throw Error("Path must begin with '/': " + path);
+  }
+
+  return "../../../../toolkit/mozapps/extensions/test/xpcshell" + path;
+
 /**
  * Loads the AddonManager test functions by importing its test file.
  *
@@ -85,7 +92,7 @@ let gGlobalScope = this;
  * universe will end.
  */
 function loadAddonTestFunctions() {
-  const path = "../../../../toolkit/mozapps/extensions/test/xpcshell/head_addons.js";
+  const path = ExtensionsTestPath("/head_addons.js");
   let file = do_get_file(path);
   let uri = Services.io.newFileURI(file);
   Services.scriptloader.loadSubScript(uri.spec, gGlobalScope);
@@ -93,8 +100,7 @@ function loadAddonTestFunctions() {
 }
 
 function getAddonInstall(name) {
-  let f = do_get_file("../../../../toolkit/mozapps/extensions/test/xpcshell/addons/"
-                      + name + ".xpi");
+  let f = do_get_file(ExtensionsTestPath("/addons/" + name + ".xpi"));
   let cb = Async.makeSyncCallback();
   AddonManager.getInstallForFile(f, cb);
 

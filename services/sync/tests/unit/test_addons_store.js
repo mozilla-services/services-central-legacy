@@ -274,6 +274,62 @@ add_test(function test_apply_uninstall() {
   run_next_test();
 });
 
+add_test(function test_ignore_untrusted_source_uris() {
+  _("Ensures that source URIs from insecure schemes are rejected.");
+
+  Svc.Prefs.set("addons.ignoreRepositoryChecking", false);
+
+  let ioService = Cc["@mozilla.org/network/io-service;1"]
+                  .getService(Ci.nsIIOService);
+
+  const bad = ["http://example.com/foo.xpi",
+               "ftp://example.com/foo.xpi",
+               "silly://example.com/foo.xpi"];
+
+  const good = ["https://example.com/foo.xpi", "ftps://example.com/foo.xpi"];
+
+  for each (let s in bad) {
+    let sourceURI = ioService.newURI(s, null, null);
+    let addon = {sourceURI: sourceURI, name: "foo"};
+
+    try {
+      store.getInstallFromSearchResult(addon, null);
+    } catch (ex) {
+      do_check_neq(null, ex);
+      do_check_eq(0, ex.message.indexOf("Insecure source URI"));
+      continue;
+    }
+
+    // We should never get here if an exception is thrown.
+    do_check_true(false);
+  }
+
+  let count = 0;
+  for each (let s in good) {
+    let sourceURI = ioService.newURI(s, null, null);
+    let addon = {sourceURI: sourceURI, name: "foo", id: "foo"};
+
+    // Despite what you might think, we don't get an error in the callback.
+    // The install won't work because the underlying Addon instance wasn't
+    // proper. But, that just results in an AddonInstall that is missing
+    // certain values. We really just care that the callback is being invoked
+    // anyway.
+    let callback = function(error, install) {
+      do_check_eq(null, error);
+      do_check_neq(null, install);
+      do_check_eq(sourceURI.spec, install.sourceURI.spec);
+
+      count += 1;
+
+      if (count >= good.length) {
+        run_next_test();
+      }
+    };
+
+    store.getInstallFromSearchResult(addon, callback);
+  }
+});
+
 /*
 add_test(function test_wipe() {
   _("Ensures that wiping causes add-ons to be uninstalled.");

@@ -592,7 +592,7 @@ AddonsStore.prototype = {
    *
    * When complete it calls a callback with 2 arguments, error and result.
    *
-   * If error is falesy, result is an object. If error is truthy, result is
+   * If error is falsy, result is an object. If error is truthy, result is
    * null.
    *
    * The result object has the following keys:
@@ -615,7 +615,7 @@ AddonsStore.prototype = {
       }
 
       if (!install) {
-        cb("AddonInstall not available: " + addon.id, null);
+        cb(new Error("AddonInstall not available: " + addon.id), null);
         return;
       }
 
@@ -633,16 +633,16 @@ AddonsStore.prototype = {
           onInstallFailed: function(install) {
             install.removeListener(listener);
 
-            cb("Install failed: " + install.error, null);
+            cb(new Error("Install failed: " + install.error), null);
           },
           onDownloadEnded: function(wrapper) {
             restart = wrapper.addon.operationRequiringRestart &
-              AddonManager.OP_NEEDS_RESTART_INSTALL;
+                        AddonManager.OP_NEEDS_RESTART_INSTALL;
           },
           onDownloadFailed: function(install) {
             install.removeListener(listener);
 
-            cb("Download failed: " + install.error, null);
+            cb(new Error("Download failed: " + install.error), null);
           }
         };
         install.addListener(listener);
@@ -659,7 +659,7 @@ AddonsStore.prototype = {
    * Uninstalls the Addon instance and invoke a callback when it is done.
    *
    * @param addon
-   *        Addon instance ot uninstall.
+   *        Addon instance to uninstall.
    * @param callback
    *        Function to be invoked when uninstall has finished. It receives a
    *        truthy value signifying error and the add-on which was uninstalled.
@@ -793,7 +793,7 @@ AddonsStore.prototype = {
 
           if (finishedCount >= addonsLength) {
             if (ourResult.errors.length > 0) {
-              cb("1 or more add-ons failed to install", ourResult);
+              cb(new Error("1 or more add-ons failed to install"), ourResult);
             } else {
               cb(null, ourResult);
             }
@@ -807,7 +807,7 @@ AddonsStore.prototype = {
       }.bind(this),
 
       searchFailed: function searchFailed() {
-        cb("AddonRepository search failed", null);
+        cb(new Error("AddonRepository search failed"), null);
       }.bind(this)
     });
   }

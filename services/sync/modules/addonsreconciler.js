@@ -63,9 +63,9 @@ const CHANGE_UNINSTALLED = 2;
 const CHANGE_ENABLED = 3;
 const CHANGE_DISABLED = 4;
 
-const EXPORTED_SYMBOLS = ["AddonsReconciler", CHANGE_INSTALLED,
-                          CHANGE_UNINSTALLED, CHANGE_ENABLED,
-                          CHANGE_DISABLED];
+const EXPORTED_SYMBOLS = ["AddonsReconciler", "CHANGE_INSTALLED",
+                          "CHANGE_UNINSTALLED", "CHANGE_ENABLED",
+                          "CHANGE_DISABLED"];
 /**
  * Maintains state of add-ons.
  *

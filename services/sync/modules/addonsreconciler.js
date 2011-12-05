@@ -110,10 +110,10 @@ const EXPORTED_SYMBOLS = ["AddonsReconciler", "CHANGE_INSTALLED",
  *
  * For non-restartless add-ons, an application restart may occur between
  * IL.onInstallEnded and AL.onInstalled. Unfortunately, Sync likely will
- * not be lodaded when AL.onInstalled is fired shortly after application
+ * not be loaded when AL.onInstalled is fired shortly after application
  * start, so it won't see this event. Therefore, for add-ons requiring a
  * restart, Sync treats the IL.onInstallEnded event as good enough to
- * denote an install. For restartless add-ons, Sync assumes AL.onInstalled
+ * indicate an install. For restartless add-ons, Sync assumes AL.onInstalled
  * will follow shortly after IL.onInstallEnded and thus it ignores
  * IL.onInstallEnded.
  *
@@ -155,10 +155,7 @@ function AddonsReconciler() {
   AddonManager.addInstallListener(this);
   this._listening = true;
 
-  let us = this;
-  Svc.Obs.add("xpcom-shutdown", function() {
-    us.stopListening();
-  });
+  Svc.Obs.add("xpcom-shutdown", this.stopListening.bind(this));
 };
 AddonsReconciler.prototype = {
   /** Flag indicating whether we are listening to AddonManager events. */

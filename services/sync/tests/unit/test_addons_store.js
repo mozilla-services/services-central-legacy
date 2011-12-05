@@ -44,8 +44,7 @@ function createAndStartHTTPServer(port) {
   try {
     let server = new nsHttpServer();
 
-    let install1_xpi = "../../../../toolkit/mozapps/extensions/test/xpcshell/" +
-                       "addons/test_install1.xpi";
+    let install1_xpi = ExtensionsTestPath("/addons/test_install1.xpi");
 
     server.registerFile("/search/guid:addon1%40tests.mozilla.org",
                         do_get_file("install1-search.xml"));

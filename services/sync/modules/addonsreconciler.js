@@ -56,8 +56,6 @@ Cu.import("resource://services-sync/log4moz.js");
 Cu.import("resource://services-sync/util.js");
 Cu.import("resource://gre/modules/AddonManager.jsm");
 
-const EXPORTED_SYMBOLS = ["AddonsReconciler"];
-
 const DEFAULT_STATE_FILE = "addonsreconciler";
 
 const CHANGE_INSTALLED = 1;
@@ -65,11 +63,23 @@ const CHANGE_UNINSTALLED = 2;
 const CHANGE_ENABLED = 3;
 const CHANGE_DISABLED = 4;
 
+const EXPORTED_SYMBOLS = ["AddonsReconciler", CHANGE_INSTALLED,
+                          CHANGE_UNINSTALLED, CHANGE_ENABLED,
+                          CHANGE_DISABLED];
 /**
  * Maintains state of add-ons.
  *
- * The AddonsReconciler is installed as an AddonManager listener. When it
- * receives change notifications, it updates its internal state database.
+ * State is maintained in 2 data structures, an object mapping add-on IDs
+ * to metadata and an array of changes over time. The object mapping can be
+ * thought of as a minimal copy of data from AddonManager which is needed for
+ * Sync. The array is effectively a log of changes over time.
+ *
+ * The data structures are persisted to disk by serializing to a JSON file in
+ * the current profile. The data structures are updated by 2 mechanisms. First,
+ * they can be refreshed from the global state of the AddonManager. This is a
+ * sure-fire way of ensuring the reconciler is up to date. Second, the
+ * reconciler adds itself as an AddonManager listener. When it receives change
+ * notifications, it updates its internal state incrementally.
  *
  * The internal state is persisted to a JSON file in the profile directory.
  *
@@ -90,10 +100,8 @@ const CHANGE_DISABLED = 4;
  *   reconciler.saveStateFile(...);
  *
  *
- * --------------
- *
  * There are 2 classes of listeners in the AddonManager: AddonListener and
- * InstallListener. The class is a listener for both (member functions just
+ * InstallListener. This class is a listener for both (member functions just
  * get called directly).
  *
  * When an add-on is installed, listeners are called in the following order:
@@ -106,8 +114,13 @@ const CHANGE_DISABLED = 4;
  * start, so it won't see this event. Therefore, for add-ons requiring a
  * restart, Sync treats the IL.onInstallEnded event as good enough to
  * denote an install. For restartless add-ons, Sync assumes AL.onInstalled
- * will follow shortly after IL.onInstallEnded and thus is ignores
+ * will follow shortly after IL.onInstallEnded and thus it ignores
  * IL.onInstallEnded.
+ *
+ * The listeners can also see events related to the download of the add-on.
+ * This class isn't interested in those. However, there are failure events,
+ * IL.onDownloadFailed and IL.onDownloadCanceled which get called if a
+ * download doesn't complete successfully.
  *
  * For uninstalls, we see AL.onUninstalling then AL.onUninstalled. Like
  * installs, the events could be separated by an application restart and Sync
@@ -126,29 +139,12 @@ const CHANGE_DISABLED = 4;
  * AL.onOperationCancelled event. We treat this event like any other.
  *
  * Restartless add-ons have interesting behavior during uninstall. These
- * add-ons are first disabled then they are actually uninstalled. So, the
- * tracker will see onDisabling and onDisabled. The onUninstalling and
- * onUninstalled events only come after the Addon Manager is closed or another
- * view is switched to.
- *
- * To further complicate things, the tracker will see some notifications before
- * changes hit the database. In the case of non-restartless add-ons,
- * IL.onInstallEnded is the observed event and this is called *before* the
- * add-on has hit the database. In the case of restartless add-ons,
- * AL.onInstalled is fired after the database is populated. What this means
- * is the tracker knows a particular ID has changed, but when a sync comes
- * along and the store calls AddonManager.getAddonBySyncGUID(), that may fail
- * to retrieve anything because the add-on hasn't been inserted into the
- * database yet! If we were to do nothing, the sync engine would treat this
- * as a deleted record and the install event would never make it to a record.
- *
- * Fortunately, the tracker knows what the state should be based on the events
- * it has seen. The tracker maintains state on syncGUIDs that should eventually
- * be in a certain state. During a sync, the tracker is consulted. The tracker
- * can effectively override the AddonManager, saying "Don't trust data for this
- * add-on. But, if the AddonManager and I agree, you can trust the
- * AddonManager."
- *
+ * add-ons are first disabled then they are actually uninstalled. So, we will
+ * see AL.onDisabling and AL.onDisabled. The onUninstalling and onUninstalled
+ * events only come after the Addon Manager is closed or another view is
+ * switched to. In the case of Sync performing the uninstall, the uninstall
+ * events will occur immediately. However, we still see disabling events and
+ * heed them like they were normal. In the end, the state is proper.
  */
 function AddonsReconciler() {
   this._log = Log4Moz.repository.getLogger("Sync.AddonsReconciler");

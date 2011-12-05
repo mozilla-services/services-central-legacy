@@ -204,30 +204,32 @@ AddonsReconciler.prototype = {
       this._addons = {};
       this._changes = [];
 
-      if (json != undefined) {
-        let version = json.version;
-        if (!version || version != 1) {
-          this._log.error("Could not load JSON file because version not " +
-                          "supported: " + version);
-          callback(null, false);
-        }
-
-        this._addons = json.addons;
-        for each (let record in this._addons) {
-          record.modified = new Date(record.modified);
-        }
-
-        for each (let [time, change, id] in json.changes) {
-          this._changes.push([new Date(time), change, id]);
-        }
-
-        if (callback) {
-          callback(null, true);
-        }
-      } else {
+      if (!json) {
         if (callback) {
           callback(null, false);
         }
+
+        return;
+      }
+
+      let version = json.version;
+      if (!version || version != 1) {
+        this._log.error("Could not load JSON file because version not " +
+                        "supported: " + version);
+        callback(null, false);
+      }
+
+      this._addons = json.addons;
+      for each (let record in this._addons) {
+        record.modified = new Date(record.modified);
+      }
+
+      for each (let [time, change, id] in json.changes) {
+        this._changes.push([new Date(time), change, id]);
+      }
+
+      if (callback) {
+        callback(null, true);
       }
     });
   },
@@ -243,6 +245,7 @@ AddonsReconciler.prototype = {
    *         passed to callback.
    */
   saveState: function saveState(path, callback) {
+    let file = path || DEFAULT_STATE_FILE;
     let state = {version: 1, addons: {}, changes: []};
 
     for (let [id, record] in Iterator(this._addons)) {
@@ -257,11 +260,11 @@ AddonsReconciler.prototype = {
       }
     }
 
-    for each (let change in this._changes) {
-      state.changes.push([change[0].getTime(), change[1], change[2]]);
+    for each (let [time, change, id] in this._changes) {
+      state.changes.push([time.getTime(), change, id]);
     }
 
-    Utils.jsonSave(path || DEFAULT_STATE_FILE, this, state, callback);
+    Utils.jsonSave(file, this, state, callback);
   },
 
   /**
@@ -274,7 +277,7 @@ AddonsReconciler.prototype = {
    * change.
    */
   addChangeListener: function addChangeListener(listener) {
-    if (!this._listeners.some(function(i) { return i == listener; })) {
+    if (this._listeners.indexOf(listener) == -1) {
       this._log.debug("Adding change listener.");
       this._listeners.push(listener);
     }
@@ -302,6 +305,7 @@ AddonsReconciler.prototype = {
    */
   stopListening: function stopListening() {
     if (this._listening) {
+      this._log.debug("Stopping listening and removing AddonManager listeners.");
       AddonManager.removeInstallListener(this);
       AddonManager.removeAddonListener(this);
       this._listening = false;
@@ -321,8 +325,8 @@ AddonsReconciler.prototype = {
         this.rectifyStateFromAddon(addon);
       }
 
-      // Look for locally-defined add-ons that don't exist any more and update
-      // their record
+      // Look for locally-defined add-ons that no longer exist and update their
+      // record.
       for (let [id, addon] in Iterator(this._addons)) {
         if (id in ids) {
           continue;
@@ -416,13 +420,9 @@ AddonsReconciler.prototype = {
   getChangesSinceDate: function getChangesSinceDate(date) {
     let length = this._changes.length;
     for (let i = 0; i < length; i++) {
-      let entry = this._changes[i];
-
-      if (entry[0] < date) {
-        continue;
+      if (this._changes[i][0] >= date) {
+        return this._changes.slice(i);
       }
-
-      return this._changes.slice(i);
     }
 
     return [];
@@ -436,13 +436,11 @@ AddonsReconciler.prototype = {
    */
   pruneChangesBeforeDate: function pruneChangesBeforeDate(date) {
     while (this._changes.length > 0) {
-      let entry = this._changes[0];
-
-      if (entry[0] < date) {
-        delete this._changes[0];
-      } else {
+      if (this._changes[0][0] >= date) {
         return;
       }
+
+      delete this._changes[0];
     }
   },
 
@@ -494,7 +492,7 @@ AddonsReconciler.prototype = {
       // appropriate to react to. Currently we ignore onEnabling, onDisabling,
       // and onUninstalling for non-restartless add-ons.
       if (requiresRestart === false) {
-        this._log.debug("Ignoring notification because restartless");
+        this._log.debug("Ignoring " + action + " for restartless add-on.");
         return;
       }
 

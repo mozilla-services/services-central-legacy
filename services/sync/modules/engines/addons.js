@@ -308,6 +308,11 @@ AddonsStore.prototype = {
     if (addon) {
       this._log.info("Setting add-on Sync GUID to remote: " + record.id);
       addon.syncGUID = record.id;
+
+      // TODO is there a better way to set userDisabled on install?
+      let cb = Async.makeSpinningCallback();
+      this.updateUserDisabled(addon, !record.enabled, cb);
+      cb.wait();
     }
   },
 
@@ -338,11 +343,9 @@ AddonsStore.prototype = {
       return;
     }
 
-    if (record.enabled == addon.userDisabled) {
-      this._log.info("Updating userEnabled flag: " + addon.id);
-
-      addon.userDisabled = !record.enabled;
-    }
+    let cb = Async.makeSpinningCallback();
+    this.updateUserDisabled(addon, !record.enabled, cb);
+    cb.wait();
   },
 
   itemExists: function itemExists(guid) {
@@ -588,8 +591,7 @@ AddonsStore.prototype = {
       try {
         this._log.info("Installing " + addon.id);
 
-        let restart = addon.operationRequiringRestart &
-          AddonManager.OP_NEEDS_RESTART_INSTALL;
+        let restart = null;
 
         let listener = {
           onInstallEnded: function(install, addon) {
@@ -601,6 +603,10 @@ AddonsStore.prototype = {
             install.removeListener(listener);
 
             cb("Install failed: " + install.error, null);
+          },
+          onDownloadEnded: function(wrapper) {
+            restart = wrapper.addon.operationRequiringRestart &
+              AddonManager.OP_NEEDS_RESTART_INSTALL;
           },
           onDownloadFailed: function(install) {
             install.removeListener(listener);
@@ -638,6 +644,74 @@ AddonsStore.prototype = {
     };
     AddonManager.addAddonListener(listener);
     addon.uninstall();
+  },
+
+  /**
+   * Update the userDisabled flag on an add-on.
+   *
+   * This will enable or disable an add-on and call the supplied callback when
+   * the action is complete. If no action is needed, the callback gets called
+   * immediately.
+   *
+   * @param addon
+   *        Addon instance to manipulate.
+   * @param value
+   *        Boolean to which to set userDisabled on the passed Addon.
+   * @param callback
+   *        Function to be called when action is complete. Will receive 2
+   *        arguments, a truthy value that signifies error, and the Addon
+   *        instance passed to this function.
+   */
+  updateUserDisabled: function updateUserDisabled(addon, value, callback) {
+    if (addon.userDisabled == value) {
+      callback(null, addon);
+      return;
+    }
+
+    let us = this;
+
+    let listener = {
+      onEnabling: function onEnabling(wrapper, needsRestart) {
+        us._log.debug("onEnabling: " + wrapper.id);
+        // We ignore the restartless case because we'll get onEnabled shortly.
+        if (!needsRestart) {
+          return;
+        }
+
+        AddonManager.removeAddonListener(listener);
+        callback(null, wrapper);
+      },
+      onEnabled: function onEnabled(wrapper) {
+        us._log.debug("onEnabled: " + wrapper.id);
+
+        AddonManager.removeAddonListener(listener);
+        callback(null, wrapper);
+      },
+      onDisabling: function onDisabling(wrapper, needsRestart) {
+        us._log.debug("onDisabling: " + wrapper.id);
+
+        if (!needsRestart) {
+          return;
+        }
+
+        AddonManager.removeAddonListener(listener);
+        callback(null, wrapper);
+      },
+      onDisabled: function onDisabled(wrapper) {
+        us._log.debug("onDisabled: " + wrapper.id);
+        AddonManager.removeAddonListener(listener);
+        callback(null, wrapper);
+      }
+    };
+
+    // TODO enable this
+    // For some reason the callbacks aren't always getting fired. I have *no*
+    // clue why.
+    //AddonManager.addAddonListener(listener);
+
+    this._log.info("Updating userDisabled flag: " + addon.id + " -> " + value);
+    addon.userDisabled = !!value;
+    callback(null, addon);
   },
 
   /**

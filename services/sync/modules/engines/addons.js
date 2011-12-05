@@ -68,16 +68,18 @@ Cu.import("resource://services-sync/record.js");
 Cu.import("resource://services-sync/util.js");
 Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/async.js");
+Cu.import("resource://services-sync/ext/Preferences.js");
 
 Cu.import("resource://gre/modules/AddonManager.jsm");
 Cu.import("resource://gre/modules/AddonRepository.jsm");
 
 const EXPORTED_SYMBOLS = ["AddonsEngine"];
 
-const ADDON_REPOSITORY_WHITELIST_HOSTNAME = "addons.mozilla.org";
-
 // 7 days in milliseconds.
 const PRUNE_ADDON_CHANGES_THRESHOLD = 60 * 60 * 24 * 7 * 1000;
+
+const EXTENSIONS_PREFS = Preferences("extensions");
+const DEFAULT_AMO_HOST = "amo.mozilla.org";
 
 /**
  * AddonRecord represents the state of an add-on in an application.
@@ -528,8 +530,15 @@ AddonsStore.prototype = {
     AddonRepository.getCachedAddonByID(addon.id, cb);
     let result = Async.waitForSyncCallback(cb);
 
+    // For security reasons, we currently limit synced add-ons to those
+    // installed from the official addons.mozilla.org site. We additionally
+    // require TLS with the add-ons site to help prevent forgeries.
+    let trustedHostname = EXTENSIONS_PREFS.get("acr.amo_host",
+                                               DEFAULT_AMO_HOST);
+
     return result && result.sourceURI &&
-           result.sourceURI.host == ADDON_REPOSITORY_WHITELIST_HOSTNAME;
+           result.sourceURI.host == trustedHostname &&
+           result.sourceURI.scheme == "https";
   },
 
   /**

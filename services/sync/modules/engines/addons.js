@@ -543,7 +543,8 @@ AddonsStore.prototype = {
     this._log.debug("Manually obtaining install for " + addon.id);
 
     // Verify that the source URI uses TLS. We don't allow installs from
-    // insecure sources for security reasons.
+    // insecure sources for security reasons. The Addon Manager ensures that
+    // cert validation, etc is performed.
     if (!Svc.Prefs.get("addons.ignoreRepositoryChecking", false)) {
       let scheme = addon.sourceURI.scheme;
       if (scheme != "https" && scheme != "ftps") {

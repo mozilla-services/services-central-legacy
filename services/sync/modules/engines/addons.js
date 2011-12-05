@@ -125,19 +125,12 @@ Utils.deferGetSet(AddonRecord, "cleartext", ["addonID",
 /**
  * The AddonsEngine handles synchronization of add-ons between clients.
  *
- * The engine handles incoming add-ons in one large batch, as it needs
- * to assess the overall state at one time.
+ * The engine maintains an instance of an AddonsReconciler, which is the entity
+ * maintaining state for add-ons. It provides the history and tracking APIs
+ * that AddonManager doesn't.
  *
- * The engine fires the following notifications (all prefixed with
- * "weave:engine:addons:"):
- *
- *   restart-required  Fired at the tail end of performing a sync when an
- *                     an application restart is required to finish add-on
- *                     processing. The observer receives an array of add-on IDs
- *                     that require restart. Observers should likely wait until
- *                     after the sync is done (signified by reception of the
- *                     "weave:service:sync:finish" event) to actually restart
- *                     or give the user an opportunity to restart.
+ * The engine instance overrides a handful of functions on the base class. The
+ * rationale for each is documented by that function.
  */
 function AddonsEngine() {
   SyncEngine.call(this, "Addons");
@@ -155,11 +148,13 @@ AddonsEngine.prototype = {
   _reconcilerStateLoaded: false,
 
   /**
-   * Override parent method to find add-ons by ID, not Sync GUID.
+   * Override parent method to find add-ons by their public ID, not Sync GUID.
    */
   _findDupe: function _findDupe(item) {
     let id = item.addonID;
 
+    // The reconciler should have been updated at the top of the sync, so we
+    // can assume it is up to date when this function is called.
     let addons = this._reconciler.addons;
     if (!(id in addons)) {
       return null;
@@ -174,7 +169,7 @@ AddonsEngine.prototype = {
   },
 
   /**
-   * We override getChangedIDs to pull in tracker changes plus changes from the
+   * Override getChangedIDs to pull in tracker changes plus changes from the
    * reconciler log.
    */
   getChangedIDs: function getChangedIDs() {
@@ -184,6 +179,9 @@ AddonsEngine.prototype = {
     }
 
     let lastSyncDate = new Date(this.lastSync * 1000);
+
+    // The reconciler should have been refreshed at the beginning of a sync and
+    // we assume this function is only called from within a sync.
     let reconcilerChanges = this._reconciler.getChangesSinceDate(lastSyncDate);
     let addons = this._reconciler.addons;
     for each (let change in reconcilerChanges) {
@@ -208,8 +206,15 @@ AddonsEngine.prototype = {
   },
 
   /**
-   * Override start of sync function to refresh add-on global state and pull
-   * in any missing changes.
+   * Override start of sync function to refresh reconciler.
+   *
+   * Many functions in this class assume the reconciler is refreshed at the
+   * top of a sync. If this ever changes, those functions should be revisited.
+   *
+   * Technically speaking, we don't need to refresh the reconciler on every
+   * sync since it is installed as an AddonManager listener. However, add-ons
+   * are complicated and we force a full refresh, just in case the listeners
+   * missed something.
    */
   _syncStartup: function _syncStartup() {
     // We refresh state before calling parent because syncStartup in the parent
@@ -222,6 +227,11 @@ AddonsEngine.prototype = {
 
   /**
    * Override end of sync to perform a little housekeeping on the reconciler.
+   *
+   * We prune changes to prevent the reconciler state from growing without
+   * bound. Even if it grows unbounded, there would have to be many add-on
+   * changes (thousands) for it to slow things down significantly. This is
+   * highly unlikely to occur. Still, we exercise defense just in case.
    */
   _syncCleanup: function _syncCleanup() {
     let ms = 1000 * this.lastSync - PRUNE_ADDON_CHANGES_THRESHOLD;
@@ -232,6 +242,9 @@ AddonsEngine.prototype = {
 
   /**
    * Helper function to ensure reconciler is up to date.
+   *
+   * This will synchronously load the reconciler's state from the file
+   * system (if needed) and refresh the state of the reconciler.
    */
   _refreshReconcilerState: function _refreshReconcilerState() {
     this._log.debug("Refreshing reconciler state");

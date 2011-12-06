@@ -516,15 +516,34 @@ AddonsStore.prototype = {
     //   3) Not installed by a foreign entity (i.e. installed by the app)
     //      since they act like global extensions.
     //   4) Are installed from AMO
-    let syncable = addon &&
-                   this._syncableTypes.indexOf(addon.type) != -1 &&
-                   addon.scope | AddonManager.SCOPE_PROFILE &&
-                   !addon.foreignInstall;
+
+    // We could represent the test as a complex boolean expression, but don't
+    // to make the logged reasons more debuggable.
+    if (!addon) {
+      this._log.debug("Null object passed to isAddonSyncable.");
+      return false;
+    }
+
+    if (this._syncableTypes.indexOf(addon.type) == -1) {
+      this._log.debug(addon.id + " not syncable: type not in whitelist:" +
+                      addon.type);
+      return false;
+    }
+
+    if (!(addon.scope | AddonManager.SCOPE_PROFILE)) {
+      this._log.debug(addon.id + " not syncable: not installed in profile.");
+      return false;
+    }
+
+    if (addon.foreignInstall) {
+      this._log.debug(addon.id + " not syncable: is foreign install.");
+      return false;
+    }
 
     // We provide a back door to skip the repository checking of an add-on.
     // This is utilized by the tests to make testing easier.
     if (Svc.Prefs.get("addons.ignoreRepositoryChecking", false)) {
-      return syncable;
+      return true;
     }
 
     let cb = Async.makeSyncCallback();
@@ -537,9 +556,30 @@ AddonsStore.prototype = {
     let trustedHostname = EXTENSIONS_PREFS.get("acr.amo_host",
                                                DEFAULT_AMO_HOST);
 
-    return result && result.sourceURI &&
-           result.sourceURI.host == trustedHostname &&
-           result.sourceURI.scheme == "https";
+    if (!result) {
+      this._log.debug(addon.id + " not syncable: add-on not found in add-on " +
+                      "repository.");
+      return false;
+    }
+
+    if (!result.sourceURI) {
+      this._log.debug(addon.id + " not syncable: no source URI defined.");
+      return false;
+    }
+
+    if (result.sourceURI.host != trustedHostname) {
+      this._log.debug(addon.id + " not syncable: source hostname not " +
+                      "trusted: " + result.sourceURI.host);
+      return false;
+    }
+
+    if (result.sourceURI.scheme != "https") {
+      this._log.debug(addon.id + " not syncable: source URI not HTTPS: " +
+                      result.sourceURI.spec);
+      return false;
+    }
+
+    return true;
   },
 
   /**

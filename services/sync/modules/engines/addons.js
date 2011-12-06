@@ -78,9 +78,6 @@ const EXPORTED_SYMBOLS = ["AddonsEngine"];
 // 7 days in milliseconds.
 const PRUNE_ADDON_CHANGES_THRESHOLD = 60 * 60 * 24 * 7 * 1000;
 
-const EXTENSIONS_PREFS = new Preferences("extensions");
-const DEFAULT_AMO_HOST = "amo.mozilla.org";
-
 /**
  * AddonRecord represents the state of an add-on in an application.
  *
@@ -525,12 +522,12 @@ AddonsStore.prototype = {
     }
 
     if (this._syncableTypes.indexOf(addon.type) == -1) {
-      this._log.debug(addon.id + " not syncable: type not in whitelist:" +
+      this._log.debug(addon.id + " not syncable: type not in whitelist: " +
                       addon.type);
       return false;
     }
 
-    if (!(addon.scope | AddonManager.SCOPE_PROFILE)) {
+    if (!(addon.scope & AddonManager.SCOPE_PROFILE)) {
       this._log.debug(addon.id + " not syncable: not installed in profile.");
       return false;
     }
@@ -550,32 +547,45 @@ AddonsStore.prototype = {
     AddonRepository.getCachedAddonByID(addon.id, cb);
     let result = Async.waitForSyncCallback(cb);
 
-    // For security reasons, we currently limit synced add-ons to those
-    // installed from the official addons.mozilla.org site. We additionally
-    // require TLS with the add-ons site to help prevent forgeries.
-    let trustedHostname = EXTENSIONS_PREFS.get("acr.amo_host",
-                                               DEFAULT_AMO_HOST);
-
     if (!result) {
       this._log.debug(addon.id + " not syncable: add-on not found in add-on " +
                       "repository.");
       return false;
     }
 
-    if (!result.sourceURI) {
-      this._log.debug(addon.id + " not syncable: no source URI defined.");
+    return this.isSourceURITrusted(result.sourceURI);
+  },
+
+  /**
+   * Determine whether an add-on's sourceURI field is trusted and the add-on
+   * can be installed.
+   *
+   * @param  uri
+   *         nsIURI instance to validate
+   * @return bool
+   */
+  isSourceURITrusted: function isSourceURITrusted(uri) {
+    // For security reasons, we currently limit synced add-ons to those
+    // installed from trusted hostname(s). We additionally require TLS with
+    // the add-ons site to help prevent forgeries.
+    let trustedHostnames = Svc.Prefs.get("addons.trustedSourceHostnames", "")
+                           .split(",");
+
+    if (!uri) {
+      this._log.debug("Undefined argument to isSourceURITrusted().");
       return false;
     }
 
-    if (result.sourceURI.host != trustedHostname) {
-      this._log.debug(addon.id + " not syncable: source hostname not " +
-                      "trusted: " + result.sourceURI.host);
+    // Scheme is validated before the hostname because uri.host may not be
+    // populated for certain schemes. It appears to always be populated for
+    // https, so we avoid the potential NS_ERROR_FAILURE on field access.
+    if (uri.scheme != "https") {
+      this._log.debug("Source URI not HTTPS: " + uri.spec);
       return false;
     }
 
-    if (result.sourceURI.scheme != "https") {
-      this._log.debug(addon.id + " not syncable: source URI not HTTPS: " +
-                      result.sourceURI.spec);
+    if (trustedHostnames.indexOf(uri.host) == -1) {
+      this._log.debug("Source hostname not trusted: " + uri.host);
       return false;
     }
 

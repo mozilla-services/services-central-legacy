@@ -273,6 +273,79 @@ add_test(function test_apply_uninstall() {
   run_next_test();
 });
 
+add_test(function test_addon_syncability() {
+  _("Ensure isAddonSyncable functions properly.");
+
+  Svc.Prefs.set("addons.ignoreRepositoryChecking", true);
+  Svc.Prefs.set("addons.trustedSourceHostnames",
+                "addons.mozilla.org,other.example.com");
+
+  do_check_false(store.isAddonSyncable(null));
+
+  let addon = installAddon("test_install1");
+  do_check_true(store.isAddonSyncable(addon));
+
+  let dummy = {};
+  const KEYS = ["id", "syncGUID", "type", "scope", "foreignInstall"];
+  for each (let k in KEYS) {
+    dummy[k] = addon[k];
+  }
+
+  do_check_true(store.isAddonSyncable(dummy));
+
+  dummy.type = "UNSUPPORTED";
+  do_check_false(store.isAddonSyncable(dummy));
+  dummy.type = addon.type;
+
+  dummy.scope = 0;
+  do_check_false(store.isAddonSyncable(dummy));
+  dummy.scope = addon.scope;
+
+  dummy.foreignInstall = true;
+  do_check_false(store.isAddonSyncable(dummy));
+  dummy.foreignInstall = false;
+
+  uninstallAddon(addon);
+
+  do_check_false(store.isSourceURITrusted(null));
+
+  function createURI(s) {
+    let service = Components.classes["@mozilla.org/network/io-service;1"]
+                  .getService(Components.interfaces.nsIIOService);
+    return service.newURI(s, null, null);
+  }
+
+  let trusted = [
+    "https://addons.mozilla.org/foo",
+    "https://other.example.com/foo"
+  ];
+
+  let untrusted = [
+    "http://addons.mozilla.org/foo", // non-https
+    "https://untrusted.example.com/foo", // non-trusted hostname`
+  ];
+
+  for each (let uri in trusted) {
+    do_check_true(store.isSourceURITrusted(createURI(uri)));
+  }
+
+  for each (let uri in untrusted) {
+    do_check_false(store.isSourceURITrusted(createURI(uri)));
+  }
+
+  Svc.Prefs.set("addons.trustedSourceHostnames", "");
+  for each (let uri in trusted) {
+    do_check_false(store.isSourceURITrusted(createURI(uri)));
+  }
+
+  Svc.Prefs.set("addons.trustedSourceHostnames", "addons.mozilla.org");
+  do_check_true(store.isSourceURITrusted(createURI("https://addons.mozilla.org/foo")));
+
+  Svc.Prefs.reset("addons.trustedSourceHostnames");
+
+  run_next_test();
+});
+
 add_test(function test_ignore_untrusted_source_uris() {
   _("Ensures that source URIs from insecure schemes are rejected.");
 

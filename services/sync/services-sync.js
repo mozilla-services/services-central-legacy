@@ -31,6 +31,12 @@ pref("services.sync.jpake.firstMsgMaxTries", 300); // 5 minutes
 pref("services.sync.jpake.lastMsgMaxTries", 300);  // 5 minutes
 pref("services.sync.jpake.maxTries", 10);
 
+// Allow add-ons to be synced from non-trusted sources.
+pref("services.sync.addons.ignoreRepositoryChecking", false);
+
+// Comma-delimited list of hostnames to trust for add-on install.
+pref("services.sync.addons.trustedSourceHostnames", "addons.mozilla.org");
+
 pref("services.sync.log.appender.console", "Warn");
 pref("services.sync.log.appender.dump", "Error");
 pref("services.sync.log.appender.file.level", "Trace");

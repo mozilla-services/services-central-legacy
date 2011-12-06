@@ -458,11 +458,11 @@ AddonsStore.prototype = {
     // TODO should this wipe *all* add-ons or just the syncable ones?
     this.engine._refreshReconcilerState();
 
-    for (let id in this.getAllIDs()) {
-      let addon = this.getAddonByID(id);
+    for (let guid in this.getAllIDs()) {
+      let addon = this.getAddonByGUID(guid);
       if (!addon) {
         this._log.debug("Ignoring add-on because it couldn't be obtained: " +
-                        id);
+                        guid);
         continue;
       }
 

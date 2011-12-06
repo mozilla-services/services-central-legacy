@@ -329,13 +329,14 @@ add_test(function test_ignore_untrusted_source_uris() {
   }
 });
 
-/*
+
 add_test(function test_wipe() {
   _("Ensures that wiping causes add-ons to be uninstalled.");
 
   let addon1 = installAddon("test_install1");
   let addon2 = installAddon("test_install2_1");
 
+  Svc.Prefs.set("addons.ignoreRepositoryChecking", true);
   store.wipe();
 
   let addon = getAddonFromAddonManagerByID(addon1.id);
@@ -343,6 +344,8 @@ add_test(function test_wipe() {
   addon = getAddonFromAddonManagerByID(addon2.id);
   do_check_eq(null, addon);
 
+  Svc.Prefs.reset("addons.ignoreRepositoryChecking");
+
   run_next_test();
 });
-*/
+

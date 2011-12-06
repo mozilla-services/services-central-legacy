@@ -824,6 +824,7 @@ function loadManifestFromRDF(aUri, aStream) {
   addon.applyBackgroundUpdates = AddonManager.AUTOUPDATE_DEFAULT;
 
   // Generate random GUID used for Sync.
+  // This was lifted from util.js:makeGUID() from services-sync.
   let rng = Cc["@mozilla.org/security/random-generator;1"].
             createInstance(Ci.nsIRandomGenerator);
   let bytes = rng.generateRandomBytes(9);
@@ -7632,9 +7633,8 @@ function AddonWrapper(aAddon) {
     if (aAddon.syncGUID == val)
       return val;
 
-    if (aAddon instanceof DBAddonInternal) {
+    if (aAddon instanceof DBAddonInternal)
       XPIDatabase.setAddonSyncGUID(aAddon, val);
-    }
 
     aAddon.syncGUID = val;
 

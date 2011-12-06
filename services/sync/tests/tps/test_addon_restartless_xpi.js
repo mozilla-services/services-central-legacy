@@ -64,3 +64,6 @@ Phase("phase08", [
   [Sync],
   [Addons.verifyNot, [id]]
 ]);
+
+// TODO test disable and uninstall in separate profiles, then sync in
+// each. Also needed for nonrestartless version.

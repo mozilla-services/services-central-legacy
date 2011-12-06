@@ -78,7 +78,7 @@ const EXPORTED_SYMBOLS = ["AddonsEngine"];
 // 7 days in milliseconds.
 const PRUNE_ADDON_CHANGES_THRESHOLD = 60 * 60 * 24 * 7 * 1000;
 
-const EXTENSIONS_PREFS = Preferences("extensions");
+const EXTENSIONS_PREFS = new Preferences("extensions");
 const DEFAULT_AMO_HOST = "amo.mozilla.org";
 
 /**

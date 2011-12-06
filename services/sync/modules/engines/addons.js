@@ -54,13 +54,18 @@
  *  - Installations
  *  - Uninstallations
  *  - User enabling and disabling
+ *
+ * Synchronization is influenced by the following preferences:
+ *
+ *  - services.sync.addons.ignoreRepositoryChecking
+ *  - services.sync.addons.ignoreUserEnabledChanges
+ *  - services.sync.addons.trustedSourceHostnames
+ *
+ * See the documentation in services-sync.js for the behavior of these prefs.
  */
-
 "use strict";
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cu = Components.utils;
+const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
 
 Cu.import("resource://services-sync/addonsreconciler.js");
 Cu.import("resource://services-sync/engines.js");

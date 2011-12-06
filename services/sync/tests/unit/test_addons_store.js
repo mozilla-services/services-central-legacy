@@ -321,7 +321,8 @@ add_test(function test_addon_syncability() {
   ];
 
   let untrusted = [
-    "http://addons.mozilla.org/foo", // non-https
+    "http://addons.mozilla.org/foo",     // non-https
+    "ftps://addons.mozilla.org/foo",     // non-https
     "https://untrusted.example.com/foo", // non-trusted hostname`
   ];
 

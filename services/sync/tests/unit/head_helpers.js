@@ -83,6 +83,7 @@ function ExtensionsTestPath(path) {
   }
 
   return "../../../../toolkit/mozapps/extensions/test/xpcshell" + path;
+}
 
 /**
  * Loads the AddonManager test functions by importing its test file.

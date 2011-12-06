@@ -185,6 +185,11 @@ AddonsReconciler.prototype = {
    */
   _listeners: [],
 
+  /**
+   * Accessor for add-ons in this object.
+   *
+   * Returns an object mapping add-on IDs to objects containing metadata.
+   */
   get addons() {
     return this._addons;
   },
@@ -247,7 +252,7 @@ AddonsReconciler.prototype = {
   },
 
   /**
-   * Saves the state to a file in the local profile.
+   * Saves the current state to a file in the local profile.
    *
    * @param  path
    *         String path in profile to save to. If not defined, the default
@@ -283,10 +288,13 @@ AddonsReconciler.prototype = {
    * Registers a change listener with this instance.
    *
    * Change listeners are called every time a change is recorded. The listener
-   * should be a function that takes 3 arguments, the Date at which the change
-   * happened, the type of change (a CHANGE_* constant), and the add-on state
-   * object reflecting the current state of the add-on at the time of the
-   * change.
+   * is an object with the function "changeListener" that takes 3 arguments,
+   * the Date at which the change happened, the type of change (a CHANGE_*
+   * constant), and the add-on state object reflecting the current state of
+   * the add-on at the time of the change.
+   *
+   * @param listener
+   *        Object containing changeListener function.
    */
   addChangeListener: function addChangeListener(listener) {
     if (this._listeners.indexOf(listener) == -1) {
@@ -297,6 +305,9 @@ AddonsReconciler.prototype = {
 
   /**
    * Removes a previously-installed change listener from the instance.
+   *
+   * @param listener
+   *        Listener instance to remove.
    */
   removeChangeListener: function removeChangeListener(listener) {
     this._listeners = this._listeners.filter(function(element) {
@@ -314,6 +325,9 @@ AddonsReconciler.prototype = {
    *
    * The reconciler should always be listening. This should only be called when
    * the instance is being destroyed.
+   *
+   * This function will get called automatically on XPCOM shutdown. However, it
+   * is a best practice to call it yourself.
    */
   stopListening: function stopListening() {
     if (this._listening) {
@@ -347,7 +361,7 @@ AddonsReconciler.prototype = {
         // If the id isn't in ids, it means that the add-on has been deleted.
         if (addon.installed) {
           addon.installed = false;
-          this.addChange(new Date(), CHANGE_UNINSTALLED, addon);
+          this._addChange(new Date(), CHANGE_UNINSTALLED, addon);
         }
       }
 
@@ -356,7 +370,13 @@ AddonsReconciler.prototype = {
   },
 
   /**
-   * Rectifies the state of an add-on from an add-on instance.
+   * Rectifies the state of an add-on from an Addon instance.
+   *
+   * This basically says "given an Addon instance, assume it is truth and
+   * apply changes to the local state to reflect it."
+   *
+   * This function could result in change listeners being called if the local
+   * state differs from the passed add-on's state.
    *
    * @param addon
    *        Addon instance being updated.
@@ -381,7 +401,7 @@ AddonsReconciler.prototype = {
         foreignInstall: addon.foreignInstall
       };
       this._addons[id] = record;
-      this.addChange(now, CHANGE_INSTALLED, record);
+      this._addChange(now, CHANGE_INSTALLED, record);
       return;
     }
 
@@ -396,23 +416,34 @@ AddonsReconciler.prototype = {
       record.enabled = enabled;
       record.modified = now;
       let change = enabled ? CHANGE_ENABLED : CHANGE_DISABLED;
-      this.addChange(new Date(), change, record);
+      this._addChange(new Date(), change, record);
     }
 
     if (record.guid != guid) {
       record.guid = guid;
       // We don't record a change because the Sync engine rectifies this on its
-      // own.
+      // own. This is tightly coupled with Sync. If this code is ever lifted
+      // outside of Sync, this exception should likely be removed.
     }
   },
 
-  addChange: function addChange(date, change, addon) {
-    this._log.info("Change recorded for " + addon.id);
-    this._changes.push([date, change, addon.id]);
+  /**
+   * Record a change in add-on state.
+   *
+   * @param date
+   *        Date at which the change occurred.
+   * @param change
+   *        The type of the change. A CHANGE_* constant.
+   * @param state
+   *        The new state of the add-on. From this.addons.
+   */
+  _addChange: function _addChange(date, change, state) {
+    this._log.info("Change recorded for " + state.id);
+    this._changes.push([date, change, state.id]);
 
     for each (let listener in this._listeners) {
       try {
-        listener.changeListener.call(listener, date, change, addon);
+        listener.changeListener.call(listener, date, change, state);
       } catch (ex) {
         this._log.warn("Exception calling change listener: " +
                        Utils.exceptionStr(ex));
@@ -424,10 +455,11 @@ AddonsReconciler.prototype = {
    * Obtain the set of changes to add-ons since the date passed.
    *
    * This will return an array of arrays. Each entry in the array has the
-   * elements [time, change_type, id], where
+   * elements [date, change_type, id], where
    *
-   *   date - Date instance representing when the change occurred
+   *   date - Date instance representing when the change occurred.
    *   change_type - One of CHANGE_* constants.
+   *   id - ID of add-on that changed.
    */
   getChangesSinceDate: function getChangesSinceDate(date) {
     let length = this._changes.length;
@@ -526,7 +558,7 @@ AddonsReconciler.prototype = {
             let record = this._addons[id];
             record.installed = false;
             record.modified = now;
-            this.addChange(now, CHANGE_UNINSTALLED, record);
+            this._addChange(now, CHANGE_UNINSTALLED, record);
           }
       }
 

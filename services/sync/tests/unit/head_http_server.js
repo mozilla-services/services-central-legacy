@@ -5,8 +5,6 @@ Cu.import("resource://services-sync/log4moz.js");
 const SYNC_HTTP_LOGGER = "Sync.Test.Server";
 const SYNC_API_VERSION = "1.1";
 
-Cu.import("resource://services-sync/engines.js");
-
 // Use the same method that record.js does, which mirrors the server.
 // The server returns timestamps with 1/100 sec granularity. Note that this is
 // subject to change: see Bug 650435.

@@ -195,14 +195,13 @@ add_test(function test_apply_enabled() {
   let addon = installAddon("test_install1");
   do_check_false(addon.userDisabled);
 
+  _("Ensure application of a disable record works as expected.");
   let records = [];
   records.push(createRecordForThisApp(addon.syncGUID, addon.id, false, false));
-  _("Ensure application of a disable record works as expected.");
   let failed = store.applyIncomingBatch(records);
   do_check_eq(0, failed.length);
   addon = getAddonFromAddonManagerByID(addon.id);
   do_check_true(addon.userDisabled);
-
   records = [];
 
   _("Ensure enable record works as expected.");
@@ -211,9 +210,19 @@ add_test(function test_apply_enabled() {
   do_check_eq(0, failed.length);
   addon = getAddonFromAddonManagerByID(addon.id);
   do_check_false(addon.userDisabled);
+  records = [];
+
+  _("Ensure enabled state updates don't apply if the ignore pref is set.");
+  records.push(createRecordForThisApp(addon.syncGUID, addon.id, false, false));
+  Svc.Prefs.set("addons.ignoreUserEnabledChanges", true);
+  failed = store.applyIncomingBatch(records);
+  do_check_eq(0, failed.length);
+  addon = getAddonFromAddonManagerByID(addon.id);
+  do_check_false(addon.userDisabled);
+  records = [];
 
   uninstallAddon(addon);
-
+  Svc.Prefs.reset("addons.ignoreUserEnabledChanges");
   run_next_test();
 });
 

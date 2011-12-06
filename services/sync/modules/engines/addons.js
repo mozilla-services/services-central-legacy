@@ -750,11 +750,17 @@ AddonsStore.prototype = {
       return;
     }
 
-    let us = this;
+    // A pref allows changes to the enabled flag to be ignored.
+    if (Svc.Prefs.get("addons.ignoreUserEnabledChanges", false)) {
+      this._log.info("Ignoring enabled state change due to preference: " +
+                     addon.id);
+      callback(null, addon);
+      return;
+    }
 
     let listener = {
       onEnabling: function onEnabling(wrapper, needsRestart) {
-        us._log.debug("onEnabling: " + wrapper.id);
+        this._log.debug("onEnabling: " + wrapper.id);
         // We ignore the restartless case because we'll get onEnabled shortly.
         if (!needsRestart) {
           return;
@@ -762,15 +768,15 @@ AddonsStore.prototype = {
 
         AddonManager.removeAddonListener(listener);
         callback(null, wrapper);
-      },
+      }.bind(this),
       onEnabled: function onEnabled(wrapper) {
-        us._log.debug("onEnabled: " + wrapper.id);
+        this._log.debug("onEnabled: " + wrapper.id);
 
         AddonManager.removeAddonListener(listener);
         callback(null, wrapper);
-      },
+      }.bind(this),
       onDisabling: function onDisabling(wrapper, needsRestart) {
-        us._log.debug("onDisabling: " + wrapper.id);
+        this._log.debug("onDisabling: " + wrapper.id);
 
         if (!needsRestart) {
           return;
@@ -778,12 +784,12 @@ AddonsStore.prototype = {
 
         AddonManager.removeAddonListener(listener);
         callback(null, wrapper);
-      },
+      }.bind(this),
       onDisabled: function onDisabled(wrapper) {
-        us._log.debug("onDisabled: " + wrapper.id);
+        this._log.debug("onDisabled: " + wrapper.id);
         AddonManager.removeAddonListener(listener);
         callback(null, wrapper);
-      }
+      }.bind(this)
     };
 
     // TODO enable enable/disable gating on callbacks.

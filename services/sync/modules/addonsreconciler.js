@@ -58,10 +58,10 @@ Cu.import("resource://gre/modules/AddonManager.jsm");
 
 const DEFAULT_STATE_FILE = "addonsreconciler";
 
-const CHANGE_INSTALLED = 1;
+const CHANGE_INSTALLED   = 1;
 const CHANGE_UNINSTALLED = 2;
-const CHANGE_ENABLED = 3;
-const CHANGE_DISABLED = 4;
+const CHANGE_ENABLED     = 3;
+const CHANGE_DISABLED    = 4;
 
 const EXPORTED_SYMBOLS = ["AddonsReconciler", "CHANGE_INSTALLED",
                           "CHANGE_UNINSTALLED", "CHANGE_ENABLED",
@@ -165,10 +165,11 @@ AddonsReconciler.prototype = {
   _log: null,
 
   /**
-   * This is the main data structure for an instance.
+   * Container for add-on metadata.
    *
    * Keys are add-on IDs. Values are objects which describe the state of the
-   * add-on.
+   * add-on. This is a minimal mirror of data that can be queried from
+   * AddonManager. In some cases, we retain data longer than AddonManager.
    */
   _addons: {},
 
@@ -179,6 +180,9 @@ AddonsReconciler.prototype = {
    */
   _changes: [],
 
+  /**
+   * Objects subscribed to changes made to this instance.
+   */
   _listeners: [],
 
   get addons() {
@@ -186,13 +190,17 @@ AddonsReconciler.prototype = {
   },
 
   /**
-   * Loads reconciler state from a file.
+   * Load reconciler state from a file.
    *
    * The path is relative to the weave directory in the profile. If no
    * path is given, the default one is used.
    *
+   * If the file does not exist or there was an error parsing the file, the
+   * state will be transparently defined as empty.
+   *
    * @param path
-   *        Path to load. ".json" is appended automatically.
+   *        Path to load. ".json" is appended automatically. If not defined,
+   *        a default path will be consulted.
    * @param callback
    *        Callback to be executed upon file load. The callback receives a
    *        truthy error argument signifying whether an error occurred and a
@@ -216,7 +224,11 @@ AddonsReconciler.prototype = {
       if (!version || version != 1) {
         this._log.error("Could not load JSON file because version not " +
                         "supported: " + version);
-        callback(null, false);
+        if (callback) {
+          callback(null, false);
+        }
+
+        return;
       }
 
       this._addons = json.addons;

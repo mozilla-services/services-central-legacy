@@ -100,8 +100,7 @@ const PRUNE_ADDON_CHANGES_THRESHOLD = 60 * 60 * 24 * 7 * 1000;
  *    ID of the add-on. This correlates to the "id" property on an Addon type.
  *
  *  applicationID
- *    The application ID this record is associated with. Clients currently
- *    ignore records from other application IDs.
+ *    The application ID this record is associated with.
  *
  *  enabled
  *    Boolean stating whether add-on is enabled or disabled by the user.
@@ -251,14 +250,15 @@ AddonsEngine.prototype = {
    * system (if needed) and refresh the state of the reconciler.
    */
   _refreshReconcilerState: function _refreshReconcilerState() {
-    this._log.debug("Refreshing reconciler state");
     if (!this._reconcilerStateLoaded) {
+      this._log.debug("Loading reconciler state.");
       let cb = Async.makeSpinningCallback();
       this._reconciler.loadState(null, cb);
       cb.wait();
       this._reconcilerStateLoaded = true;
     }
 
+    this._log.debug("Refreshing reconciler state");
     let cb = Async.makeSpinningCallback();
     this._reconciler.refreshGlobalState(cb);
     cb.wait();
@@ -267,6 +267,9 @@ AddonsEngine.prototype = {
 
 /**
  * This is the primary interface between Sync and the Addons Manager.
+ *
+ * In addition to the core store APIs, we provide convenience functions to wrap
+ * Add-on Manager APIs with Sync-specific semantics.
  */
 function AddonsStore(name) {
   Store.call(this, name);
@@ -282,6 +285,9 @@ AddonsStore.prototype = {
   },
 
   get engine() {
+    // Ideally we'd link to a specific object, but the API doesn't provide an
+    // easy way to faciliate this. When the async API lands, this hackiness can
+    // go away.
     return Engines.get("addons");
   },
 
@@ -313,6 +319,10 @@ AddonsStore.prototype = {
    * Provides core Store API to create/install an add-on from a record.
    */
   create: function create(record) {
+    // Ideally, we'd set syncGUID and userDisabled on install. For now, we
+    // make the changes post-installation.
+    // TODO Set syncGUID and userDisabled in one step, during install.
+
     let cb = Async.makeSpinningCallback();
     this.installAddonsFromIDs([record.addonID], cb);
 
@@ -322,15 +332,18 @@ AddonsStore.prototype = {
 
     this._log.info("Add-on installed: " + record.addonID);
     let addon = this.getAddonByID(record.addonID);
-    if (addon) {
-      this._log.info("Setting add-on Sync GUID to remote: " + record.id);
-      addon.syncGUID = record.id;
 
-      // TODO is there a better way to set userDisabled on install?
-      let cb = Async.makeSpinningCallback();
-      this.updateUserDisabled(addon, !record.enabled, cb);
-      cb.wait();
+    // This should never happen, but is present as a fail-safe.
+    if (!addon) {
+      throw new Error("Add-on not found after install: " + record.addonID);
     }
+
+    this._log.info("Setting add-on Sync GUID to remote: " + record.id);
+    addon.syncGUID = record.id;
+
+    let cb = Async.makeSpinningCallback();
+    this.updateUserDisabled(addon, !record.enabled, cb);
+    cb.wait();
   },
 
   /**
@@ -339,15 +352,21 @@ AddonsStore.prototype = {
   remove: function remove(record) {
     let addon = this.getAddonByID(record.addonID);
     if (!addon) {
+      // We don't throw because if the add-on could not be found then we assume
+      // it has already been uninstalled and there is nothing for this function
+      // to do.
       return;
     }
 
-    this._log.debug("Uninstalling add-on: " + addon.id);
+    this._log.info("Uninstalling add-on: " + addon.id);
     let cb = Async.makeSpinningCallback();
     this.uninstallAddon(addon, cb);
     cb.wait();
   },
 
+  /**
+   * Provides core Store API to update an add-on from a record.
+   */
   update: function update(record) {
     let addon = this.getAddonByID(record.addonID);
 
@@ -365,6 +384,9 @@ AddonsStore.prototype = {
     cb.wait();
   },
 
+  /**
+   * Provide core Store API to determine if a record exists.
+   */
   itemExists: function itemExists(guid) {
     let addon = this.reconciler.getAddonStateFromSyncGUID(guid);
 
@@ -479,7 +501,7 @@ AddonsStore.prototype = {
    ***************************************************************************/
 
   /**
-   * Obtain an add-on from its database ID
+   * Synchronously obtain an add-on from its public ID.
    *
    * @param id
    *        Add-on ID
@@ -492,7 +514,7 @@ AddonsStore.prototype = {
   },
 
   /**
-   * Obtain an add-on from its database/Sync GUID
+   * Synchronously obtain an add-on from its Sync GUID.
    *
    * @param  guid
    *         Add-on Sync GUID
@@ -512,15 +534,15 @@ AddonsStore.prototype = {
    * @return Boolean indicating whether it is appropriate for Sync
    */
   isAddonSyncable: function isAddonSyncable(addon) {
-    // Currently, we limit syncable add-ons to those that:
+    // Currently, we limit syncable add-ons to those that are:
     //   1) In a well-defined set of types
-    //   2) Installed in current profile
+    //   2) Installed in the current profile
     //   3) Not installed by a foreign entity (i.e. installed by the app)
     //      since they act like global extensions.
     //   4) Are installed from AMO
 
-    // We could represent the test as a complex boolean expression, but don't
-    // to make the logged reasons more debuggable.
+    // We could represent the test as a complex boolean expression. We go the
+    // verbose route so the failure reason is logged.
     if (!addon) {
       this._log.debug("Null object passed to isAddonSyncable.");
       return false;
@@ -543,7 +565,8 @@ AddonsStore.prototype = {
     }
 
     // We provide a back door to skip the repository checking of an add-on.
-    // This is utilized by the tests to make testing easier.
+    // This is utilized by the tests to make testing easier. Users could enable
+    // this, but it would sacrifice security.
     if (Svc.Prefs.get("addons.ignoreRepositoryChecking", false)) {
       return true;
     }
@@ -564,6 +587,9 @@ AddonsStore.prototype = {
   /**
    * Determine whether an add-on's sourceURI field is trusted and the add-on
    * can be installed.
+   *
+   * This function should only ever be called from isAddonSyncable(). It is
+   * exposed as a separate function to make testing easier.
    *
    * @param  uri
    *         nsIURI instance to validate
@@ -601,10 +627,10 @@ AddonsStore.prototype = {
    * Obtain an AddonInstall object from an AddonSearchResult instance.
    *
    * The callback will be invoked with the result of the operation. The
-   * callback receives 2 arguments, error and result. Error will be falsey
+   * callback receives 2 arguments, error and result. Error will be falsy
    * on success or some kind of error value otherwise. The result argument
    * will be an AddonInstall on success or null on failure. It is possible
-   * for the error to be falsey but result to be null. This could happen if
+   * for the error to be falsy but result to be null. This could happen if
    * an install was not found.
    *
    * @param addon
@@ -613,6 +639,7 @@ AddonsStore.prototype = {
    *        Function to be called with result of operation.
    */
   getInstallFromSearchResult: function getInstallFromSearchResult(addon, cb) {
+    // If we have an install, use it.
     if (addon.install) {
       cb(null, addon.install);
       return;
@@ -625,7 +652,7 @@ AddonsStore.prototype = {
     // cert validation, etc is performed.
     if (!Svc.Prefs.get("addons.ignoreRepositoryChecking", false)) {
       let scheme = addon.sourceURI.scheme;
-      if (scheme != "https" && scheme != "ftps") {
+      if (scheme != "https") {
         throw new Error("Insecure source URI scheme: " + scheme);
       }
     }
@@ -652,8 +679,8 @@ AddonsStore.prototype = {
    * null.
    *
    * The result object has the following keys:
-   *   id               ID of add-on that was installed.
-   *   requiresRestart  Boolean indicating whether install requires restart.
+   *
+   *   id  ID of add-on that was installed.
    *
    * @param addon
    *        AddonSearchResult to install add-on from.
@@ -678,22 +705,16 @@ AddonsStore.prototype = {
       try {
         this._log.info("Installing " + addon.id);
 
-        let restart = null;
-
         let listener = {
           onInstallEnded: function(install, addon) {
             install.removeListener(listener);
 
-            cb(null, {id: addon.id, requiresRestart: restart});
+            cb(null, {id: addon.id});
           },
           onInstallFailed: function(install) {
             install.removeListener(listener);
 
             cb(new Error("Install failed: " + install.error), null);
-          },
-          onDownloadEnded: function(wrapper) {
-            restart = wrapper.addon.operationRequiringRestart &
-                        AddonManager.OP_NEEDS_RESTART_INSTALL;
           },
           onDownloadFailed: function(install) {
             install.removeListener(listener);
@@ -722,11 +743,29 @@ AddonsStore.prototype = {
    */
   uninstallAddon: function uninstallAddon(addon, callback) {
     let listener = {
-      onUninstalled: function(uninstalled) {
-        if (addon.id == uninstalled.id) {
-          AddonManager.removeAddonListener(listener);
-          callback(false, addon);
+      onUninstalling: function(uninstalling, needsRestart) {
+        if (addon.id != uninstalling.id) {
+          return;
         }
+
+        // We assume restartless add-ons will send the onUninstalled event
+        // soon.
+        if (!needsRestart) {
+          return;
+        }
+
+        // For non-restartless add-ons, we issue the callback on uninstalling
+        // because we will likely never see the uninstalled event.
+        AddonManager.removeAddonListener(listener);
+        callback(null, addon);
+      },
+      onUninstalled: function(uninstalled) {
+        if (addon.id != uninstalled.id) {
+          return;
+        }
+
+        AddonManager.removeAddonListener(listener);
+        callback(null, addon);
       }
     };
     AddonManager.addAddonListener(listener);
@@ -815,8 +854,8 @@ AddonsStore.prototype = {
    *
    * If error is truthy, it contains a string describing the overall error.
    *
-   * result is always an object with details on the overall execution state. It
-   * contains the following keys.
+   * The 2nd argument to the callback is always an object with details on the
+   * overall execution state. It contains the following keys:
    *
    *   installed  Array of add-on IDs that were installed
    *   errors     Array of errors encountered. Only has elements if error is
@@ -828,6 +867,10 @@ AddonsStore.prototype = {
    *        Function to be called when all actions are complete.
    */
   installAddonsFromIDs: function installAddonsFromIDs(ids, cb) {
+    if (!cb) {
+      throw new Error("Invalid argument: cb is not defined.");
+    }
+
     AddonRepository.getAddonsByIDs(ids, {
       searchSucceeded: function searchSucceeded(addons, addonsLength, total) {
         this._log.info("Found " + addonsLength + "/" + ids.length +
@@ -862,6 +905,8 @@ AddonsStore.prototype = {
           }
         }.bind(this);
 
+        // Start all the installs asynchronously. They will report back to us
+        // as they finish, eventually triggering the global callback.
         for (let i = 0; i < addonsLength; i++) {
           this.installAddonFromSearchResult(addons[i], installCallback);
         }
@@ -875,6 +920,11 @@ AddonsStore.prototype = {
   }
 };
 
+/**
+ * The add-ons tracker keeps track of real-time changes to add-ons.
+ *
+ * It hooks up to the reconciler and receives notifications directly from it.
+ */
 function AddonsTracker(name) {
   Tracker.call(this, name);
 

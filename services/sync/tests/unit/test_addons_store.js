@@ -368,7 +368,7 @@ add_test(function test_ignore_untrusted_source_uris() {
                "ftp://example.com/foo.xpi",
                "silly://example.com/foo.xpi"];
 
-  const good = ["https://example.com/foo.xpi", "ftps://example.com/foo.xpi"];
+  const good = ["https://example.com/foo.xpi"];
 
   for each (let s in bad) {
     let sourceURI = ioService.newURI(s, null, null);

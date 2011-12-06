@@ -218,6 +218,7 @@ AddonsReconciler.prototype = {
       this._changes = [];
 
       if (!json) {
+        this._log.debug("No data seen in loaded file: " + file);
         if (callback) {
           callback(null, false);
         }
@@ -339,7 +340,7 @@ AddonsReconciler.prototype = {
   },
 
   /**
-   * Refreshes the global state of add-ons by querying the AddonsManager.
+   * Refreshes the global state of add-ons by querying the AddonManager.
    */
   refreshGlobalState: function refreshGlobalState(callback) {
     this._log.info("Refreshing global state from AddonManager.");

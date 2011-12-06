@@ -455,9 +455,10 @@ AddonsStore.prototype = {
   wipe: function wipe() {
     this._log.info("Processing wipe.");
 
-    // TODO should this wipe *all* add-ons or just the syncable ones?
     this.engine._refreshReconcilerState();
 
+    // We only wipe syncable add-ons. Wipe is a Sync feature not a security
+    // feature.
     for (let guid in this.getAllIDs()) {
       let addon = this.getAddonByGUID(guid);
       if (!addon) {
@@ -735,7 +736,7 @@ AddonsStore.prototype = {
       }
     };
 
-    // TODO enable this
+    // TODO enable enable/disable gating on callbacks.
     // For some reason the callbacks aren't always getting fired. I have *no*
     // clue why.
     //AddonManager.addAddonListener(listener);

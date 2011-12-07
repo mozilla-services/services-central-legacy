@@ -200,6 +200,10 @@ AddonsEngine.prototype = {
           continue;
       }
 
+      if (!this._store.isAddonSyncable(addons[id])) {
+        continue;
+      }
+
       this._log.debug("Adding changed add-on from changes log: " + id);
       let addon = addons[id];
       changes[addon.guid] = changeTime.getTime() / 1000;

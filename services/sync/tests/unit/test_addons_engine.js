@@ -5,6 +5,7 @@
 
 Cu.import("resource://gre/modules/AddonManager.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
+Cu.import("resource://services-sync/addonsreconciler.js");
 Cu.import("resource://services-sync/async.js");
 Cu.import("resource://services-sync/engines/addons.js");
 
@@ -23,6 +24,8 @@ function advance_test() {
   let cb = Async.makeSpinningCallback();
   reconciler.saveState(null, cb);
   cb.wait();
+
+  Svc.Prefs.reset("addons.ignoreRepositoryChecking");
 
   run_next_test();
 }
@@ -91,6 +94,7 @@ add_test(function test_get_changed_ids() {
   tracker.clearChangedIDs();
 
   _("Ensure reconciler changes are populated.");
+  Svc.Prefs.set("addons.ignoreRepositoryChecking", true);
   let addon = installAddon("test_install1");
   tracker.clearChangedIDs(); // Just in case.
   changes = engine.getChangedIDs();
@@ -106,6 +110,26 @@ add_test(function test_get_changed_ids() {
   do_check_eq(1, Object.keys(changes).length);
   do_check_true(guid2 in changes);
   do_check_true(changes[guid2] > oldTime);
+
+  _("Ensure non-syncable add-ons aren't picked up by reconciler changes.");
+  reconciler._addons  = {};
+  reconciler._changes = [];
+  let record = {
+    id:             "DUMMY",
+    guid:           Utils.makeGUID(),
+    enabled:        true,
+    installed:      true,
+    modified:       new Date(),
+    type:           "UNSUPPORTED",
+    scope:          0,
+    foreignInstall: false
+  };
+  reconciler.addons["DUMMY"] = record;
+  reconciler._addChange(record.modified, CHANGE_INSTALLED, record);
+
+  changes = engine.getChangedIDs();
+  _(JSON.stringify(changes));
+  do_check_eq(0, Object.keys(changes).length);
 
   advance_test();
 });

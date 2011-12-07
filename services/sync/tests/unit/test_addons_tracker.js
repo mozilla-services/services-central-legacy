@@ -13,10 +13,10 @@ startupManager();
 Svc.Prefs.set("addons.ignoreRepositoryChecking", true);
 
 Engines.register(AddonsEngine);
-let engine = Engines.get("addons");
+let engine     = Engines.get("addons");
 let reconciler = engine._reconciler;
-let store = engine._store;
-let tracker = engine._tracker;
+let store      = engine._store;
+let tracker    = engine._tracker;
 
 const addon1ID = "addon1@tests.mozilla.org";
 
@@ -100,8 +100,9 @@ add_test(function test_track_uninstall() {
 });
 
 // The following don't work for an unknown reason. The listeners for disabling
-// never get invoked. Weird
-// TODO fix this
+// never get invoked. There is code in the store that is also disabled for the
+// reasons as this.
+// TODO Figure out why listeners aren't being called and enable tests.
 /*
 add_test(function test_track_user_disable() {
   _("Ensure that tracker sees disabling of add-on");

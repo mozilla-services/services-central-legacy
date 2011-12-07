@@ -16,9 +16,9 @@ loadAddonTestFunctions();
 startupManager();
 
 Engines.register(AddonsEngine);
-let engine = Engines.get("addons");
-let tracker = engine._tracker;
-let store = engine._store;
+let engine     = Engines.get("addons");
+let tracker    = engine._tracker;
+let store      = engine._store;
 let reconciler = engine._reconciler;
 
 /**
@@ -431,4 +431,3 @@ add_test(function test_wipe() {
 
   run_next_test();
 });
-

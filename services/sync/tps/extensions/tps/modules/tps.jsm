@@ -40,11 +40,9 @@
   * listed symbols will exposed on import, and only when and where imported.
   */
 
-var EXPORTED_SYMBOLS = ["TPS"];
+let EXPORTED_SYMBOLS = ["TPS"];
 
-const CC = Components.classes;
-const CI = Components.interfaces;
-const CU = Components.utils;
+const {classes: CC, interfaces: CI, utils: CU} = Components;
 
 CU.import("resource://services-sync/service.js");
 CU.import("resource://services-sync/constants.js");
@@ -69,23 +67,24 @@ var prefs = CC["@mozilla.org/preferences-service;1"]
 var mozmillInit = {};
 CU.import('resource://mozmill/modules/init.js', mozmillInit);
 
-const ACTION_ADD = "add";
-const ACTION_VERIFY = "verify";
-const ACTION_VERIFY_NOT = "verify-not";
-const ACTION_MODIFY = "modify";
-const ACTION_SYNC = "sync";
-const ACTION_DELETE = "delete";
+const ACTION_ADD              = "add";
+const ACTION_VERIFY           = "verify";
+const ACTION_VERIFY_NOT       = "verify-not";
+const ACTION_MODIFY           = "modify";
+const ACTION_SYNC             = "sync";
+const ACTION_DELETE           = "delete";
 const ACTION_PRIVATE_BROWSING = "private-browsing";
-const ACTION_WIPE_SERVER = "wipe-server";
-const ACTION_SETSTATE = "set-state";
+const ACTION_WIPE_SERVER      = "wipe-server";
+const ACTION_SET_ENABLED      = "set-enabled";
+
 const ACTIONS = [ACTION_ADD, ACTION_VERIFY, ACTION_VERIFY_NOT,
                  ACTION_MODIFY, ACTION_SYNC, ACTION_DELETE,
                  ACTION_PRIVATE_BROWSING, ACTION_WIPE_SERVER,
-                 ACTION_SETSTATE];
+                 ACTION_SET_ENABLED];
 
-const SYNC_WIPE_SERVER = "wipe-server";
+const SYNC_WIPE_SERVER  = "wipe-server";
 const SYNC_RESET_CLIENT = "reset-client";
-const SYNC_WIPE_CLIENT = "wipe-client";
+const SYNC_WIPE_CLIENT  = "wipe-client";
 
 var TPS =
 {
@@ -148,7 +147,7 @@ var TPS =
       }
     }
     catch(e) {
-      this.DumpError("Exception caught: " + e);
+      this.DumpError("Exception caught: " + Utils.exceptionStr(e));
       return;
     }
   },
@@ -335,26 +334,28 @@ var TPS =
   },
 
   HandleAddons: function (addons, action, state) {
-    for (var i in addons) {
+    for each (let entry in addons) {
       Logger.logInfo("executing action " + action.toUpperCase() +
-                     " on addon " + JSON.stringify(addons[i]));
-      var addon = new Addon(this, addons[i]);
+                     " on addon " + JSON.stringify(entry));
+      let addon = new Addon(this, entry);
       switch(action) {
         case ACTION_ADD:
-          addon.Install();
+          addon.install();
           break;
         case ACTION_DELETE:
-          addon.Delete();
+          addon.uninstall();
           break;
         case ACTION_VERIFY:
-          Logger.AssertTrue(addon.Find(state), 'addon ' + addon.id + ' not found');
+          Logger.AssertTrue(addon.find(state), 'addon ' + addon.id + ' not found');
           break;
         case ACTION_VERIFY_NOT:
-          Logger.AssertTrue(!addon.Find(state), 'addon ' + addon.id + " is present, but it shouldn't be");
+          Logger.AssertFalse(addon.find(state), 'addon ' + addon.id + " is present, but it shouldn't be");
           break;
-        case ACTION_SETSTATE:
-          Logger.AssertTrue(addon.SetState(state), 'addon ' + addon.id + ' not found');
+        case ACTION_SET_ENABLED:
+          Logger.AssertTrue(addon.setEnabled(state), 'addon ' + addon.id + ' not found');
           break;
+        default:
+          throw new Error("Unknown action for add-on: " + action);
       }
     }
     Logger.logPass("executing action " + action.toUpperCase() +
@@ -479,7 +480,7 @@ var TPS =
       this._currentAction++;
     }
     catch(e) {
-      this.DumpError("Exception caught: " + e);
+      this.DumpError("Exception caught: " + Utils.exceptionStr(e));
       return;
     }
     this.RunNextTestAction();
@@ -538,7 +539,7 @@ var TPS =
       this._currentAction = 0;
     }
     catch(e) {
-      this.DumpError("Exception caught: " + e);
+      this.DumpError("Exception caught: " + Utils.exceptionStr(e));
       return;
     }
   },
@@ -646,8 +647,8 @@ var Addons = {
   install: function Addons__install(addons) {
     TPS.HandleAddons(addons, ACTION_ADD);
   },
-  setState: function Addons__setState(addons, state) {
-    TPS.HandleAddons(addons, ACTION_SETSTATE, state);
+  setEnabled: function Addons__setEnabled(addons, state) {
+    TPS.HandleAddons(addons, ACTION_SET_ENABLED, state);
   },
   uninstall: function Addons__uninstall(addons) {
     TPS.HandleAddons(addons, ACTION_DELETE);

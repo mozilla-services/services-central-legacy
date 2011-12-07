@@ -29,8 +29,7 @@ const id = "unsigned-xpi@tests.mozilla.org";
 Phase("phase01", [
   [Sync, SYNC_WIPE_SERVER],
   [Addons.verifyNot, [id]],
-  [Addons.install, ["unsigned-xpi.xml"]],
-  [Addons.verify, [id], STATE_DISABLED],
+  [Addons.install, [id]],
 ]);
 Phase("phase02", [
   [Addons.verify, [id], STATE_ENABLED],
@@ -46,7 +45,7 @@ Phase("phase04", [
 
 // Now we disable the add-on
 Phase("phase05", [
-  [Addons.setState, [id], STATE_DISABLED]
+  [Addons.setEnabled, [id], STATE_DISABLED]
 ]);
 Phase("phase06", [
   [Addons.verify, [id], STATE_DISABLED],
@@ -61,7 +60,7 @@ Phase("phase08", [
 
 // Now we re-enable it again.
 Phase("phase09", [
-  [Addons.setState, [id], STATE_ENABLED]
+  [Addons.setEnabled, [id], STATE_ENABLED]
 ]);
 Phase("phase10", [
   [Addons.verify, [id], STATE_ENABLED],

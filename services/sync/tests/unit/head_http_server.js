@@ -468,7 +468,7 @@ function sync_httpd_setup(handlers) {
  * Track collection modified times. Return closures.
  */
 function track_collections_helper() {
-
+  
   /*
    * Our tracking object.
    */
@@ -511,14 +511,14 @@ function track_collections_helper() {
       default:
         throw "Non-GET on info_collections.";
     }
-
+        
     response.setHeader("X-Weave-Timestamp",
                        "" + new_timestamp(),
                        false);
     response.setStatusLine(request.httpVersion, 200, "OK");
     response.bodyOutputStream.write(body, body.length);
   }
-
+  
   return {"collections": collections,
           "handler": info_collections,
           "with_updated_collection": with_updated_collection,

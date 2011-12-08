@@ -101,18 +101,7 @@ var Logger =
   },
 
   AssertTrue: function(bool, msg, showPotentialError) {
-    if (!bool) {
-      let message = msg;
-      if (showPotentialError && this._potentialError) {
-        message += "; " + this._potentialError;
-        this._potentialError = null;
-      }
-      throw("ASSERTION FAILED! " + message);
-    }
-  },
-
-  AssertFalse: function(bool, msg, showPotentialError) {
-    if (!bool) {
+    if (bool) {
       return;
     }
 
@@ -121,8 +110,11 @@ var Logger =
       message += "; " + this._potentialError;
       this._potentialError = null;
     }
-
     throw("ASSERTION FAILED! " + message);
+  },
+
+  AssertFalse: function(bool, msg, showPotentialError) {
+    return this.AssertTrue(!bool, msg, showPotentialError);
   },
 
   AssertEqual: function(val1, val2, msg) {

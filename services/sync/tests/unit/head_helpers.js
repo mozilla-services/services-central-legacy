@@ -162,7 +162,6 @@ function installAddon(name) {
  *        Addon instance to uninstall
  */
 function uninstallAddon(addon) {
-  _("Uninstalling add-on: " + addon.id);
   let cb = Async.makeSyncCallback();
   let listener = {onUninstalled: function(uninstalled) {
     if (uninstalled.id == addon.id) {

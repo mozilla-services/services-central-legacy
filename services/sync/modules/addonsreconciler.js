@@ -547,6 +547,7 @@ AddonsReconciler.prototype = {
         case "onDisabling":
         case "onDisabled":
         case "onInstalled":
+        case "onInstallEnded":
         case "onOperationCancelled":
           this.rectifyStateFromAddon(addon);
           break;

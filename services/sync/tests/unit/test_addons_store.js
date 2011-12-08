@@ -44,11 +44,11 @@ function createAndStartHTTPServer(port) {
   try {
     let server = new nsHttpServer();
 
-    let install1_xpi = ExtensionsTestPath("/addons/test_install1.xpi");
+    let bootstrap1XPI = ExtensionsTestPath("/addons/test_bootstrap1_1.xpi");
 
-    server.registerFile("/search/guid:addon1%40tests.mozilla.org",
-                        do_get_file("install1-search.xml"));
-    server.registerFile("/install1.xpi", do_get_file(install1_xpi));
+    server.registerFile("/search/guid:bootstrap1%40tests.mozilla.org",
+                        do_get_file("bootstrap1-search.xml"));
+    server.registerFile("/bootstrap1.xpi", do_get_file(bootstrap1XPI));
 
     server.registerFile("/search/guid:missing-xpi%40tests.mozilla.org",
                         do_get_file("missing-xpi-search.xml"));
@@ -76,7 +76,7 @@ add_test(function test_get_all_ids() {
   engine._refreshReconcilerState();
 
   let addon1 = installAddon("test_install1");
-  let addon2 = installAddon("test_install2_1");
+  let addon2 = installAddon("test_bootstrap1_1");
 
   let ids = store.getAllIDs();
   do_check_eq("object", typeof(ids));
@@ -84,7 +84,7 @@ add_test(function test_get_all_ids() {
   do_check_true(addon1.syncGUID in ids);
   do_check_true(addon2.syncGUID in ids);
 
-  uninstallAddon(addon1);
+  addon1.install.cancel();
   uninstallAddon(addon2);
 
   run_next_test();
@@ -93,7 +93,7 @@ add_test(function test_get_all_ids() {
 add_test(function test_change_item_id() {
   _("Ensures that changeItemID() works properly.");
 
-  let addon = installAddon("test_install1");
+  let addon = installAddon("test_bootstrap1_1");
 
   let oldID = addon.syncGUID;
   let newID = Utils.makeGUID();
@@ -114,7 +114,7 @@ add_test(function test_create() {
 
   let server = createAndStartHTTPServer(HTTP_PORT);
 
-  let addon = installAddon("test_install1");
+  let addon = installAddon("test_bootstrap1_1");
   let id = addon.id;
   uninstallAddon(addon);
 
@@ -177,7 +177,7 @@ add_test(function test_create_bad_install() {
 add_test(function test_remove() {
   _("Ensure removing add-ons from deleted records works.");
 
-  let addon = installAddon("test_install1");
+  let addon = installAddon("test_bootstrap1_1");
   let record = createRecordForThisApp(addon.syncGUID, addon.id, true, true);
 
   let failed = store.applyIncomingBatch([record]);
@@ -192,7 +192,8 @@ add_test(function test_remove() {
 add_test(function test_apply_enabled() {
   _("Ensures that changes to the userEnabled flag apply.");
 
-  let addon = installAddon("test_install1");
+  let addon = installAddon("test_bootstrap1_1");
+  do_check_true(addon.isActive);
   do_check_false(addon.userDisabled);
 
   _("Ensure application of a disable record works as expected.");
@@ -230,7 +231,7 @@ add_test(function test_ignore_different_appid() {
   _("Ensure that incoming records with a different application ID are ignored.");
 
   // We test by creating a record that should result in an update.
-  let addon = installAddon("test_install1");
+  let addon = installAddon("test_bootstrap1_1");
   do_check_false(addon.userDisabled);
 
   let record = createRecordForThisApp(addon.syncGUID, addon.id, false, false);
@@ -250,7 +251,7 @@ add_test(function test_ignore_different_appid() {
 add_test(function test_ignore_unknown_source() {
   _("Ensure incoming records with unknown source are ignored.");
 
-  let addon = installAddon("test_install1");
+  let addon = installAddon("test_bootstrap1_1");
 
   let record = createRecordForThisApp(addon.syncGUID, addon.id, false, false);
   record.source = "DUMMY_SOURCE";
@@ -269,7 +270,7 @@ add_test(function test_ignore_unknown_source() {
 add_test(function test_apply_uninstall() {
   _("Ensures that uninstalling an add-on from a record works.");
 
-  let addon = installAddon("test_install1");
+  let addon = installAddon("test_bootstrap1_1");
 
   let records = [];
   records.push(createRecordForThisApp(addon.syncGUID, addon.id, true, true));
@@ -291,7 +292,7 @@ add_test(function test_addon_syncability() {
 
   do_check_false(store.isAddonSyncable(null));
 
-  let addon = installAddon("test_install1");
+  let addon = installAddon("test_bootstrap1_1");
   do_check_true(store.isAddonSyncable(addon));
 
   let dummy = {};
@@ -412,19 +413,15 @@ add_test(function test_ignore_untrusted_source_uris() {
   }
 });
 
-
 add_test(function test_wipe() {
   _("Ensures that wiping causes add-ons to be uninstalled.");
 
-  let addon1 = installAddon("test_install1");
-  let addon2 = installAddon("test_install2_1");
+  let addon1 = installAddon("test_bootstrap1_1");
 
   Svc.Prefs.set("addons.ignoreRepositoryChecking", true);
   store.wipe();
 
   let addon = getAddonFromAddonManagerByID(addon1.id);
-  do_check_eq(null, addon);
-  addon = getAddonFromAddonManagerByID(addon2.id);
   do_check_eq(null, addon);
 
   Svc.Prefs.reset("addons.ignoreRepositoryChecking");

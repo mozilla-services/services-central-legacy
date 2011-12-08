@@ -3,8 +3,8 @@
   <addon id="5617">
   <name>Restartless Test Extension</name>
   <type id="1">Extension</type>
-  <guid>addon1@tests.mozilla.org</guid>
-  <slug>addon1</slug>
+  <guid>bootstrap1@tests.mozilla.org</guid>
+  <slug>bootstrap1</slug>
   <version>1.0</version>
 
   <compatible_applications><application>
@@ -12,11 +12,11 @@
       <application_id>1</application_id>
       <min_version>3.6</min_version>
       <max_version>*</max_version>
-      <appID>{3e3ba16c-1675-4e88-b9c8-afef81b3d2ef}</appID>
+      <appID>xpcshell@tests.mozilla.org</appID>
     </application></compatible_applications>
   <all_compatible_os><os>ALL</os></all_compatible_os>
 
-  <install os="ALL" size="485">http://127.0.0.1:8888/install1.xpi</install>
+  <install os="ALL" size="485">http://127.0.0.1:8888/bootstrap1.xpi</install>
     <created epoch="1252903662">
       2009-09-14T04:47:42Z
     </created>

@@ -809,6 +809,10 @@ AddonsStore.prototype = {
     let listener = {
       onEnabling: function onEnabling(wrapper, needsRestart) {
         this._log.debug("onEnabling: " + wrapper.id);
+        if (wrapper.id != addon.id) {
+          return;
+        }
+
         // We ignore the restartless case because we'll get onEnabled shortly.
         if (!needsRestart) {
           return;
@@ -817,14 +821,22 @@ AddonsStore.prototype = {
         AddonManager.removeAddonListener(listener);
         callback(null, wrapper);
       }.bind(this),
+
       onEnabled: function onEnabled(wrapper) {
         this._log.debug("onEnabled: " + wrapper.id);
+        if (wrapper.id != addon.id) {
+          return;
+        }
 
         AddonManager.removeAddonListener(listener);
         callback(null, wrapper);
       }.bind(this),
+
       onDisabling: function onDisabling(wrapper, needsRestart) {
         this._log.debug("onDisabling: " + wrapper.id);
+        if (wrapper.id != addon.id) {
+          return;
+        }
 
         if (!needsRestart) {
           return;
@@ -833,21 +845,43 @@ AddonsStore.prototype = {
         AddonManager.removeAddonListener(listener);
         callback(null, wrapper);
       }.bind(this),
+
       onDisabled: function onDisabled(wrapper) {
         this._log.debug("onDisabled: " + wrapper.id);
+        if (wrapper.id != addon.id) {
+          return;
+        }
+
         AddonManager.removeAddonListener(listener);
         callback(null, wrapper);
+      }.bind(this),
+
+      onOperationCancelled: function onOperationCancelled(wrapper) {
+        this._log.debug("onOperationCancelled: " + wrapper.id);
+        if (wrapper.id != addon.id) {
+          return;
+        }
+
+        AddonManager.removeAddonListener(listener);
+        callback(new Error("Operation cancelled"), wrapper);
       }.bind(this)
     };
 
-    // TODO enable enable/disable gating on callbacks.
-    // For some reason the callbacks aren't always getting fired. I have *no*
-    // clue why.
-    //AddonManager.addAddonListener(listener);
+    // The add-on listeners are only fired if the add-on is active. If not, the
+    // change is silently updated and made active when/if the add-on is active.
+
+    if (!addon.appDisabled) {
+      AddonManager.addAddonListener(listener);
+    }
 
     this._log.info("Updating userDisabled flag: " + addon.id + " -> " + value);
     addon.userDisabled = !!value;
-    callback(null, addon);
+
+    if (!addon.appDisabled) {
+      callback(null, addon);
+      return;
+    }
+    // Else the listener will handle invoking the callback.
   },
 
   /**

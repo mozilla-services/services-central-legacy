@@ -53,7 +53,7 @@ add_test(function test_install_detection() {
   let reconciler = new AddonsReconciler();
 
   let before = new Date();
-  let addon = installAddon("test_install1");
+  let addon = installAddon("test_bootstrap1_1");
   let after = new Date();
 
   do_check_eq(1, Object.keys(reconciler.addons).length);
@@ -93,7 +93,7 @@ add_test(function test_uninstall_detection() {
   reconciler._addons = {};
   reconciler._changes = [];
 
-  let addon = installAddon("test_install1");
+  let addon = installAddon("test_bootstrap1_1");
   let id = addon.id;
   let guid = addon.syncGUID;
 

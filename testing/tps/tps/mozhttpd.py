@@ -70,7 +70,7 @@ class MozRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
             ids = urllib.unquote(o.path[len('/en-US/firefox/api/1.5/search/guid:'):])
 
             if ids.count(',') > 0:
-                raise Exception('Only searching for single ids is currently supported.')
+                raise Exception('Searching for multiple IDs is not supported.')
 
             base = ids
             at_loc = ids.find('@')

@@ -101,14 +101,19 @@ var Logger =
   },
 
   AssertTrue: function(bool, msg, showPotentialError) {
-    if (!bool) {
-      let message = msg;
-      if (showPotentialError && this._potentialError) {
-        message += "; " + this._potentialError;
-        this._potentialError = null;
-      }
-      throw("ASSERTION FAILED! " + message);
+    if (bool) {
+      return;
     }
+
+    if (showPotentialError && this._potentialError) {
+      msg += "; " + this._potentialError;
+      this._potentialError = null;
+    }
+    throw("ASSERTION FAILED! " + msg);
+  },
+
+  AssertFalse: function(bool, msg, showPotentialError) {
+    return this.AssertTrue(!bool, msg, showPotentialError);
   },
 
   AssertFalse: function(bool, msg, showPotentialError) {

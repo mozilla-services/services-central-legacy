@@ -118,7 +118,7 @@ WBORecord.prototype = {
       "modified: " + this.modified,
       "ttl: " + this.ttl,
       "payload: " + JSON.stringify(this.payload)
-    ].join("\n  ") + " }",
+    ].join("  ") + " }",
 };
 
 Utils.deferGetSet(WBORecord, "data", ["id", "modified", "sortindex", "payload"]);
@@ -266,7 +266,7 @@ CryptoWrapper.prototype = {
       "ttl: " + this.ttl,
       "payload: " + (this.deleted ? "DELETED" : JSON.stringify(this.cleartext)),
       "collection: " + (this.collection || "undefined")
-    ].join("\n  ") + " }",
+    ].join("  ") + " }",
 
   // The custom setter below masks the parent's getter, so explicitly call it :(
   get id() WBORecord.prototype.__lookupGetter__("id").call(this),

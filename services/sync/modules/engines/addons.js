@@ -290,20 +290,23 @@ AddonsStore.prototype = {
    * Override applyIncoming to filter out records we can't handle.
    */
   applyIncoming: function applyIncoming(record) {
-    // Ignore records not belonging to our application ID because that is the
-    // current policy.
-    if (record.applicationID != Services.appinfo.ID) {
-      this._log.info("Ignoring incoming record from other App ID: " +
-                      record.id);
-      return;
-    }
+    // The fields we look at aren't present when the record is deleted.
+    if (!record.deleted) {
+      // Ignore records not belonging to our application ID because that is the
+      // current policy.
+      if (record.applicationID != Services.appinfo.ID) {
+        this._log.info("Ignoring incoming record from other App ID: " +
+                        record.id);
+        return;
+      }
 
-    // Ignore records that aren't from the official add-on repository, as that
-    // is our current policy.
-    if (record.source != "amo") {
-      this._log.info("Ignoring unknown add-on source (" + record.source + ")" +
-                     " for " + record.id);
-      return;
+      // Ignore records that aren't from the official add-on repository, as that
+      // is our current policy.
+      if (record.source != "amo") {
+        this._log.info("Ignoring unknown add-on source (" + record.source + ")" +
+                       " for " + record.id);
+        return;
+      }
     }
 
     Store.prototype.applyIncoming.call(this, record);
@@ -345,7 +348,8 @@ AddonsStore.prototype = {
    * Provides core Store API to remove/uninstall an add-on from a record.
    */
   remove: function remove(record) {
-    let addon = this.getAddonByID(record.addonID);
+    // If this is called, the payload is empty, so we have to find by GUID.
+    let addon = this.getAddonByGUID(record.id);
     if (!addon) {
       // We don't throw because if the add-on could not be found then we assume
       // it has already been uninstalled and there is nothing for this function

@@ -267,13 +267,13 @@ AddonsReconciler.prototype = {
     let state = {version: 1, addons: {}, changes: []};
 
     for (let [id, record] in Iterator(this._addons)) {
-      state[id] = {};
+      state.addons[id] = {};
       for (let [k, v] in Iterator(record)) {
         if (k == "modified") {
-          state[id][k] = v.getTime();
+          state.addons[id][k] = v.getTime();
         }
         else {
-          state[id][k] = v;
+          state.addons[id][k] = v;
         }
       }
     }
@@ -282,6 +282,7 @@ AddonsReconciler.prototype = {
       state.changes.push([time.getTime(), change, id]);
     }
 
+    this._log.info("Saving reconciler state to file: " + file);
     Utils.jsonSave(file, this, state, callback);
   },
 
@@ -402,6 +403,8 @@ AddonsReconciler.prototype = {
         foreignInstall: addon.foreignInstall
       };
       this._addons[id] = record;
+      this._log.debug("Adding change because add-on not present locally: " +
+                      id);
       this._addChange(now, CHANGE_INSTALLED, record);
       return;
     }
@@ -417,6 +420,7 @@ AddonsReconciler.prototype = {
       record.enabled = enabled;
       record.modified = now;
       let change = enabled ? CHANGE_ENABLED : CHANGE_DISABLED;
+      this._log.debug("Adding change because enabled state changed: " + id);
       this._addChange(new Date(), change, record);
     }
 

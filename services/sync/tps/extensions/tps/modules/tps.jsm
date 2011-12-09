@@ -524,14 +524,21 @@ let TPS =
         this.DumpError("no profile defined for phase " + this._currentPhase);
         return;
       }
-      Logger.logInfo("Starting phase " + parseInt(phase) + "/" +
+      Logger.logInfo("Starting phase " + parseInt(phase, 10) + "/" +
                      Object.keys(this._phaselist).length);
 
       Logger.logInfo("setting client.name to " + this.phases["phase" + this._currentPhase]);
       Weave.Svc.Prefs.set("client.name", this.phases["phase" + this._currentPhase]);
 
-      // wipe the server at the end of the final test phase
-      let currentPhase = parseInt(this._currentPhase);
+      // TODO Phases should be defined in a data strongly that has strong
+      // ordering, not by lexical sorting.
+      let currentPhase = parseInt(this._currentPhase, 10);
+      // Reset everything at the beginning of the test.
+      if (currentPhase <= 1) {
+        this_phase.unshift([this.ResetData]);
+      }
+
+      // Wipe the server at the end of the final test phase.
       if (currentPhase >= Object.keys(this.phases).length) {
         this_phase.push([this.WipeServer]);
       }
@@ -646,6 +653,8 @@ let TPS =
     }
 
     Service.login();
+    Logger.AssertEqual(Weave.Status.service, Weave.STATUS_OK, "Weave status not OK");
+    Weave.Svc.Obs.notify("weave:service:setup-complete");
     this._loggedIn = true;
   },
 
@@ -669,8 +678,6 @@ let TPS =
 
     this.Login(false);
 
-    Logger.AssertEqual(Weave.Status.service, Weave.STATUS_OK, "Weave status not OK");
-    Weave.Svc.Obs.notify("weave:service:setup-complete");
     this._waitingForSync = true;
     this.StartAsyncOperation();
 
@@ -680,8 +687,6 @@ let TPS =
   WipeServer: function TPS__WipeServer() {
     Logger.logInfo("WipeServer()");
     this.Login();
-    this._waitingForSync = true;
-    this.StartAsyncOperation();
     Weave.Service.wipeServer();
   },
 };

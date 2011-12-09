@@ -128,15 +128,15 @@ var TPS = {
       return "Sync status not ok: " + Weave.Status.service;
     }
 
-    this._waitingForSync = true;
     this._syncErrors = 0;
 
     if (options == SYNC_WIPE_SERVER) {
       Weave.Service.wipeServer();
     } else {
+      this._waitingForSync = true;
       Weave.Service.sync();
+      utils.waitFor(syncFinishedCallback, null, 20000, 500, TPS);
     }
-    utils.waitFor(syncFinishedCallback, null, 20000, 500, TPS);
     return this._syncErrors;
   },
 };

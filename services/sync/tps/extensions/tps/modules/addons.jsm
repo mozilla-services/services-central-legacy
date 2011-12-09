@@ -87,8 +87,13 @@ Addon.prototype = {
     let cb = Async.makeSyncCallback();
     AddonManager.getAddonByID(this.id, cb);
     let addon = Async.waitForSyncCallback(cb);
+
     Logger.AssertTrue(!!addon, 'could not find addon ' + this.id + ' to uninstall');
-    addon.uninstall();
+
+    cb = Async.makeSpinningCallback();
+    let store = Engines.get("addons")._store;
+    store.uninstallAddon(addon, cb);
+    cb.wait();
   },
 
   find: function find(state) {
@@ -139,7 +144,20 @@ Addon.prototype = {
   setEnabled: function setEnabled(flag) {
     Logger.AssertTrue(this.find(), "Add-on is available.");
 
-    this.addon.userDisabled = !flag;
+    let userDisabled;
+    if (flag == STATE_ENABLED) {
+      userDisabled = false;
+    } else if (flag == STATE_DISABLED) {
+      userDisabled = true;
+    } else {
+      throw new Error("Unknown flag to setEnabled: " + flag);
+    }
+
+    let store = Engines.get("addons")._store;
+    let cb = Async.makeSpinningCallback();
+    store.updateUserDisabled(this.addon, userDisabled, cb);
+    cb.wait();
+
     return true;
   }
 };

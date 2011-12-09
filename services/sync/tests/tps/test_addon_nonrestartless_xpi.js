@@ -27,7 +27,7 @@ let phases = {
 const id = "unsigned-xpi@tests.mozilla.org";
 
 Phase("phase01", [
-  [Sync, SYNC_WIPE_SERVER],
+  [ResetData],
   [Addons.verifyNot, [id]],
   [Addons.install, [id]],
 ]);

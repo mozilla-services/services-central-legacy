@@ -18,7 +18,6 @@ const id = "restartless-xpi@tests.mozilla.org";
 
 // Verify install is synced
 Phase("phase01", [
-  [ResetData],
   [Addons.verifyNot, [id]],
   [Addons.install, [id]],
   [Addons.verify, [id], STATE_ENABLED],

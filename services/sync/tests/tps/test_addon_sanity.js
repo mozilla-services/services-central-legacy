@@ -18,7 +18,7 @@ Phase("phase1", [
   [Addons.verifyNot, [id]],
 
   // But it should be marked for Sync.
-  [Sync, SYNC_WIPE_SERVER]
+  [Sync]
 ]);
 
 Phase("phase2", [

@@ -148,7 +148,6 @@ AddonsEngine.prototype = {
   version:                1,
 
   _reconciler:            null,
-  _reconcilerStateLoaded: false,
 
   /**
    * Override parent method to find add-ons by their public ID, not Sync GUID.
@@ -254,14 +253,6 @@ AddonsEngine.prototype = {
    * system (if needed) and refresh the state of the reconciler.
    */
   _refreshReconcilerState: function _refreshReconcilerState() {
-    if (!this._reconcilerStateLoaded) {
-      this._log.debug("Loading reconciler state.");
-      let cb = Async.makeSpinningCallback();
-      this._reconciler.loadState(null, cb);
-      cb.wait();
-      this._reconcilerStateLoaded = true;
-    }
-
     this._log.debug("Refreshing reconciler state");
     let cb = Async.makeSpinningCallback();
     this._reconciler.refreshGlobalState(cb);
@@ -299,20 +290,23 @@ AddonsStore.prototype = {
    * Override applyIncoming to filter out records we can't handle.
    */
   applyIncoming: function applyIncoming(record) {
-    // Ignore records not belonging to our application ID because that is the
-    // current policy.
-    if (record.applicationID != Services.appinfo.ID) {
-      this._log.info("Ignoring incoming record from other App ID: " +
-                      record.id);
-      return;
-    }
+    // The fields we look at aren't present when the record is deleted.
+    if (!record.deleted) {
+      // Ignore records not belonging to our application ID because that is the
+      // current policy.
+      if (record.applicationID != Services.appinfo.ID) {
+        this._log.info("Ignoring incoming record from other App ID: " +
+                        record.id);
+        return;
+      }
 
-    // Ignore records that aren't from the official add-on repository, as that
-    // is our current policy.
-    if (record.source != "amo") {
-      this._log.info("Ignoring unknown add-on source (" + record.source + ")" +
-                     " for " + record.id);
-      return;
+      // Ignore records that aren't from the official add-on repository, as that
+      // is our current policy.
+      if (record.source != "amo") {
+        this._log.info("Ignoring unknown add-on source (" + record.source + ")" +
+                       " for " + record.id);
+        return;
+      }
     }
 
     Store.prototype.applyIncoming.call(this, record);
@@ -332,20 +326,26 @@ AddonsStore.prototype = {
 
     // This will throw if there was an error. This will get caught by the sync
     // engine and the record will try to be applied later.
-    cb.wait();
+    let results = cb.wait();
 
-    this._log.info("Add-on installed: " + record.addonID);
-    let addon = this.getAddonByID(record.addonID);
+    let addon;
+    for each (let a in results.addons) {
+      if (a.id == record.addonID) {
+        addon = a;
+        break;
+      }
+    }
 
     // This should never happen, but is present as a fail-safe.
     if (!addon) {
       throw new Error("Add-on not found after install: " + record.addonID);
     }
 
+    this._log.info("Add-on installed: " + record.addonID);
     this._log.info("Setting add-on Sync GUID to remote: " + record.id);
     addon.syncGUID = record.id;
 
-    let cb = Async.makeSpinningCallback();
+    cb = Async.makeSpinningCallback();
     this.updateUserDisabled(addon, !record.enabled, cb);
     cb.wait();
   },
@@ -354,7 +354,8 @@ AddonsStore.prototype = {
    * Provides core Store API to remove/uninstall an add-on from a record.
    */
   remove: function remove(record) {
-    let addon = this.getAddonByID(record.addonID);
+    // If this is called, the payload is empty, so we have to find by GUID.
+    let addon = this.getAddonByGUID(record.id);
     if (!addon) {
       // We don't throw because if the add-on could not be found then we assume
       // it has already been uninstalled and there is nothing for this function
@@ -657,7 +658,7 @@ AddonsStore.prototype = {
     if (!Svc.Prefs.get("addons.ignoreRepositoryChecking", false)) {
       let scheme = addon.sourceURI.scheme;
       if (scheme != "https") {
-        throw new Error("Insecure source URI scheme: " + scheme);
+        cb(new Error("Insecure source URI scheme: " + scheme), addon.install);
       }
     }
 
@@ -684,7 +685,9 @@ AddonsStore.prototype = {
    *
    * The result object has the following keys:
    *
-   *   id  ID of add-on that was installed.
+   *   id      ID of add-on that was installed.
+   *   install AddonInstall that was installed.
+   *   addon   Addon that was installed.
    *
    * @param addon
    *        AddonSearchResult to install add-on from.
@@ -713,7 +716,7 @@ AddonsStore.prototype = {
           onInstallEnded: function(install, addon) {
             install.removeListener(listener);
 
-            cb(null, {id: addon.id});
+            cb(null, {id: addon.id, install: install, addon: addon});
           },
           onInstallFailed: function(install) {
             install.removeListener(listener);
@@ -809,6 +812,10 @@ AddonsStore.prototype = {
     let listener = {
       onEnabling: function onEnabling(wrapper, needsRestart) {
         this._log.debug("onEnabling: " + wrapper.id);
+        if (wrapper.id != addon.id) {
+          return;
+        }
+
         // We ignore the restartless case because we'll get onEnabled shortly.
         if (!needsRestart) {
           return;
@@ -817,14 +824,22 @@ AddonsStore.prototype = {
         AddonManager.removeAddonListener(listener);
         callback(null, wrapper);
       }.bind(this),
+
       onEnabled: function onEnabled(wrapper) {
         this._log.debug("onEnabled: " + wrapper.id);
+        if (wrapper.id != addon.id) {
+          return;
+        }
 
         AddonManager.removeAddonListener(listener);
         callback(null, wrapper);
       }.bind(this),
+
       onDisabling: function onDisabling(wrapper, needsRestart) {
         this._log.debug("onDisabling: " + wrapper.id);
+        if (wrapper.id != addon.id) {
+          return;
+        }
 
         if (!needsRestart) {
           return;
@@ -833,21 +848,43 @@ AddonsStore.prototype = {
         AddonManager.removeAddonListener(listener);
         callback(null, wrapper);
       }.bind(this),
+
       onDisabled: function onDisabled(wrapper) {
         this._log.debug("onDisabled: " + wrapper.id);
+        if (wrapper.id != addon.id) {
+          return;
+        }
+
         AddonManager.removeAddonListener(listener);
         callback(null, wrapper);
+      }.bind(this),
+
+      onOperationCancelled: function onOperationCancelled(wrapper) {
+        this._log.debug("onOperationCancelled: " + wrapper.id);
+        if (wrapper.id != addon.id) {
+          return;
+        }
+
+        AddonManager.removeAddonListener(listener);
+        callback(new Error("Operation cancelled"), wrapper);
       }.bind(this)
     };
 
-    // TODO enable enable/disable gating on callbacks.
-    // For some reason the callbacks aren't always getting fired. I have *no*
-    // clue why.
-    //AddonManager.addAddonListener(listener);
+    // The add-on listeners are only fired if the add-on is active. If not, the
+    // change is silently updated and made active when/if the add-on is active.
+
+    if (!addon.appDisabled) {
+      AddonManager.addAddonListener(listener);
+    }
 
     this._log.info("Updating userDisabled flag: " + addon.id + " -> " + value);
     addon.userDisabled = !!value;
-    callback(null, addon);
+
+    if (!addon.appDisabled) {
+      callback(null, addon);
+      return;
+    }
+    // Else the listener will handle invoking the callback.
   },
 
   /**
@@ -861,9 +898,11 @@ AddonsStore.prototype = {
    * The 2nd argument to the callback is always an object with details on the
    * overall execution state. It contains the following keys:
    *
-   *   installed  Array of add-on IDs that were installed
-   *   errors     Array of errors encountered. Only has elements if error is
-   *              truthy.
+   *   installedIDs  Array of add-on IDs that were installed.
+   *   installs      Array of AddonInstall instances that were installed.
+   *   addons        Array of Addon instances that were installed.
+   *   errors        Array of errors encountered. Only has elements if error is
+   *                 truthy.
    *
    * @param ids
    *        Array of add-on string IDs to install.
@@ -881,8 +920,10 @@ AddonsStore.prototype = {
                        " add-ons during repository search.");
 
         let ourResult = {
-          installed: [],
-          errors:    [],
+          installedIDs: [],
+          installs:     [],
+          addons:       [],
+          errors:       []
         };
 
         if (!addonsLength) {
@@ -897,7 +938,9 @@ AddonsStore.prototype = {
           if (error) {
             ourResult.errors.push(error);
           } else {
-            ourResult.installed.push(result.id);
+            ourResult.installedIDs.push(result.id);
+            ourResult.installs.push(result.install);
+            ourResult.addons.push(result.addon);
           }
 
           if (finishedCount >= addonsLength) {

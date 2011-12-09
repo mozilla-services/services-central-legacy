@@ -27,17 +27,16 @@ let phases = {
 const id = "unsigned-xpi@tests.mozilla.org";
 
 Phase("phase01", [
-  [Sync, SYNC_WIPE_SERVER],
   [Addons.verifyNot, [id]],
   [Addons.install, [id]],
+  [Sync]
 ]);
 Phase("phase02", [
-  [Addons.verify, [id], STATE_ENABLED],
-  [Sync],
+  [Addons.verify, [id], STATE_ENABLED]
 ]);
 Phase("phase03", [
   [Addons.verifyNot, [id]],
-  [Sync],
+  [Sync]
 ]);
 Phase("phase04", [
   [Addons.verify, [id], STATE_ENABLED],
@@ -45,13 +44,15 @@ Phase("phase04", [
 
 // Now we disable the add-on
 Phase("phase05", [
-  [Addons.setEnabled, [id], STATE_DISABLED]
+  [Sync],
+  [Addons.setEnabled, [id], STATE_DISABLED],
+  [Sync]
 ]);
 Phase("phase06", [
   [Addons.verify, [id], STATE_DISABLED],
-  [Sync]
 ]);
 Phase("phase07", [
+  [Addons.verify, [id], STATE_ENABLED],
   [Sync]
 ]);
 Phase("phase08", [
@@ -60,13 +61,14 @@ Phase("phase08", [
 
 // Now we re-enable it again.
 Phase("phase09", [
-  [Addons.setEnabled, [id], STATE_ENABLED]
+  [Addons.setEnabled, [id], STATE_ENABLED],
+  [Sync]
 ]);
 Phase("phase10", [
   [Addons.verify, [id], STATE_ENABLED],
-  [Sync]
 ]);
 Phase("phase11", [
+  [Addons.verify, [id], STATE_DISABLED],
   [Sync]
 ]);
 Phase("phase12", [
@@ -76,13 +78,14 @@ Phase("phase12", [
 // And we uninstall it
 Phase("phase13", [
   [Addons.verify, [id], STATE_ENABLED],
-  [Addons.uninstall, [id]]
-]);
-Phase("phase14", [
-  [Addons.verifyNot, [id]],
+  [Addons.uninstall, [id]],
   [Sync]
 ]);
+Phase("phase14", [
+  [Addons.verifyNot, [id]]
+]);
 Phase("phase15", [
+  [Addons.verify, [id], STATE_ENABLED],
   [Sync]
 ]);
 Phase("phase16", [

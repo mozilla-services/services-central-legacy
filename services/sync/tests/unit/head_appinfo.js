@@ -17,7 +17,7 @@ else
 let XULAppInfo = {
   vendor: "Mozilla",
   name: "XPCShell",
-  ID: "{3e3ba16c-1675-4e88-b9c8-afef81b3d2ef}",
+  ID: "xpcshell@tests.mozilla.org",
   version: "1",
   appBuildID: "20100621",
   platformVersion: "",

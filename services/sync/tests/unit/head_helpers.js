@@ -97,7 +97,7 @@ function loadAddonTestFunctions() {
   let file = do_get_file(path);
   let uri = Services.io.newFileURI(file);
   Services.scriptloader.loadSubScript(uri.spec, gGlobalScope);
-  createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9");
+  createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
 }
 
 function getAddonInstall(name) {
@@ -130,8 +130,8 @@ function getAddonFromAddonManagerByID(id) {
  */
 function installAddonFromInstall(install) {
   let cb = Async.makeSyncCallback();
-  let listener = {onInstalled: cb};
-  AddonManager.addAddonListener(listener);
+  let listener = {onInstallEnded: cb};
+  AddonManager.addInstallListener(listener);
   install.install();
   Async.waitForSyncCallback(cb);
   AddonManager.removeAddonListener(listener);

@@ -161,6 +161,12 @@ AddonsReconciler.prototype = {
   /** Flag indicating whether we are listening to AddonManager events. */
   _listening: false,
 
+  /** Whether state has been loaded from a file.
+   *
+   * State is loaded on demand if an operation requires it.
+   */
+  _stateLoaded: false,
+
   /** log4moz logger instance */
   _log: null,
 
@@ -191,6 +197,7 @@ AddonsReconciler.prototype = {
    * Returns an object mapping add-on IDs to objects containing metadata.
    */
   get addons() {
+    this._ensureStateLoaded();
     return this._addons;
   },
 
@@ -267,13 +274,13 @@ AddonsReconciler.prototype = {
     let state = {version: 1, addons: {}, changes: []};
 
     for (let [id, record] in Iterator(this._addons)) {
-      state[id] = {};
+      state.addons[id] = {};
       for (let [k, v] in Iterator(record)) {
         if (k == "modified") {
-          state[id][k] = v.getTime();
+          state.addons[id][k] = v.getTime();
         }
         else {
-          state[id][k] = v;
+          state.addons[id][k] = v;
         }
       }
     }
@@ -282,6 +289,7 @@ AddonsReconciler.prototype = {
       state.changes.push([time.getTime(), change, id]);
     }
 
+    this._log.info("Saving reconciler state to file: " + file);
     Utils.jsonSave(file, this, state, callback);
   },
 
@@ -344,6 +352,10 @@ AddonsReconciler.prototype = {
    */
   refreshGlobalState: function refreshGlobalState(callback) {
     this._log.info("Refreshing global state from AddonManager.");
+    this._ensureStateLoaded();
+
+    let installs;
+
     AddonManager.getAllAddons(function (addons) {
       let ids = {};
 
@@ -359,9 +371,34 @@ AddonsReconciler.prototype = {
           continue;
         }
 
-        // If the id isn't in ids, it means that the add-on has been deleted.
+        // If the id isn't in ids, it means that the add-on has been deleted or
+        // the add-on is in the process of being installed. We detect the
+        // latter by seeing if an AddonInstall is found for this add-on.
+
+        if (!installs) {
+          let cb = Async.makeSyncCallback();
+          AddonManager.getAllInstalls(cb);
+          installs = Async.waitForSyncCallback(cb);
+        }
+
+        let installFound = false;
+        for each (let install in installs) {
+          if (install.addon && install.addon.id == id &&
+              install.state == AddonManager.STATE_INSTALLED) {
+
+            installFound = true;
+            break;
+          }
+        }
+
+        if (installFound) {
+          continue;
+        }
+
         if (addon.installed) {
           addon.installed = false;
+          this._log.debug("Adding change because add-on not present in " +
+                          "Add-on Manager: " + id);
           this._addChange(new Date(), CHANGE_UNINSTALLED, addon);
         }
       }
@@ -384,6 +421,7 @@ AddonsReconciler.prototype = {
    */
   rectifyStateFromAddon: function rectifyStateFromAddon(addon) {
     this._log.debug("Rectifying state for addon: " + addon.id);
+    this._ensureStateLoaded();
 
     let id = addon.id;
     let enabled = !addon.userDisabled;
@@ -402,6 +440,8 @@ AddonsReconciler.prototype = {
         foreignInstall: addon.foreignInstall
       };
       this._addons[id] = record;
+      this._log.debug("Adding change because add-on not present locally: " +
+                      id);
       this._addChange(now, CHANGE_INSTALLED, record);
       return;
     }
@@ -409,14 +449,19 @@ AddonsReconciler.prototype = {
     let record = this._addons[id];
 
     if (!record.installed) {
-      record.installed = true;
-      record.modified = now;
+      // It is possible the record is marked as uninstalled because an
+      // uninstall is pending.
+      if (!(addon.pendingOperations & AddonManager.PENDING_UNINSTALL)) {
+        record.installed = true;
+        record.modified = now;
+      }
     }
 
     if (record.enabled != enabled) {
       record.enabled = enabled;
       record.modified = now;
       let change = enabled ? CHANGE_ENABLED : CHANGE_DISABLED;
+      this._log.debug("Adding change because enabled state changed: " + id);
       this._addChange(new Date(), change, record);
     }
 
@@ -463,6 +508,8 @@ AddonsReconciler.prototype = {
    *   id - ID of add-on that changed.
    */
   getChangesSinceDate: function getChangesSinceDate(date) {
+    this._ensureStateLoaded();
+
     let length = this._changes.length;
     for (let i = 0; i < length; i++) {
       if (this._changes[i][0] >= date) {
@@ -480,6 +527,8 @@ AddonsReconciler.prototype = {
    *        Entries older than this Date will be removed.
    */
   pruneChangesBeforeDate: function pruneChangesBeforeDate(date) {
+    this._ensureStateLoaded();
+
     while (this._changes.length > 0) {
       if (this._changes[0][0] >= date) {
         return;
@@ -496,7 +545,7 @@ AddonsReconciler.prototype = {
    */
   getAllSyncGUIDs: function getAllSyncGUIDs() {
     let result = {};
-    for (let id in this._addons) {
+    for (let id in this.addons) {
       result[id] = true;
     }
 
@@ -513,13 +562,30 @@ AddonsReconciler.prototype = {
    * @return Object on success on null on failure.
    */
   getAddonStateFromSyncGUID: function getAddonStateFromSyncGUID(guid) {
-    for each (let addon in this._addons) {
+    for each (let addon in this.addons) {
       if (addon.guid == guid) {
         return addon;
       }
     }
 
     return null;
+  },
+
+  /**
+   * Ensures that state is loaded before continuing.
+   *
+   * This is called internally by anything that accesses the internal data
+   * structures. It effectively just-in-time loads serialized state.
+   */
+  _ensureStateLoaded: function _ensureStateLoaded() {
+    if (this._stateLoaded) {
+      return;
+    }
+
+    let cb = Async.makeSpinningCallback();
+    this.loadState(null, cb);
+    cb.wait();
+    this._stateLoaded = true;
   },
 
   /**
@@ -547,6 +613,7 @@ AddonsReconciler.prototype = {
         case "onDisabling":
         case "onDisabled":
         case "onInstalled":
+        case "onInstallEnded":
         case "onOperationCancelled":
           this.rectifyStateFromAddon(addon);
           break;
@@ -554,11 +621,14 @@ AddonsReconciler.prototype = {
         case "onUninstalling":
         case "onUninstalled":
           let id = addon.id;
-          if (id in this._addons) {
+          let addons = this.addons;
+          if (id in addons) {
             let now = new Date();
-            let record = this._addons[id];
+            let record = addons[id];
             record.installed = false;
             record.modified = now;
+            this._log.debug("Adding change because of uninstall listener: " +
+                            id);
             this._addChange(now, CHANGE_UNINSTALLED, record);
           }
       }

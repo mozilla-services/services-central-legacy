@@ -35,10 +35,10 @@ function advance_test() {
 add_test(function test_addon_install() {
   _("Ensure basic add-on APIs work as expected.");
 
-  let install = getAddonInstall("test_install1");
+  let install = getAddonInstall("test_bootstrap1_1");
   do_check_neq(install, null);
   do_check_eq(install.type, "extension");
-  do_check_eq(install.name, "Test 1");
+  do_check_eq(install.name, "Test Bootstrap 1");
 
   advance_test();
 });
@@ -50,7 +50,7 @@ add_test(function test_find_dupe() {
   // test, so we do it manually.
   engine._refreshReconcilerState();
 
-  let addon = installAddon("test_install1");
+  let addon = installAddon("test_bootstrap1_1");
 
   let record = {
     id:            Utils.makeGUID(),
@@ -95,7 +95,7 @@ add_test(function test_get_changed_ids() {
 
   _("Ensure reconciler changes are populated.");
   Svc.Prefs.set("addons.ignoreRepositoryChecking", true);
-  let addon = installAddon("test_install1");
+  let addon = installAddon("test_bootstrap1_1");
   tracker.clearChangedIDs(); // Just in case.
   changes = engine.getChangedIDs();
   do_check_eq("object", typeof(changes));

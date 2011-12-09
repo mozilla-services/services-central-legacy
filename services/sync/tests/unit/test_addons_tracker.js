@@ -55,7 +55,7 @@ add_test(function test_empty() {
 add_test(function test_not_tracking() {
   _("Ensures the tracker doesn't do anything when it isn't tracking.");
 
-  let addon = installAddon("test_install1");
+  let addon = installAddon("test_bootstrap1_1");
   uninstallAddon(addon);
 
   do_check_eq(0, Object.keys(tracker.changedIDs).length);
@@ -70,7 +70,7 @@ add_test(function test_track_install() {
   Svc.Obs.notify("weave:engine:start-tracking");
 
   do_check_eq(0, tracker.score);
-  let addon = installAddon("test_install1");
+  let addon = installAddon("test_bootstrap1_1");
   let changed = tracker.changedIDs;
 
   do_check_eq(1, Object.keys(changed).length);
@@ -84,7 +84,7 @@ add_test(function test_track_install() {
 add_test(function test_track_uninstall() {
   _("Ensure that uninstalling an add-on notifies tracker.");
 
-  let addon = installAddon("test_install1");
+  let addon = installAddon("test_bootstrap1_1");
   let guid = addon.syncGUID;
   do_check_eq(0, tracker.score);
 
@@ -99,16 +99,13 @@ add_test(function test_track_uninstall() {
   cleanup_and_advance();
 });
 
-// The following don't work for an unknown reason. The listeners for disabling
-// never get invoked. There is code in the store that is also disabled for the
-// reasons as this.
-// TODO Figure out why listeners aren't being called and enable tests.
-/*
 add_test(function test_track_user_disable() {
   _("Ensure that tracker sees disabling of add-on");
 
-  let addon = installAddon("test_install1");
+  let addon = installAddon("test_bootstrap1_1");
   do_check_false(addon.userDisabled);
+  do_check_false(addon.appDisabled);
+  do_check_true(addon.isActive);
 
   Svc.Obs.notify("weave:engine:start-tracking");
   do_check_eq(0, tracker.score);
@@ -146,7 +143,7 @@ add_test(function test_track_user_disable() {
 add_test(function test_track_enable() {
   _("Ensure that enabling a disabled add-on notifies tracker.");
 
-  let addon = installAddon("test_install1");
+  let addon = installAddon("test_bootstrap1_1");
   addon.userDisabled = true;
   store._sleep(0);
 
@@ -164,5 +161,3 @@ add_test(function test_track_enable() {
   uninstallAddon(addon);
   cleanup_and_advance();
 });
-*/
-

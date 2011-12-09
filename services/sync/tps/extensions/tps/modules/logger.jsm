@@ -116,20 +116,6 @@ var Logger =
     return this.AssertTrue(!bool, msg, showPotentialError);
   },
 
-  AssertFalse: function(bool, msg, showPotentialError) {
-    if (!bool) {
-      return;
-    }
-
-    let message = msg;
-    if (showPotentialError && this._potentialError) {
-      message += "; " + this._potentialError;
-      this._potentialError = null;
-    }
-
-    throw("ASSERTION FAILED! " + message);
-  },
-
   AssertEqual: function(val1, val2, msg) {
     if (val1 != val2)
       throw("ASSERTION FAILED! " + msg + "; expected " +

@@ -564,6 +564,10 @@ AddonsStore.prototype = {
       return false;
     }
 
+    // This may be too aggressive. If an add-on is downloaded from AMO and
+    // manually placed in the profile directory, foreignInstall will be set.
+    // Arguably, that add-on should be syncable.
+    // TODO Address the edge case and come up with more robust heuristics.
     if (addon.foreignInstall) {
       this._log.debug(addon.id + " not syncable: is foreign install.");
       return false;

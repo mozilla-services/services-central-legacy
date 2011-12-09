@@ -46,6 +46,7 @@ const {classes: CC, interfaces: CI, utils: CU} = Components;
 
 CU.import("resource://services-sync/service.js");
 CU.import("resource://services-sync/constants.js");
+CU.import("resource://services-sync/engines.js");
 CU.import("resource://services-sync/async.js");
 CU.import("resource://services-sync/util.js");
 CU.import("resource://gre/modules/XPCOMUtils.jsm");
@@ -103,6 +104,7 @@ let TPS =
   _phaselist: {},
   _operations_pending: 0,
   _loggedIn: false,
+  _enabledEngines: null,
 
   DumpError: function (msg) {
     this._errors++;
@@ -491,6 +493,23 @@ let TPS =
     this.RunNextTestAction();
   },
 
+  /**
+   * Runs a single test phase.
+   *
+   * This is the main entry point for each phase of a test. The TPS command
+   * line driver loads this module and calls into the function with the
+   * arguments from the command line.
+   *
+   * When a phase is executed, the file is loaded as JavaScript into the
+   * current object.
+   *
+   * @param  file
+   *         String URI of the file to open.
+   * @param  phase
+   *         String name of the phase to run.
+   * @param  logpath
+   *         String path of the log file to write to.
+   */
   RunTestPhase: function (file, phase, logpath) {
     try {
       Logger.init(logpath);
@@ -524,6 +543,23 @@ let TPS =
         this.DumpError("no profile defined for phase " + this._currentPhase);
         return;
       }
+
+      // If we have restricted the active engines, unregister engines we don't
+      // care about.
+      if (Array.isArray(this._enabledEngines)) {
+        let names = {};
+        for each (let name in this._enabledEngines) {
+          names[name] = true;
+        }
+
+        for each (let engine in Engines.getEnabled()) {
+          if (!(engine.name in names)) {
+            Logger.logInfo("Unregistering unused engine: " + engine.name);
+            Engines.unregister(engine);
+          }
+        }
+      }
+
       Logger.logInfo("Starting phase " + parseInt(phase, 10) + "/" +
                      Object.keys(this._phaselist).length);
 
@@ -561,8 +597,40 @@ let TPS =
     }
   },
 
+  /**
+   * Register a single phase with the test harness.
+   *
+   * This is called when loading individual test files.
+   *
+   * @param  phasename
+   *         String name of the phase being loaded.
+   * @param  fnlist
+   *         Array of functions/actions to perform.
+   */
   Phase: function Test__Phase(phasename, fnlist) {
     this._phaselist[phasename] = fnlist;
+  },
+
+  /**
+   * Restrict enabled Sync engines to a specified set.
+   *
+   * This can be called by a test to limit what engines are enabled. It is
+   * recommended to call it to reduce the overhead and log clutter for the
+   * test.
+   *
+   * The "clients" engine is special and is always enabled, so there is no
+   * need to specify it.
+   *
+   * @param  names
+   *         Array of Strings for engines to make active during the test.
+   */
+  EnableEngines: function EnableEngines(names) {
+    if (!Array.isArray(names)) {
+      throw new Error("Argument to RestrictEngines() is not an array: "
+                      + typeof(names));
+    }
+
+    this._enabledEngines = names;
   },
 
   RunMozmillTest: function TPS__RunMozmillTest(testfile) {

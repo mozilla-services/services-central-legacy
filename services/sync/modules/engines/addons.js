@@ -148,7 +148,6 @@ AddonsEngine.prototype = {
   version:                1,
 
   _reconciler:            null,
-  _reconcilerStateLoaded: false,
 
   /**
    * Override parent method to find add-ons by their public ID, not Sync GUID.
@@ -254,14 +253,6 @@ AddonsEngine.prototype = {
    * system (if needed) and refresh the state of the reconciler.
    */
   _refreshReconcilerState: function _refreshReconcilerState() {
-    if (!this._reconcilerStateLoaded) {
-      this._log.debug("Loading reconciler state.");
-      let cb = Async.makeSpinningCallback();
-      this._reconciler.loadState(null, cb);
-      cb.wait();
-      this._reconcilerStateLoaded = true;
-    }
-
     this._log.debug("Refreshing reconciler state");
     let cb = Async.makeSpinningCallback();
     this._reconciler.refreshGlobalState(cb);

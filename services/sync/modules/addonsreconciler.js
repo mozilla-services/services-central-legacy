@@ -161,6 +161,12 @@ AddonsReconciler.prototype = {
   /** Flag indicating whether we are listening to AddonManager events. */
   _listening: false,
 
+  /** Whether state has been loaded from a file.
+   *
+   * State is loaded on demand if an operation requires it.
+   */
+  _stateLoaded: false,
+
   /** log4moz logger instance */
   _log: null,
 
@@ -191,6 +197,7 @@ AddonsReconciler.prototype = {
    * Returns an object mapping add-on IDs to objects containing metadata.
    */
   get addons() {
+    this._ensureStateLoaded();
     return this._addons;
   },
 
@@ -345,6 +352,7 @@ AddonsReconciler.prototype = {
    */
   refreshGlobalState: function refreshGlobalState(callback) {
     this._log.info("Refreshing global state from AddonManager.");
+    this._ensureStateLoaded();
     AddonManager.getAllAddons(function (addons) {
       let ids = {};
 
@@ -385,6 +393,7 @@ AddonsReconciler.prototype = {
    */
   rectifyStateFromAddon: function rectifyStateFromAddon(addon) {
     this._log.debug("Rectifying state for addon: " + addon.id);
+    this._ensureStateLoaded();
 
     let id = addon.id;
     let enabled = !addon.userDisabled;
@@ -467,6 +476,8 @@ AddonsReconciler.prototype = {
    *   id - ID of add-on that changed.
    */
   getChangesSinceDate: function getChangesSinceDate(date) {
+    this._ensureStateLoaded();
+
     let length = this._changes.length;
     for (let i = 0; i < length; i++) {
       if (this._changes[i][0] >= date) {
@@ -484,6 +495,8 @@ AddonsReconciler.prototype = {
    *        Entries older than this Date will be removed.
    */
   pruneChangesBeforeDate: function pruneChangesBeforeDate(date) {
+    this._ensureStateLoaded();
+
     while (this._changes.length > 0) {
       if (this._changes[0][0] >= date) {
         return;
@@ -500,7 +513,7 @@ AddonsReconciler.prototype = {
    */
   getAllSyncGUIDs: function getAllSyncGUIDs() {
     let result = {};
-    for (let id in this._addons) {
+    for (let id in this.addons) {
       result[id] = true;
     }
 
@@ -517,13 +530,30 @@ AddonsReconciler.prototype = {
    * @return Object on success on null on failure.
    */
   getAddonStateFromSyncGUID: function getAddonStateFromSyncGUID(guid) {
-    for each (let addon in this._addons) {
+    for each (let addon in this.addons) {
       if (addon.guid == guid) {
         return addon;
       }
     }
 
     return null;
+  },
+
+  /**
+   * Ensures that state is loaded before continuing.
+   *
+   * This is called internally by anything that accesses the internal data
+   * structures. It effectively just-in-time loads serialized state.
+   */
+  _ensureStateLoaded: function _ensureStateLoaded() {
+    if (this._stateLoaded) {
+      return;
+    }
+
+    let cb = Async.makeSpinningCallback();
+    this.loadState(null, cb);
+    cb.wait();
+    this._stateLoaded = true;
   },
 
   /**
@@ -559,9 +589,10 @@ AddonsReconciler.prototype = {
         case "onUninstalling":
         case "onUninstalled":
           let id = addon.id;
-          if (id in this._addons) {
+          let addons = this.addons;
+          if (id in addons) {
             let now = new Date();
-            let record = this._addons[id];
+            let record = addons[id];
             record.installed = false;
             record.modified = now;
             this._addChange(now, CHANGE_UNINSTALLED, record);

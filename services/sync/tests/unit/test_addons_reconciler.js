@@ -135,8 +135,8 @@ add_test(function test_load_state_future_version() {
     do_check_false(loaded);
 
     do_check_eq("object", typeof(reconciler.addons));
-    do_check_eq(0, Object.keys(reconciler.addons).length);
-    do_check_eq(0, reconciler._changes);
+    do_check_eq(1, Object.keys(reconciler.addons).length);
+    do_check_eq(1, reconciler._changes.length);
 
     run_next_test();
   });

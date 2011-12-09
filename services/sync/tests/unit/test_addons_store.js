@@ -376,7 +376,9 @@ add_test(function test_ignore_untrusted_source_uris() {
     let addon = {sourceURI: sourceURI, name: "foo"};
 
     try {
-      store.getInstallFromSearchResult(addon, null);
+      let cb = Async.makeSpinningCallback();
+      store.getInstallFromSearchResult(addon, cb);
+      cb.wait();
     } catch (ex) {
       do_check_neq(null, ex);
       do_check_eq(0, ex.message.indexOf("Insecure source URI"));

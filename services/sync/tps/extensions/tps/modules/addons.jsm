@@ -111,10 +111,10 @@ Addon.prototype = {
     Logger.logInfo("add-on found: " + addon.id + ", enabled: " +
                    !addon.userDisabled);
     if (state == STATE_ENABLED) {
-      Logger.AssertFalse(addon.userDisabled, "add-on is enabled: " + addon.id);
+      Logger.AssertFalse(addon.userDisabled, "add-on is disabled: " + addon.id);
       return true;
     } else if (state == STATE_DISABLED) {
-      Logger.AssertTrue(addon.userDisabled, "add-on is disabled: " + addon.id);
+      Logger.AssertTrue(addon.userDisabled, "add-on is enabled: " + addon.id);
       return true;
     } else if (state) {
       throw Error("Don't know how to handle state: " + state);
@@ -136,8 +136,8 @@ Addon.prototype = {
     store.installAddonsFromIDs([this.id], cb);
     let result = cb.wait();
 
-    Logger.AssertEqual(1, result.installed.length, "Exactly 1 add-on was installed.");
-    Logger.AssertEqual(this.id, result.installed[0],
+    Logger.AssertEqual(1, result.installedIDs.length, "Exactly 1 add-on was installed.");
+    Logger.AssertEqual(this.id, result.installedIDs[0],
                        "Add-on was installed successfully: " + this.id);
   },
 

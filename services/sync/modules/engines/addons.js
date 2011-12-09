@@ -326,20 +326,26 @@ AddonsStore.prototype = {
 
     // This will throw if there was an error. This will get caught by the sync
     // engine and the record will try to be applied later.
-    cb.wait();
+    let results = cb.wait();
 
-    this._log.info("Add-on installed: " + record.addonID);
-    let addon = this.getAddonByID(record.addonID);
+    let addon;
+    for each (let a in results.addons) {
+      if (a.id == record.addonID) {
+        addon = a;
+        break;
+      }
+    }
 
     // This should never happen, but is present as a fail-safe.
     if (!addon) {
       throw new Error("Add-on not found after install: " + record.addonID);
     }
 
+    this._log.info("Add-on installed: " + record.addonID);
     this._log.info("Setting add-on Sync GUID to remote: " + record.id);
     addon.syncGUID = record.id;
 
-    let cb = Async.makeSpinningCallback();
+    cb = Async.makeSpinningCallback();
     this.updateUserDisabled(addon, !record.enabled, cb);
     cb.wait();
   },
@@ -679,7 +685,9 @@ AddonsStore.prototype = {
    *
    * The result object has the following keys:
    *
-   *   id  ID of add-on that was installed.
+   *   id      ID of add-on that was installed.
+   *   install AddonInstall that was installed.
+   *   addon   Addon that was installed.
    *
    * @param addon
    *        AddonSearchResult to install add-on from.
@@ -708,7 +716,7 @@ AddonsStore.prototype = {
           onInstallEnded: function(install, addon) {
             install.removeListener(listener);
 
-            cb(null, {id: addon.id});
+            cb(null, {id: addon.id, install: install, addon: addon});
           },
           onInstallFailed: function(install) {
             install.removeListener(listener);
@@ -890,9 +898,11 @@ AddonsStore.prototype = {
    * The 2nd argument to the callback is always an object with details on the
    * overall execution state. It contains the following keys:
    *
-   *   installed  Array of add-on IDs that were installed
-   *   errors     Array of errors encountered. Only has elements if error is
-   *              truthy.
+   *   installedIDs  Array of add-on IDs that were installed.
+   *   installs      Array of AddonInstall instances that were installed.
+   *   addons        Array of Addon instances that were installed.
+   *   errors        Array of errors encountered. Only has elements if error is
+   *                 truthy.
    *
    * @param ids
    *        Array of add-on string IDs to install.
@@ -910,8 +920,10 @@ AddonsStore.prototype = {
                        " add-ons during repository search.");
 
         let ourResult = {
-          installed: [],
-          errors:    [],
+          installedIDs: [],
+          installs:     [],
+          addons:       [],
+          errors:       []
         };
 
         if (!addonsLength) {
@@ -926,7 +938,9 @@ AddonsStore.prototype = {
           if (error) {
             ourResult.errors.push(error);
           } else {
-            ourResult.installed.push(result.id);
+            ourResult.installedIDs.push(result.id);
+            ourResult.installs.push(result.install);
+            ourResult.addons.push(result.addon);
           }
 
           if (finishedCount >= addonsLength) {

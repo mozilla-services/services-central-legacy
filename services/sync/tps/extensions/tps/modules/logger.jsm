@@ -114,6 +114,7 @@ var Logger =
 
   AssertFalse: function(bool, msg, showPotentialError) {
     return this.AssertTrue(!bool, msg, showPotentialError);
+  },
 
   AssertEqual: function(val1, val2, msg) {
     if (val1 != val2)

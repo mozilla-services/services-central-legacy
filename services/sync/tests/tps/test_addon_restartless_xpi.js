@@ -3,6 +3,8 @@
 
 // This test verifies that install of restartless extensions syncs to
 // other profiles.
+EnableEngines(["addons"]);
+
 let phases = {
   "phase01": "profile1",
   "phase02": "profile2",
@@ -63,6 +65,3 @@ Phase("phase08", [
   [Sync],
   [Addons.verifyNot, [id]]
 ]);
-
-// TODO test disable and uninstall in separate profiles, then sync in
-// each. Also needed for nonrestartless version.

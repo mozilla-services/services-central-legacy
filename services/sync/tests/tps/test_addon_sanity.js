@@ -7,6 +7,8 @@
  * testrunner (no single quotes, extra comma's, etc).
  */
 
+EnableEngines(["addons"]);
+
 let phases = { "phase1": "profile1",
                "phase2": "profile1" };
 

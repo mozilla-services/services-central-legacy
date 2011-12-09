@@ -4,6 +4,7 @@
 
 // This test verifies that install of extensions that require restart
 // syncs between profiles.
+EnableEngines(["addons"]);
 
 let phases = {
   "phase01": "profile1",

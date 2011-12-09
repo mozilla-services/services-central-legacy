@@ -657,7 +657,7 @@ AddonsStore.prototype = {
     if (!Svc.Prefs.get("addons.ignoreRepositoryChecking", false)) {
       let scheme = addon.sourceURI.scheme;
       if (scheme != "https") {
-        throw new Error("Insecure source URI scheme: " + scheme);
+        cb(new Error("Insecure source URI scheme: " + scheme), addon.install);
       }
     }
 

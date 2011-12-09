@@ -353,6 +353,9 @@ AddonsReconciler.prototype = {
   refreshGlobalState: function refreshGlobalState(callback) {
     this._log.info("Refreshing global state from AddonManager.");
     this._ensureStateLoaded();
+
+    let installs;
+
     AddonManager.getAllAddons(function (addons) {
       let ids = {};
 
@@ -368,9 +371,34 @@ AddonsReconciler.prototype = {
           continue;
         }
 
-        // If the id isn't in ids, it means that the add-on has been deleted.
+        // If the id isn't in ids, it means that the add-on has been deleted or
+        // the add-on is in the process of being installed. We detect the
+        // latter by seeing if an AddonInstall is found for this add-on.
+
+        if (!installs) {
+          let cb = Async.makeSyncCallback();
+          AddonManager.getAllInstalls(cb);
+          installs = Async.waitForSyncCallback(cb);
+        }
+
+        let installFound = false;
+        for each (let install in installs) {
+          if (install.addon && install.addon.id == id &&
+              install.state == AddonManager.STATE_INSTALLED) {
+
+            installFound = true;
+            break;
+          }
+        }
+
+        if (installFound) {
+          continue;
+        }
+
         if (addon.installed) {
           addon.installed = false;
+          this._log.debug("Adding change because add-on not present in " +
+                          "Add-on Manager: " + id);
           this._addChange(new Date(), CHANGE_UNINSTALLED, addon);
         }
       }
@@ -595,6 +623,8 @@ AddonsReconciler.prototype = {
             let record = addons[id];
             record.installed = false;
             record.modified = now;
+            this._log.debug("Recording change because of uninstall listener: " +
+                            id);
             this._addChange(now, CHANGE_UNINSTALLED, record);
           }
       }

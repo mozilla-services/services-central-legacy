@@ -530,7 +530,7 @@ let TPS =
       Logger.logInfo("setting client.name to " + this.phases["phase" + this._currentPhase]);
       Weave.Svc.Prefs.set("client.name", this.phases["phase" + this._currentPhase]);
 
-      // TODO Phases should be defined in a data strongly that has strong
+      // TODO Phases should be defined in a data type that has strong
       // ordering, not by lexical sorting.
       let currentPhase = parseInt(this._currentPhase, 10);
       // Reset everything at the beginning of the test.

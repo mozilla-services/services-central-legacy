@@ -449,8 +449,12 @@ AddonsReconciler.prototype = {
     let record = this._addons[id];
 
     if (!record.installed) {
-      record.installed = true;
-      record.modified = now;
+      // It is possible the record is marked as uninstalled because an
+      // uninstall is pending.
+      if (!(addon.pendingOperations & AddonManager.PENDING_UNINSTALL)) {
+        record.installed = true;
+        record.modified = now;
+      }
     }
 
     if (record.enabled != enabled) {
@@ -623,7 +627,7 @@ AddonsReconciler.prototype = {
             let record = addons[id];
             record.installed = false;
             record.modified = now;
-            this._log.debug("Recording change because of uninstall listener: " +
+            this._log.debug("Adding change because of uninstall listener: " +
                             id);
             this._addChange(now, CHANGE_UNINSTALLED, record);
           }

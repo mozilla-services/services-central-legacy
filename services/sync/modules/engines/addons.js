@@ -395,11 +395,7 @@ AddonsStore.prototype = {
   itemExists: function itemExists(guid) {
     let addon = this.reconciler.getAddonStateFromSyncGUID(guid);
 
-    if (!addon) {
-      return false;
-    }
-
-    return !!addon.installed;
+    return !!addon;
   },
 
   /**
@@ -442,19 +438,24 @@ AddonsStore.prototype = {
    * This implements a core API of the store.
    */
   changeItemID: function changeItemID(oldID, newID) {
+    // We always update the GUID in the reconciler because it will be
+    // referenced later in the sync process.
+    let state = this.reconciler.getAddonStateFromSyncGUID(oldID);
+    if (state) {
+      state.guid = newID;
+      let cb = Async.makeSpinningCallback();
+      this.reconciler.saveState(null, cb);
+      cb.wait();
+    }
+
     let addon = this.getAddonByGUID(oldID);
     if (!addon) {
-      this._log.debug("Cannot change item ID because old add-on not present: " +
-                      oldID);
+      this._log.debug("Cannot change item ID (" + oldID + ") in Add-on " +
+                      "Manager because old add-on not present: " + oldID);
       return;
     }
 
     addon.syncGUID = newID;
-
-    let state = this.reconciler.addons[addon.id];
-    if (state) {
-      state.guid = newID;
-    }
   },
 
   /**

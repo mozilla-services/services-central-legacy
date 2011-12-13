@@ -24,7 +24,8 @@
     "test_special_tabs.js",
     "test_addon_sanity.js",
     "test_addon_restartless_xpi.js",
-    "test_addon_nonrestartless_xpi.js"
+    "test_addon_nonrestartless_xpi.js",
+    "test_addon_reconciling.js"
   ]
 }
 

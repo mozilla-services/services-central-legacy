@@ -368,8 +368,8 @@ add_test(function test_processIncoming_reconcile_deleted_dupe() {
   let engine = new RotaryEngine();
 
   let contents = {
-    meta: {global: {engines: {rotary:  {version: engine.version,
-                                        syncID:  engine.syncID}}}},
+    meta: {global: {engines: {rotary: {version: engine.version,
+                                       syncID:  engine.syncID}}}},
     crypto: {},
     rotary: {}
   };
@@ -379,7 +379,7 @@ add_test(function test_processIncoming_reconcile_deleted_dupe() {
   Svc.Prefs.set("clusterURL", "http://localhost:8080/");
   Svc.Prefs.set("username", USER);
 
-  let now = Date.now()/1000 - 10;
+  let now = Date.now() / 1000 - 10;
   engine.lastSync = now;
   engine.lastModified = now + 1;
 
@@ -392,6 +392,7 @@ add_test(function test_processIncoming_reconcile_deleted_dupe() {
   let wbo = new ServerWBO("DUPE_INCOMING", record, now + 2);
   server.insertWBO(USER, "rotary", wbo);
 
+  // Simulate a locally-deleted item.
   engine._store.items = {};
   engine._tracker.addChangedID("DUPE_LOCAL", now + 3);
   do_check_false(engine._store.itemExists("DUPE_LOCAL"));
@@ -405,7 +406,7 @@ add_test(function test_processIncoming_reconcile_deleted_dupe() {
   // deleted the incoming record. Since the local record only existed on the
   // client at the beginning of the sync, it shouldn't exist on the server
   // after.
-  do_check_eq(0, Object.keys(engine._store.items).length);
+  do_check_empty(engine._store.items);
 
   let collection = server.getCollection(USER, "rotary");
   do_check_eq(1, collection.count());
@@ -429,7 +430,7 @@ add_test(function test_processIncoming_reconcile_changed_dupe() {
   Svc.Prefs.set("clusterURL", "http://localhost:8080/");
   Svc.Prefs.set("username", USER);
 
-  let now = Date.now()/1000 - 10;
+  let now = Date.now() / 1000 - 10;
   engine.lastSync = now;
   engine.lastModified = now + 1;
 
@@ -449,7 +450,7 @@ add_test(function test_processIncoming_reconcile_changed_dupe() {
 
   engine._sync();
 
-  do_check_eq(1, Object.keys(engine._store.items).length);
+  do_check_attribute_count(engine._store.items, 1);
   do_check_true("DUPE_LOCAL" in engine._store.items);
 
   let collection = server.getCollection(USER, "rotary");

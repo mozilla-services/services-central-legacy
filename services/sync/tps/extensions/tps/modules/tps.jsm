@@ -503,15 +503,25 @@ let TPS =
    * When a phase is executed, the file is loaded as JavaScript into the
    * current object.
    *
+   * The following keys in the options argument have meaning:
+   *
+   *   - ignoreUnusedEngines  If true, unused engines will be unloaded from
+   *                          Sync. This makes output easier to parse and is
+   *                          useful for debugging test failures.
+   *
    * @param  file
    *         String URI of the file to open.
    * @param  phase
    *         String name of the phase to run.
    * @param  logpath
    *         String path of the log file to write to.
+   * @param  options
+   *         Object defining addition run-time options.
    */
-  RunTestPhase: function (file, phase, logpath) {
+  RunTestPhase: function (file, phase, logpath, options) {
     try {
+      let settings = options || {};
+
       Logger.init(logpath);
       Logger.logInfo("Sync version: " + WEAVE_VERSION);
       Logger.logInfo("Firefox builddate: " + Services.appinfo.appBuildID);
@@ -546,7 +556,7 @@ let TPS =
 
       // If we have restricted the active engines, unregister engines we don't
       // care about.
-      if (Array.isArray(this._enabledEngines)) {
+      if (settings.ignoreUnusedEngines && Array.isArray(this._enabledEngines)) {
         let names = {};
         for each (let name in this._enabledEngines) {
           names[name] = true;

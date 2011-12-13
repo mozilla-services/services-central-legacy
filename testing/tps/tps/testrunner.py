@@ -90,7 +90,6 @@ class TPSTestRunner(object):
                 }
   default_preferences = { 'app.update.enabled' : False,
                           'extensions.getAddons.get.url': 'http://127.0.0.1:4567/en-US/firefox/api/%API_VERSION%/search/guid:%IDS%',
-                          'extensions.logging.enabled': True,
                           'extensions.update.enabled'    : False,
                           'extensions.update.notifyUser' : False,
                           'browser.shell.checkDefaultBrowser' : False,

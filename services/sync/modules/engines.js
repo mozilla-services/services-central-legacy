@@ -1099,8 +1099,10 @@ SyncEngine.prototype = {
     this._log.trace("Reconcile step 3: Find dupes");
     let dupeId = this._findDupe(item);
     if (dupeId) {
+      // _handleDupe() doesn't really handle anything. Instead, it just
+      // determines which GUID to use.
       this._handleDupe(item, dupeId);
-      this._log.info("Reconciling de-duped record: " + item.id);
+      this._log.debug("Reconciling de-duped record: " + item.id);
       return this._reconcile(item, true);
     }
 

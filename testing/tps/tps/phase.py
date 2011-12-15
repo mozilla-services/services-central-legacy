@@ -76,7 +76,7 @@ class TPSTestPhase(object):
     if self.ignore_unused_engines:
         args.append('--ignore-unused-engines')
 
-    self.log("\nlaunching firefox for phase %s with args %s\n" %
+    self.log("\nlaunching Firefox for phase %s with args %s\n" %
              (self.phase, str(args)))
     returncode = self.firefoxRunner.run(env=self.env,
                                         args=args,

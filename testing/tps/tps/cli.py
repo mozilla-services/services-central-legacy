@@ -91,7 +91,8 @@ def main():
                      default=False,
                      action="store_true",
                      dest="ignore_unused_engines",
-                     help="If defined, don't load engines unused engines in individual tests.")
+                     help="If defined, don't load unused engines in individual tests."
+                           " Has no effect for pulse monitor.")
   (options, args) = parser.parse_args()
 
   configfile = options.configfile

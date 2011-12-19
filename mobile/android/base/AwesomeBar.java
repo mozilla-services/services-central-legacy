@@ -52,6 +52,7 @@ import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
+import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
@@ -246,10 +247,18 @@ public class AwesomeBar extends Activity implements GeckoEventListener {
         mGoButton.setVisibility(View.VISIBLE);
 
         int imageResource = R.drawable.ic_awesomebar_go;
-        if (isSearchUrl(text))
+        int imeAction = EditorInfo.IME_ACTION_GO;
+        if (isSearchUrl(text)) {
             imageResource = R.drawable.ic_awesomebar_search;
-
+            imeAction = EditorInfo.IME_ACTION_SEARCH;
+        }
         mGoButton.setImageResource(imageResource);
+
+        if ((mText.getImeOptions() & EditorInfo.IME_MASK_ACTION) != imeAction) {
+            InputMethodManager imm = (InputMethodManager) mText.getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+            mText.setImeOptions(imeAction);
+            imm.restartInput(mText);
+        }
     }
 
     private void submitAndFinish(String url) {
@@ -297,7 +306,9 @@ public class AwesomeBar extends Activity implements GeckoEventListener {
             keyCode == KeyEvent.KEYCODE_DPAD_LEFT ||
             keyCode == KeyEvent.KEYCODE_DPAD_RIGHT ||
             keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
-            keyCode == KeyEvent.KEYCODE_DEL) {
+            keyCode == KeyEvent.KEYCODE_DEL ||
+            keyCode == KeyEvent.KEYCODE_VOLUME_UP ||
+            keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
             return super.onKeyDown(keyCode, event);
         } else {
             int selStart = -1;

@@ -33,15 +33,6 @@ function test_resource_user_agent() {
                    " FxSync/" + WEAVE_VERSION + "." +
                    Services.appinfo.appBuildID;
 
-  function test_fetchInfo(next) {
-    _("Testing _fetchInfo.");
-    Weave.Service._fetchInfo();
-    _("User-Agent: " + ua);
-    do_check_eq(ua, expectedUA + ".desktop");
-    ua = "";
-    next();
-  }
-
   function test_desktop_post(next) {
     _("Testing direct Resource POST.");
     let r = new AsyncResource(TEST_GET_URL);
@@ -78,7 +69,6 @@ function test_resource_user_agent() {
   }
 
   Async.chain(
-    test_fetchInfo,
     test_desktop_post,
     test_desktop_get,
     test_mobile_get,

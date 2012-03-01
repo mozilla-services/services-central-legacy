@@ -225,7 +225,7 @@ add_test(function test_momentary_401_info_collections() {
                                 "weave:service:sync:error",
                                 undo,
                                 "weave:service:sync:finish",
-                                Service.infoURL);
+                                Service.baseURL + "info/collections");
 });
 
 add_test(function test_momentary_401_storage() {

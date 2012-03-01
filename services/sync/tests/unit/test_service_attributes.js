@@ -14,7 +14,6 @@ function test_urls() {
     do_check_eq(Service.clusterURL, "");
     do_check_eq(Service.baseURL, undefined);
     do_check_eq(Service.userBaseURL, undefined);
-    do_check_eq(Service.infoURL, undefined);
     do_check_eq(Service.storageURL, undefined);
     do_check_eq(Service.metaURL, undefined);
 
@@ -23,7 +22,6 @@ function test_urls() {
 
     // Since we don't have a cluster URL yet, these will still not be defined.
     do_check_eq(Service.baseURL, undefined);
-    do_check_eq(Service.infoURL, undefined);
     do_check_eq(Service.storageURL, undefined);
     do_check_eq(Service.metaURL, undefined);
 
@@ -33,8 +31,6 @@ function test_urls() {
 
     do_check_eq(Service.baseURL,
                 "http://weave.cluster/2.0/");
-    do_check_eq(Service.infoURL,
-                "http://weave.cluster/2.0/info/collections");
     do_check_eq(Service.storageURL,
                 "http://weave.cluster/2.0/storage/");
     do_check_eq(Service.metaURL,

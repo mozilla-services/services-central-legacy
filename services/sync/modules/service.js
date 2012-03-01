@@ -96,7 +96,6 @@ WeaveSvc.prototype = {
 
   baseURL: null,
   _client: null,
-  infoURL: null,
   storageURL: null,
   metaURL: null,
   cryptoKeyURL: null,
@@ -192,7 +191,6 @@ WeaveSvc.prototype = {
     this._log.debug("Caching URLs under base: " + this.baseURL);
 
     // Generate and cache various URLs under the storage API for this user
-    this.infoURL = this.baseURL + "info/collections";
     this.storageURL = this.baseURL + "storage/";
     this.metaURL = this.storageURL + "meta/global";
     this.cryptoKeysURL = this.storageURL + CRYPTO_COLLECTION + "/" + KEYS_WBO;
@@ -513,7 +511,7 @@ WeaveSvc.prototype = {
     if (cluster == this.clusterURL)
       return false;
 
-    this._log.debug("Setting cluster to " + cluster);
+    this._log.debug("Setting cluster to " + cluster + "; old: " + this.clusterURL);
     this.clusterURL = cluster;
     Svc.Prefs.set("lastClusterUpdate", Date.now().toString());
     return true;
@@ -655,6 +653,15 @@ WeaveSvc.prototype = {
     }
   },
 
+  /**
+   * Ensure we are able to log in to the server.
+   *
+   * This verifies that the client has the necessary credentials to communicate
+   * with the Sync server and that those credentials work.
+   *
+   * @return bool
+   *         Whether we have working credentials.
+   */
   verifyLogin: function verifyLogin()
     this._notify("verify-login", "", function() {
       if (!this._identity.username) {
@@ -687,56 +694,71 @@ WeaveSvc.prototype = {
           return true;
         }
 
-        // Fetch collection info on every startup.
-        let test = new Resource(this.infoURL).get();
+        // Jump through hoops to ensure logic is executed from this tick. If
+        // not, there could be race conditions. This can all go away once a
+        // proper state machine is deployed.
+        let cb = Async.makeSyncCallback();
+        let valid, info;
+        this._client.validateCredentials(function(v, i) {
+          valid = v;
+          info = i;
+          cb();
+        });
+        Async.waitForSyncCallback(cb);
 
-        switch (test.status) {
-          case 200:
-            // The user is authenticated.
+        // This logic is needlessly complicated for historical reasons. We
+        // might be able to simplify, but it would require a lot of unit test
+        // work and testing.
+        if (valid) {
+          this._log.info("Credentials validated with server.");
 
-            // We have no way of verifying the passphrase right now,
-            // so wait until remoteSetup to do so.
-            // Just make the most trivial checks.
-            if (!this._identity.syncKey) {
-              this._log.warn("No passphrase in verifyLogin.");
-              Status.login = LOGIN_FAILED_NO_PASSPHRASE;
-              return false;
-            }
+          if (!this._identity.syncKey) {
+            this._log.warn("No sync key present.");
+            Status.login = LOGIN_FAILED_NO_PASSPHRASE;
+            return false;
+          }
 
-            // Go ahead and do remote setup, so that we can determine
-            // conclusively that our passphrase is correct.
-            if (this._remoteSetup()) {
-              // Username/password verified.
-              Status.login = LOGIN_SUCCEEDED;
-              return true;
-            }
-
+          if (!this._remoteSetup()) {
             this._log.warn("Remote setup failed.");
-            // Remote setup must have failed.
             return false;
+          }
 
-          case 401:
-            this._log.warn("401: login failed.");
-            // Fall through to the 404 case.
-
-          case 404:
-            // Check that we're verifying with the correct cluster
-            if (this._setCluster())
-              return this.verifyLogin();
-
-            // We must have the right cluster, but the server doesn't expect us
-            Status.login = LOGIN_FAILED_LOGIN_REJECTED;
-            return false;
-
-          default:
-            // Server didn't respond with something that we expected
-            Status.login = LOGIN_FAILED_SERVER_ERROR;
-            ErrorHandler.checkServerError(test);
-            return false;
+          Status.login = LOGIN_SUCCEEDED;
+          return true;
         }
-      }
-      catch (ex) {
-        // Must have failed on some network issue
+
+        // Credentials didn't validate. It could be a network, server, or other
+        // error.
+        if (info.networkError) {
+          Status.login = LOGIN_FAILED_NETWORK_ERROR;
+          return false;
+        }
+
+        // For auth failures, we could be hitting the wrong cluster. Ensure we
+        // are on the right cluster. If not, try again with the right one. If
+        // so, error.
+        if (info.authFailure) {
+          if (this._setCluster()) {
+            return this.verifyLogin();
+          }
+
+          Status.login = LOGIN_FAILED_LOGIN_REJECTED;
+          return false;
+        }
+
+        if (info.serverMaintenance) {
+          Status.enforceBackoff = true;
+          Status.login = SERVER_MAINTENANCE;
+          return false;
+        }
+
+        // It must have been a general server failure.
+        Status.enforceBackoff = true;
+        Status.login = LOGIN_FAILED_SERVER_ERROR;
+        return false;
+      } catch (ex) {
+        // This should only get triggered in calls to _setCluster. We should
+        // foramlize that API and remove this hackery.
         this._log.debug("verifyLogin failed: " + Utils.exceptionStr(ex));
         Status.login = LOGIN_FAILED_NETWORK_ERROR;
         ErrorHandler.checkServerError(ex);
@@ -765,8 +787,7 @@ WeaveSvc.prototype = {
     // Now verify that info/collections shows them!
     this._log.debug("Verifying server collection records.");
     let infoRequest = this._client.getCollectionInfo();
-    infoRequest.dispatch();
-    infoRequest.waitForFinish();
+    infoRequest.dispatchSynchronous();
 
     if (!infoRequest.success) {
       this._log.warn("Collections info request failed. Aborting.");

@@ -3,7 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 const EXPORTED_SYMBOLS = ["WBORecord", "RecordManager", "Records",
-                          "CryptoWrapper", "CollectionKeys", "Collection"];
+                          "CryptoWrapper", "CollectionKeys", "Collection",
+                          "MetaGlobalRecord"];
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
@@ -13,6 +14,7 @@ const Cu = Components.utils;
 const CRYPTO_COLLECTION = "crypto";
 const KEYS_WBO = "keys";
 
+Cu.import("resource://services-common/storageservice.js");
 Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/identity.js");
 Cu.import("resource://services-sync/keys.js");
@@ -609,4 +611,101 @@ Collection.prototype = {
       }
     };
   }
+};
+
+/**
+ * Representation of the special meta global record.
+ *
+ * The meta global record is a Basic Storage Object stored in the "meta"
+ * collection with the id "global." This record stores global, unencrypted
+ * metadata which is used to help configure the sync client.
+ *
+ * The meta global record stores the set of repositories configured for the
+ * account. Each repository entry consists of a version and syncID.
+ */
+function MetaGlobalRecord() {
+  BasicStorageObject.call(this, "global", "meta");
+
+  this._metaglobal = {
+    syncID:         null,
+    storageVersion: null,
+    repositories:   {},
+  };
+}
+MetaGlobalRecord.prototype = {
+  __proto__: BasicStorageObject.prototype,
+
+  _metaglobal: null,
+
+  /**
+   * Global sync identifier.
+   */
+  get syncID() {
+    return this._metaglobal.syncID;
+  },
+
+  set syncID(value) {
+    this._metaglobal.syncID = value;
+  },
+
+  /**
+   * The Sync storage format version.
+   *
+   * Sync clients periodically change their convention on how data is stored
+   * in the storage service. The convention they agree on is defined by this
+   * version identifier, which is an integer that increases with each new
+   * version.
+   */
+  get storageVersion() {
+    return this._metaglobal.storageVersion;
+  },
+
+  set storageVersion(value) {
+    this._metaglobal.storageVersion = value;
+  },
+
+  get repositories() {
+    return this._metaglobal.repositories;
+  },
+
+  set repositories(value) {
+    this._metaglobal.repositories = value;
+  },
+
+  hasRepository: function hasRepository(name) {
+    return name in this._metaglobal.repositories;
+  },
+
+  getRepository: function getRepository(name) {
+    return this._metaglobal.repositories[name];
+  },
+
+  setRepository: function setRepository(name, version, syncID) {
+    this._metaglobal.repositories[name] = {
+      version: version,
+      syncID:  syncID
+    };
+  },
+
+  deserialize: function deserialize(input) {
+    BasicStorageObject.prototype.deserialize.call(this, input);
+
+    this._metaglobal = JSON.parse(this.payload);
+  },
+
+  toJSON: function toJSON() {
+    this._setPayload();
+
+    return BasicStorageObject.prototype.toJSON.call(this);
+  },
+
+  toString: function toString() {
+    this._setPayload();
+
+    return BasicStorageObject.prototype.toString.call(this);
+  },
+
+  _setPayload: function _setPayload() {
+    this.payload = JSON.stringify(this._metaglobal);
+  },
 };

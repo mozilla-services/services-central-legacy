@@ -38,7 +38,8 @@
  * ***** END LICENSE BLOCK ***** */
 
 const EXPORTED_SYMBOLS = ["WBORecord", "RecordManager", "Records",
-                          "CryptoWrapper", "CollectionKeys", "Collection"];
+                          "CryptoWrapper", "CollectionKeys", "Collection",
+                          "MetaGlobalRecord"];
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
@@ -53,6 +54,7 @@ Cu.import("resource://services-sync/identity.js");
 Cu.import("resource://services-sync/keys.js");
 Cu.import("resource://services-common/log4moz.js");
 Cu.import("resource://services-sync/resource.js");
+Cu.import("resource://services-sync/storageservice.js");
 Cu.import("resource://services-sync/util.js");
 
 function WBORecord(collection, id) {
@@ -667,4 +669,101 @@ Collection.prototype = {
       }
     };
   }
+};
+
+/**
+ * Representation of the special meta global record.
+ *
+ * The meta global record is a Basic Storage Object stored in the "meta"
+ * collection with the id "global." This record stores global, unencrypted
+ * metadata which is used to help configure the sync client.
+ *
+ * The meta global record stores the set of engines configured for the account.
+ * Each engine record consists of a version and syncID.
+ */
+function MetaGlobalRecord() {
+  BasicStorageObject.call(this, "global", "meta");
+
+  this._metaglobal = {
+    syncID:  null,
+    storageVersion: null,
+    engines: {},
+  };
+}
+MetaGlobalRecord.prototype = {
+  __proto__: BasicStorageObject.prototype,
+
+  _metaglobal: null,
+
+  /**
+   * Global sync identifier.
+   */
+  get syncID() {
+    return this._metaglobal.syncID;
+  },
+
+  set syncID(value) {
+    this._metaglobal.syncID = value;
+  },
+
+  /**
+   * The Sync storage format version.
+   *
+   * Sync clients periodically change their convention on how data is stored
+   * in the storage service. The convention they agree on is defined by this
+   * version identifier, which is an integer that increases with each new
+   * version.
+   */
+  get storageVersion() {
+    return this._metaglobal.storageVersion;
+  },
+
+  set storageVersion(value) {
+    this._metaglobal.storageVersion = value;
+  },
+
+  get engines() {
+    return this._metaglobal.engines;
+  },
+
+  set engines(value) {
+    this._metaglobal.engines = value;
+  },
+
+  hasEngine: function hasEngine(name) {
+    return name in this._metaglobal.engines;
+  },
+
+  getEngine: function getEngine(name) {
+    return this._metaglobal.engines[name];
+  },
+
+  setEngine: function setEngine(name, version, syncID) {
+    this._metaglobal.engines[name] = {
+      version: version,
+      syncID:  syncID
+    };
+  },
+
+  deserialize: function deserialize(input) {
+    BasicStorageObject.prototype.deserialize.call(this, input);
+
+    this._metaglobal = JSON.parse(this.payload);
+  },
+
+  toJSON: function toJSON() {
+    this._setPayload();
+
+    return BasicStorageObject.prototype.toJSON.call(this);
+  },
+
+  toString: function toString() {
+    this._setPayload();
+
+    return BasicStorageObject.prototype.toString.call(this);
+  },
+
+  _setPayload: function _setPayload() {
+    this.payload = JSON.stringify(this._metaglobal);
+  },
 };

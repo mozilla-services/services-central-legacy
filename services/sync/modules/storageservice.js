@@ -218,6 +218,48 @@ BasicStorageObject.prototype = {
 };
 
 /**
+ * Represents an error encountered during a StorageServiceRequest request.
+ *
+ * This is effectively a glorified wrapper type. Inside each type is the
+ * underlying Error object available at a specific property.
+ */
+function StorageServiceRequestError() {
+  this._network = null;
+  this._authentication = null;
+  this._client = null;
+}
+StorageServiceRequestError.prototype = {
+  /**
+   * The underlying network error.
+   *
+   * If set, this will be an error thrown by the Gecko network stack. It
+   * represents the lowest-level error possible. If this is set, it likely
+   * means the request could not be performed or that an error occurred when
+   * the request was in-flight and before it had finished.
+   */
+  get network() {
+    return this._network;
+  },
+
+  /**
+   * The underlying authentication error.
+   *
+   * If an authentication error occurred (likely a 401 Not Authorized), this
+   * will be set to an Error instance.
+   */
+  get authentication() {
+    return this._authentication;
+  },
+
+  /**
+   * The underlying client error.
+   */
+  get client() {
+    return this._client;
+  },
+};
+
+/**
  * Represents a request to the storage service.
  *
  * Instances of this type are returned by the APIs on StorageServiceClient.

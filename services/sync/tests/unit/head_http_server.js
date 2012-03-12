@@ -346,6 +346,14 @@ ServerCollection.prototype = {
   },
 
   delete: function(options) {
+    // Protocol 2.0 only allows the "ids" query string argument.
+    let keys = Object.keys(options).filter(function(k) { return k != "ids"; });
+    if (keys.length) {
+      this._log.warn("Invalid query string parameter to collection delete: " +
+                     keys.join(", "));
+      throw new Error("Malformed client request.");
+    }
+
     let deleted = [];
     for (let [id, wbo] in Iterator(this._wbos)) {
       if (this._inResultSet(wbo, options)) {

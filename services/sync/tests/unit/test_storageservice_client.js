@@ -63,16 +63,14 @@ add_test(function test_info_collections() {
   let client = getClient();
 
   let request = client.getCollectionInfo();
-  request.onComplete = function() {
-    do_check_eq(null, this.error);
-    do_check_eq("object", typeof this.resultObj);
-    do_check_attribute_count(this.resultObj, 3);
-    do_check_true("meta" in this.resultObj);
+  request.dispatch(function(error, req) {
+    do_check_eq(null, error);
+    do_check_eq("object", typeof req.resultObj);
+    do_check_attribute_count(req.resultObj, 3);
+    do_check_true("meta" in req.resultObj);
 
     server.stop(run_next_test);
-  };
-
-  request.dispatch();
+  });
 });
 
 add_test(function test_get_bso() {
@@ -86,18 +84,17 @@ add_test(function test_get_bso() {
 
   let client = getClient();
   let request = client.getBSO("testcoll", "abc123");
-  request.onComplete = function() {
-    do_check_true(this.success);
-    do_check_eq(null, this.error);
-    do_check_true(this.resultObj instanceof BasicStorageObject);
+  request.dispatch(function(error, req) {
+    do_check_true(req.success);
+    do_check_eq(null, error);
+    do_check_true(req.resultObj instanceof BasicStorageObject);
 
-    let bso = this.resultObj;
+    let bso = req.resultObj;
     do_check_eq(bso.id, "abc123");
     do_check_eq(bso.payload, "payload");
 
     server.stop(run_next_test);
-  };
-  request.dispatch();
+  });
 });
 
 add_test(function test_set_bso() {
@@ -111,14 +108,13 @@ add_test(function test_set_bso() {
   bso.payload = "my test payload";
 
   let request = client.setBSO("testcoll", id, bso);
-  request.onComplete = function() {
-    do_check_true(request.success);
-    do_check_eq(request.error, null);
-    do_check_eq(request.resultObj, null);
+  request.dispatch(function(error, req) {
+    do_check_true(req.success);
+    do_check_eq(error, null);
+    do_check_eq(req.resultObj, null);
 
     server.stop(run_next_test);
-  };
-  request.dispatch();
+  });
 });
 
 add_test(function test_set_bso_argument_errors() {
@@ -145,14 +141,13 @@ add_test(function test_network_error_captured() {
   let client = new StorageServiceClient("http://rnewman-is-splendid.badtld/");
 
   let request = client.getCollectionInfo();
-  request.onComplete = function() {
+  request.dispatch(function(error, req) {
     //do_check_false(request.success);
-    do_check_neq(request.networkError, null);
-    do_check_neq(request.error, null);
+    do_check_neq(error, null);
+    do_check_neq(error.network, null);
 
     run_next_test();
-  };
-  request.dispatch();
+  });
 });
 
 add_test(function test_network_error_listener() {
@@ -167,9 +162,8 @@ add_test(function test_network_error_listener() {
     }
   });
   let request = client.getCollectionInfo();
-  request.onComplete = function() {
+  request.dispatch(function() {
     do_check_true(listenerCalled);
     run_next_test();
-  };
-  request.dispatch();
+  });
 });

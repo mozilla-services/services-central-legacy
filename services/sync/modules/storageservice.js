@@ -220,13 +220,14 @@ BasicStorageObject.prototype = {
 /**
  * Represents an error encountered during a StorageServiceRequest request.
  *
- * This is effectively a glorified wrapper type. Inside each type is the
- * underlying Error object available at a specific property.
+ * This type effectively wraps an inner error and associated that error with a
+ * specific error class.
  */
 function StorageServiceRequestError() {
   this._network = null;
   this._authentication = null;
   this._client = null;
+  this._server = null;
 }
 StorageServiceRequestError.prototype = {
   /**
@@ -256,6 +257,10 @@ StorageServiceRequestError.prototype = {
    */
   get client() {
     return this._client;
+  },
+
+  get server() {
+    return this._server;
   },
 };
 
@@ -303,7 +308,7 @@ StorageServiceRequestError.prototype = {
  *   let request = client.getCollectionInfo();
  *
  *   // Install an onComplete handler to be executed when response is ready:
- *   request.onComplete = function() { ... };
+ *   request.onComplete = function(error, request) { ... };
  *
  *   // Send the request.
  *   request.dispatch();
@@ -311,11 +316,9 @@ StorageServiceRequestError.prototype = {
  *
  * All of the complexity is in your onComplete handler. But, it's not too bad.
  * For basic requests, the first thing you do in your onComplete handler is
- * check the success of the request. Actually, the implementation forces you to
- * do this before you can access the response!
+ * check the success of the request.
  *
- *   function onComplete() {
- *     // "this" inside the handler is the StorageServiceRequest instance.
+ *   function onComplete(error, request) {
  *
  *   }
  *
@@ -328,6 +331,7 @@ function StorageServiceRequest() {
   this._request = null;
   this._method = null;
   this._data = null;
+  this._error = null;
   this._completeParser = null;
   this._resultObj = null;
 }
@@ -381,15 +385,7 @@ StorageServiceRequest.prototype = {
    * null will be returned.
    */
   get error() {
-    return this._networkError ? this._networkError : this._clientError;
-  },
-
-  get networkError() {
-    return this._networkError;
-  },
-
-  get clientError() {
-    return this._clientError;
+    return this._error;
   },
 
   /**
@@ -443,13 +439,18 @@ StorageServiceRequest.prototype = {
   /**
    * Function to be invoked on request completion.
    *
-   * The function receives no arguments. Instead, state is captured in the
-   * request object, which is available as "this" to the installed
-   * function.
+   * The callback receives the following arguments:
+   *
+   *   (StorageServiceRequestError) Error encountered during request. null if no
+   *     error was encountered.
+   *   (StorageServiceRequest) The request that was sent. Response information
+   *     is available as object properties.
    *
    * For requests that have responses, the decoded response object is typically
-   * available as a property on the request instance. Read the documentation
-   * for the specific client API for more.
+   * available as a property on the request instance, like resultObj.
+   *
+   * Unless the call to dispatch() throws before returning, this callback is
+   * guaranteed to be invoked.
    *
    * Every client almost certainly wants to install this handler.
    */
@@ -464,8 +465,19 @@ StorageServiceRequest.prototype = {
    *
    * The request is dispatched asynchronously. One of the various callbacks
    * on this instance will be invoked upon completion.
+   *
+   * The onComplete argument is optional. Calling this function with an
+   * onComplete argument is equivalent to setting the onComplete property then
+   * calling dispatch().
+   *
+   * @param onComplete
+   *        (function) Callback to be invoked on request completion.
    */
-  dispatch: function dispatch() {
+  dispatch: function dispatch(onComplete) {
+    if (onComplete) {
+      this.onComplete = onComplete;
+    }
+
     // Installing the dummy callback makes implementation easier in _onComplete
     // because we can then blindly call.
     let self = this;
@@ -486,8 +498,18 @@ StorageServiceRequest.prototype = {
    * we execute callbacks ourselves then return. In other words, there is no
    * potential for spinning between callback execution and this function
    * returning.
+   *
+   * This onComplete argument is optional and is equivalent to setting the
+   * onComplete property before calling this function.
+   *
+   * @param onComplete
+   *        (function) Callback to be invoked on request completion.
    */
-  dispatchSynchronous: function dispatchSynchronous() {
+  dispatchSynchronous: function dispatchSynchronous(onComplete) {
+    if (onComplete) {
+      this.onComplete = onComplete;
+    }
+
     let cb = Async.makeSyncCallback();
     this._dispatch(cb);
     let error = Async.waitForSyncCallback(cb);
@@ -511,6 +533,11 @@ StorageServiceRequest.prototype = {
   _data: null,
 
   /**
+   * StorageServiceRequestError encountered during dispatchy.
+   */
+  _error: null,
+
+  /**
    * Handler to parse response body into another object.
    *
    * This is installed by the client API. It should return the value the body
@@ -518,21 +545,6 @@ StorageServiceRequest.prototype = {
    * thrown.
    */
   _completeParser: null,
-
-  /**
-   * Network error that was encountered during request, if any.
-   *
-   * This is the object that is passed to the RESTRequest.onComplete callback.
-   */
-  _networkError: null,
-
-  /**
-   * Non-network error encountered during request, if any.
-   *
-   * If the error was a result of the client being misconfigured or the server
-   * sending an unexpected response, this should be set.
-   */
-  _clientError: null,
 
   /**
    * Dispatch the request.
@@ -582,7 +594,7 @@ StorageServiceRequest.prototype = {
     let callOnComplete = function callOnComplete() {
       onCompleteCalled = true;
       try {
-        this.onComplete();
+        this.onComplete(this._error, this);
       } catch (ex) {
         this._log.warn("Exception when calling onComplete: " + ex);
         throw ex;
@@ -594,7 +606,8 @@ StorageServiceRequest.prototype = {
     try {
       if (error) {
         this.success = false;
-        this._networkError = error;
+        this._error = new StorageServiceRequestError();
+        this._error._network = error;
         this._log.info("Network error during request: " + error);
         this._client.runListeners("onNetworkError", this._client, this, error);
         callOnComplete();
@@ -628,20 +641,24 @@ StorageServiceRequest.prototype = {
 
       // TODO handle numeric response code from server.
       if (response.status == 400) {
-        this._clientError = new Error("Client error!");
+        this._error = new StorageServiceRequestError();
+        this._error._client = new Error("Client error!");
         callOnComplete();
         return;
       }
 
       if (response.status == 401) {
-        this._clientError = new Error("401 Received.");
-        this._client.runListeners("onAuthFailure", this._client, this);
+        this._error = new StorageServiceRequestError();
+        this._error._authentication = new Error("401 Received.");
+        this._client.runListeners("onAuthFailure", this._error._authentication,
+                                  this);
         callOnComplete();
         return;
       }
 
       if (response.status == 503) {
-        this._clientError = new Error("503 Received.");
+        this._error = new StorageServiceRequestError();
+        this._error._server = new Error("503 Received.");
       }
 
       callOnComplete();

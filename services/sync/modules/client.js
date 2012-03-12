@@ -91,8 +91,7 @@ SyncClient.prototype = {
     let request = this.getCollectionInfo();
 
     request.ignoreFailures = true;
-
-    request.onComplete = function() {
+    request.dispatch(function(error, response) {
       let info = {
         authFailure:       false,
         networkError:      false,
@@ -100,13 +99,13 @@ SyncClient.prototype = {
         serverMaintenance: false,
       };
 
-      if (request.networkError) {
+      if (error && error.network) {
         info.networkError = true;
         cb(false, info);
         return;
       }
 
-      switch (request.statusCode) {
+      switch (response.statusCode) {
         case 200:
           cb(true, info);
           return;
@@ -133,8 +132,7 @@ SyncClient.prototype = {
           cb(false, info);
           return;
       }
-    };
-    request.dispatch();
+    });
   },
 
   /**
@@ -154,28 +152,32 @@ SyncClient.prototype = {
    */
   fetchMetaGlobal: function fetchMetaGlobal(cb) {
     let request = this.getBSO("meta", "global", MetaGlobalRecord);
-    request.onComplete = function() {
-      let error;
-
-      if (this.networkError) {
-        error = new MetaGlobalRequestError(this.networkError.message,
-                                           MetaGlobalRequestError.NETWORK);
-      } else if (this.clientError) {
-        error = new MetaGlobalRequestError(this.clientError.message,
-                                           MetaGlobalRequestError.SERVER);
-      } else if (this.notFound) {
-        error = new MetaGlobalRequestError("404 received",
-                                           MetaGlobalRequestError.NOT_FOUND);
-      }
+    request.dispatch(function(error, response) {
+      let mgError;
 
       if (error) {
-        cb(error, null);
+        if (error.network) {
+          mgError = new MetaGlobalRequestError(error.network.message,
+                                               MetaGlobalRequestError.NETWORK);
+        } else if (error.client) {
+          mgError = new MetaGlobalRequestError(error.client.message,
+                                               MetaGlobalRequestError.SERVER);
+        } else {
+          // TODO
+          throw new Error("TODO");
+        }
+      } else if (response.notFound) {
+        mgError = new MetaGlobalRequestError("404 received",
+                                             MetaGlobalRequestError.NOT_FOUND);
+      }
+
+      if (mgError) {
+        cb(mgError, null);
         return;
       }
 
-      cb(null, this.resultObj);
-    };
-    request.dispatch();
+      cb(null, response.resultObj);
+    });
   },
 
   /**

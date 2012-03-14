@@ -426,9 +426,10 @@ ServerCollection.prototype = {
         case "DELETE":
           self._log.debug("Invoking ServerCollection.DELETE.");
           let deleted = self.delete(options);
-          let ts = new_timestamp();
-          body = JSON.stringify(ts);
-          response.newModified = ts;
+          statusCode = 204;
+          status = "No Content";
+          body = "";
+          response.newModified = new_timestamp();
           response.deleted = deleted;
           break;
       }

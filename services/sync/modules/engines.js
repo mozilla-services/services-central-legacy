@@ -1347,7 +1347,8 @@ SyncEngine.prototype = {
 
   wipeServer: function wipeServer() {
     let response = new Resource(this.engineURL).delete();
-    if (response.status != 200 && response.status != 404) {
+    if (response.status != 200 && response.status != 204 &&
+        response.status != 404) {
       throw response;
     }
     this._resetClient();

@@ -340,9 +340,7 @@ ServerCollection.prototype = {
         failed[record.id] = "no wbo configured";
       }
     }
-    return {modified: new_timestamp(),
-            success: success,
-            failed: failed};
+    return {success: success, failed: failed};
   },
 
   delete: function(options) {

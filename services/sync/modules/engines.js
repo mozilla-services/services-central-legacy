@@ -756,7 +756,7 @@ SyncEngine.prototype = {
                    " outgoing items pre-reconciliation");
 
     // Keep track of what to delete at the end of sync
-    this._delete = {};
+    this._deleteIDs = [];
   },
 
   // Process incoming records
@@ -1019,11 +1019,7 @@ SyncEngine.prototype = {
   _deleteId: function _deleteId(id) {
     this._tracker.removeChangedID(id);
 
-    // Remember this id to delete at the end of sync
-    if (this._delete.ids == null)
-      this._delete.ids = [id];
-    else
-      this._delete.ids.push(id);
+    this._deleteIDs.push(id);
   },
 
   /**
@@ -1286,26 +1282,10 @@ SyncEngine.prototype = {
     this._log.trace("Finishing up sync");
     this._tracker.resetScore();
 
-    let doDelete = Utils.bind2(this, function(key, val) {
+    while (this._deleteIDs.length > 0) {
       let coll = new Collection(this.engineURL, this._recordObj);
-      coll[key] = val;
+      coll.ids = this._deleteIDs.splice(0, 100);
       coll.delete();
-    });
-
-    for (let [key, val] in Iterator(this._delete)) {
-      // Remove the key for future uses
-      delete this._delete[key];
-
-      // Send a simple delete for the property
-      if (key != "ids" || val.length <= 100)
-        doDelete(key, val);
-      else {
-        // For many ids, split into chunks of at most 100
-        while (val.length > 0) {
-          doDelete(key, val.slice(0, 100));
-          val = val.slice(100);
-        }
-      }
     }
   },
 

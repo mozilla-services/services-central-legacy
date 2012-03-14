@@ -364,7 +364,7 @@ add_test(function test_processIncoming_reconcile() {
     // The incoming ID is preferred.
     do_check_eq(engine._store.items.original, undefined);
     do_check_eq(engine._store.items.duplication, "Original Entry");
-    do_check_neq(engine._delete.ids.indexOf("original"), -1);
+    do_check_neq(engine._deleteIDs.indexOf("original"), -1);
 
     // The 'nukeme' record marked as deleted is removed.
     do_check_eq(engine._store.items.nukeme, undefined);
@@ -1449,7 +1449,7 @@ add_test(function test_syncFinish_noDelete() {
 
   let syncTesting = new SyncTestingInfrastructure();
   let engine = makeRotaryEngine();
-  engine._delete = {}; // Nothing to delete
+  engine._deleteIDs = []; // Nothing to delete
   engine._tracker.score = 100;
 
   // _syncFinish() will reset the engine's score.
@@ -1481,7 +1481,7 @@ add_test(function test_syncFinish_deleteByIds() {
 
   let engine = makeRotaryEngine();
   try {
-    engine._delete = {ids: ['flying', 'rekolok']};
+    engine._deleteIDs = ['flying', 'rekolok'];
     engine._syncFinish();
 
     // The 'flying' and 'rekolok' records were deleted while the
@@ -1491,7 +1491,7 @@ add_test(function test_syncFinish_deleteByIds() {
     do_check_eq(collection.payload("rekolok"), undefined);
 
     // The deletion todo list has been reset.
-    do_check_eq(engine._delete.ids, undefined);
+    do_check_eq(engine._deleteIDs.length, 0);
 
   } finally {
     cleanAndGo(server);
@@ -1535,22 +1535,18 @@ add_test(function test_syncFinish_deleteLotsInBatches() {
     // Confirm initial environment
     do_check_eq(noOfUploads, 0);
 
-    // Declare what we want to have deleted: all records no. 100 and
-    // up and all records that are less than 200 mins old (which are
-    // records 0 thru 90).
-    engine._delete = {ids: [],
-                      newer: now - 60000 * 200.5};
+    engine._deleteIDs = [];
     for (i = 100; i < 234; i++) {
-      engine._delete.ids.push('record-no-' + i);
+      engine._deleteIDs.push('record-no-' + i);
     }
 
     engine._syncFinish();
 
     // Ensure that the appropriate server data has been wiped while
-    // preserving records 90 thru 200.
+    // preserving records 0 through 99.
     for (i = 0; i < 234; i++) {
       let id = 'record-no-' + i;
-      if (i <= 90 || i >= 100) {
+      if (i >= 100) {
         do_check_eq(collection.payload(id), undefined);
       } else {
         do_check_true(!!collection.payload(id));
@@ -1558,10 +1554,10 @@ add_test(function test_syncFinish_deleteLotsInBatches() {
     }
 
     // The deletion was done in batches
-    do_check_eq(noOfUploads, 2 + 1);
+    do_check_eq(noOfUploads, 2);
 
     // The deletion todo list has been reset.
-    do_check_eq(engine._delete.ids, undefined);
+    do_check_eq(engine._deleteIDs.length, 0);
 
   } finally {
     cleanAndGo(server);

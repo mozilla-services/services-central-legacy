@@ -24,7 +24,7 @@ add_test(function test_lastUsed() {
   }
 
   run_next_test();
-}
+});
 
 add_test(function test_create() {
   let store = new TabEngine()._store;

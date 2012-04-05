@@ -1,0 +1,80 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+/**
+ * Represents a pair of keys used for encryption and signing.
+ *
+ * Each key in the pair is 256 bit. One key is a symmetric encryption key used
+ * in AES-256. The other is a HMAC-SHA256 key.
+ *
+ * The key bundle can also have arbitrary metadata associated with it. This
+ * metadata is defined as a string type, but it is treated as an opaque buffer
+ * and can be whatever the application wants it to be.
+ *
+ * This interface is optimized for integration with JS, so it uses double byte
+ * string types liberally.
+ */
+[scriptable, uuid(d26e202e-f6f2-4b7d-a654-f6f3487a8f0a)]
+interface nsIKeyBundle : nsISupports
+{
+  // TODO communicate HMAC verification errors somehow.
+
+  /**
+   * Encrypt and Base64 encode cleartext.
+   *
+   * @param cleartext Raw data to encrypt.
+   * @return Base64 encoding of encrypted data.
+   */
+  AString encodeAndBase64Encode(in AString cleartext);
+
+  /**
+   * Decode the base64 encoded output of an encoding.
+   *
+   * @param message Base64 encoding of encrypted data to decrypt.
+   * @return The verified and decrypted output.
+   */
+  AString decodeBase64Encoded(in AString message);
+
+  /**
+   * Wrap and Base64 encode another key bundle.
+   *
+   * This is like encodeAndBase64Encode except it works with a key bundle.
+   *
+   * @param bundle The key bundle to wrap.
+   * @return Base64 encoded representation of wrapped key bundle.
+   */
+  AString wrapAndBase64EncodeKeyBundle(in nsIKeyBundle bundle);
+
+  /**
+   * Unwrap a Base64 representation of a wrapped key bundle.
+   *
+   * @param message Base64 encoding of wrapped key bundle to decrypt.
+   * @return The decrypted original key bundle.
+   */
+  nsIKeyBundle unwrapBase64EncodedKeyBundle(in AString message);
+
+  /**
+   * Arbitrary metadata associated with key bundle.
+   */
+  attribute AString metadata;
+
+  /**
+   * The raw encryption key associated with this key bundle.
+   *
+   * This is not FIPS compliant and should only be used for testing and
+   * debugging purposes.
+   */
+  readonly attribute AString encryptionKey;
+
+  /**
+   * The raw HMAC key associated with this key bundle.
+   *
+   * This is not FIPS compliant and should only be used for testing and
+   * debugging purposes.
+   */
+  readonly attribute AString hmacKey;
+}
+

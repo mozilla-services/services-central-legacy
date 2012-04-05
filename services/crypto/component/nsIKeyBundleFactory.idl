@@ -1,0 +1,29 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+interface nsIKeyBundle;
+
+[scriptable, uuid(8deb1073-7f68-11e1-b54d-c82a144a924f)]
+interface nsIKeyBundleFactory : nsISupports
+{
+  /**
+   * Create a new key bundle context from a random number generator.
+   */
+  nsIKeyBundle createFromRandom();
+
+  /**
+   * Create a new key bundle context from available key matter.
+   *
+   * Please note that the input type is a double byte string type. The input
+   * arguments should each be 64 bytes. Every other byte is NULL.
+   *
+   * @param encryptionKey Buffer holding symmetric encryption key.
+   * @param hmacKey       Buffer holding HMAC key.
+   */
+  nsIKeyBundle createFromKeys(in AString encryptionKey,
+                              in AString hmacKey);
+
+}

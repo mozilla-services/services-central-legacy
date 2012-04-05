@@ -1,0 +1,126 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+/**
+ * Represents a pair of keys used for encryption and signing.
+ *
+ * Each key in the pair is 256 bit. The key bundle can also have arbitrary
+ * metadata associated with it. This metadata is defined as a string type, but
+ * it is treated as an opaque buffer and can be whatever the application wants
+ * it to be.
+ */
+[scriptable, uuid(d26e202e-f6f2-4b7d-a654-f6f3487a8f0a)]
+interface nsIKeyBundle : nsISupports
+{
+  // TODO communicate HMAC verification errors somehow.
+
+  /**
+   * Encrypt and sign data using this key bundle.
+   *
+   * @param cleartext Raw data to encrypt and sign.
+   * @param message   Raw byte representation of ciphertext, signature, and IV.
+   */
+  void encrypt(in ACString cleartext, out ACString message);
+
+  /**
+   * Verify and decrypt a raw value.
+   *
+   * This is the opposite of encrypt().
+   *
+   * @param message   Raw data to verify and decrypt.
+   * @param cleartext Decrypted value.
+   */
+  void decrypt(in ACString message, out ACString cleartext);
+
+  /**
+   * Wrap another nsIKeyBundle with this one.
+   *
+   * This encrypts and signs the other key bundle and produces the raw output.
+   *
+   * @param bundle  Other key bundle to wrap with this one.
+   * @param message The raw byte representation of the wrapped bundle.
+   */
+  void wrapKeyBundle(in nsIKeyBundle bundle, out ACString message);
+
+  /**
+   * Unwrap a nsIKeyBundle wrapped with this one.
+   *
+   * This verifies and decrypts the passed message and produces a new
+   * nsIKeyBundle instance.
+   *
+   * @param message Raw bytes constituting bundle wrapped with this one.
+   * @param unwrapped The unwrapped key bundle.
+   */
+  void unwrapKeyBundle(in ACString message, out nsIKeyBundle unwrapped);
+
+  /**
+   * Encrypt and Base64 encode cleartext.
+   *
+   * This is identical to encrypt() except the output is the Base64
+   * encoding of the produced value.
+   *
+   * @param cleartext Raw data to encrypt.
+   * @param message   Base64 encoding of encrypted data.
+   */
+  void encryptAndBase64Encode(in ACString cleartext,
+                              out ACString message);
+
+  /**
+   * Decrypt the Base64 encoded output of encryption.
+   * This is identical to decrypt() except it operates on the Base64 encoded
+   * value of the output.
+   *
+   * @param message   Base64 encoding of encrypted data to decrypt.
+   * @param cleartext The verified and decrypted output.
+   */
+  void decryptBase64Encoded(in ACString message,
+                            out ACString cleartext);
+
+  /**
+   * Wrap and Base64 encode another key bundle.
+   *
+   * This is identical to wrapKeyBundle except the output is Base64 encoded.
+   *
+   * @param bundle  The key bundle to wrap.
+   * @param message Base64 encoded representation of wrapped key bundle.
+   */
+  void wrapAndBase64EncodeKeyBundle(in nsIKeyBundle bundle,
+                                    out ACString message);
+
+  /**
+   * Unwrap a Base64 representation of a wrapped key bundle.
+   *
+   * This is identical to unwrapKeyBundle except the input is the Base64
+   * encoded representation of the wrapped key bundle message.
+   *
+   * @param message Base64 encoding of wrapped key bundle to decrypt.
+   * @param bundle  The decrypted original key bundle.
+   */
+  void unwrapBase64EncodedKeyBundle(in ACString message,
+                                    out nsIKeyBundle bundle);
+
+  /**
+   * Arbitrary metadata associated with key bundle.
+   */
+  attribute ACString metadata;
+
+  /**
+   * The raw encryption key associated with this key bundle.
+   *
+   * This is not FIPS compliant and should only be used for testing and
+   * debugging purposes.
+   */
+  attribute ACString encryptionKey;
+
+  /**
+   * The raw HMAC key associated with this key bundle.
+   *
+   * This is not FIPS compliant and should only be used for testing and
+   * debugging purposes.
+   */
+  attribute ACString hmacKey;
+}
+

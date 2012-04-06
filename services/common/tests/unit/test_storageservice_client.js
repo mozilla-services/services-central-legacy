@@ -1,8 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Cu.import("resource://services-sync/identity.js");
-Cu.import("resource://services-sync/storageservice.js");
+Cu.import("resource://services-common/storageservice.js");
 
 const BASE_URI = "http://localhost:8080/2.0";
 

@@ -32,11 +32,12 @@ const EXPORTED_SYMBOLS = [
 
 const {classes: Cc, interfaces: Ci, results: Cr, utils: Cu} = Components;
 
-Cu.import("resource://services-sync/async.js");
-Cu.import("resource://services-sync/constants.js");
-Cu.import("resource://services-sync/log4moz.js");
-Cu.import("resource://services-sync/rest.js");
-Cu.import("resource://services-sync/util.js");
+Cu.import("resource://services-common/async.js");
+Cu.import("resource://services-common/log4moz.js");
+Cu.import("resource://services-common/preferences.js");
+Cu.import("resource://services-common/rest.js");
+
+const Prefs = new Preferences("services.common.storageservice.");
 
 /**
  * The data type stored in the storage service.
@@ -325,7 +326,7 @@ StorageServiceRequestError.prototype = {
  */
 function StorageServiceRequest() {
   this._log = Log4Moz.repository.getLogger("Sync.StorageService.Request");
-  this._log.level = Log4Moz.Level[Svc.Prefs.get("log.logger.storageserviceclient")];
+  this._log.level = Log4Moz.Level[Svc.Prefs.get("log.level")];
 
   this._client = null;
   this._request = null;
@@ -847,7 +848,7 @@ StorageCollectionGetRequest.prototype = {
 function StorageServiceClient(baseURI) {
   this._log = Log4Moz.repository.getLogger("Sync.StorageServiceClient");
   this._log.level =
-    Log4Moz.Level[Svc.Prefs.get("log.logger.storageserviceclient")];
+    Log4Moz.Level[Svc.Prefs.get("log.level")];
 
   this._baseURI = baseURI;
 

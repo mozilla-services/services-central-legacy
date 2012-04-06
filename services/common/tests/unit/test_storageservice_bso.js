@@ -1,7 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Cu.import("resource://services-sync/storageservice.js");
+Cu.import("resource://services-common/storageservice.js");
 
 function run_test() {
   initTestLogging("Trace");

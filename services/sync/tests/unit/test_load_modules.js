@@ -10,6 +10,7 @@ const modules = [
                  "engines/prefs.js",
                  "engines/tabs.js",
                  "engines.js",
+                 "global.js",
                  "identity.js",
                  "jpakeclient.js",
                  "keys.js",

@@ -93,7 +93,7 @@ WeaveSvc.prototype = {
   _loggedIn: false,
   _identity: Weave.Identity,
 
-  userBaseURL: null,
+  baseURL: null,
   infoURL: null,
   storageURL: null,
   metaURL: null,
@@ -181,13 +181,12 @@ WeaveSvc.prototype = {
     if (this.clusterURL == "" || this._identity.username == "")
       return;
 
-    let storageAPI = this.clusterURL + SYNC_API_VERSION + "/";
-    this.userBaseURL = storageAPI + this._identity.username + "/";
-    this._log.debug("Caching URLs under storage user base: " + this.userBaseURL);
+    this.baseURL = this.clusterURL + SYNC_API_VERSION + "/";
+    this._log.debug("Caching URLs under base: " + this.baseURL);
 
     // Generate and cache various URLs under the storage API for this user
-    this.infoURL = this.userBaseURL + "info/collections";
-    this.storageURL = this.userBaseURL + "storage/";
+    this.infoURL = this.baseURL + "info/collections";
+    this.storageURL = this.baseURL + "storage/";
     this.metaURL = this.storageURL + "meta/global";
     this.cryptoKeysURL = this.storageURL + CRYPTO_COLLECTION + "/" + KEYS_WBO;
   },
@@ -764,13 +763,13 @@ WeaveSvc.prototype = {
 
     this._log.info("Uploading...");
     let uploadRes = wbo.upload(this.cryptoKeysURL);
-    if (uploadRes.status != 200) {
+    if (uploadRes.status != 204) {
       this._log.warn("Got status " + uploadRes.status + " uploading new keys. What to do? Throw!");
       ErrorHandler.checkServerError(uploadRes);
       throw new Error("Unable to upload symmetric keys.");
     }
     this._log.info("Got status " + uploadRes.status + " uploading keys.");
-    let serverModified = uploadRes.obj;   // Modified timestamp according to server.
+    let serverModified = uploadRes.serverTime;
     this._log.debug("Server reports crypto modified: " + serverModified);
 
     // Now verify that info/collections shows them!
@@ -1249,11 +1248,11 @@ WeaveSvc.prototype = {
 
     // Ping the server with a special info request once a day.
     let infoURL = this.infoURL;
-    let now = Math.floor(Date.now() / 1000);
-    let lastPing = Svc.Prefs.get("lastPing", 0);
-    if (now - lastPing > 86400) { // 60 * 60 * 24
+    let now = Date.now();
+    let lastPing = parseInt(Svc.Prefs.get("lastPing", 0), 10);
+    if (now - lastPing > 86400000) { // 1000 * 60 * 60 * 24
       infoURL += "?v=" + WEAVE_VERSION;
-      Svc.Prefs.set("lastPing", now);
+      Svc.Prefs.set("lastPing", now.toString());
     }
 
     // Figure out what the last modified time is for each collection
@@ -1540,7 +1539,6 @@ WeaveSvc.prototype = {
       if (!collections) {
         // Strip the trailing slash.
         let res = new Resource(this.storageURL.slice(0, -1));
-        res.setHeader("X-Confirm-Delete", "1");
         try {
           response = res.delete();
         } catch (ex) {
@@ -1552,7 +1550,7 @@ WeaveSvc.prototype = {
                           response.status + " response for " + this.storageURL);
           throw response;
         }
-        return response.headers["x-weave-timestamp"];
+        return response.headers["x-timestamp"];
       }
       let timestamp;
       for each (let name in collections) {
@@ -1569,8 +1567,8 @@ WeaveSvc.prototype = {
                           response.status + " response for " + url);
           throw response;
         }
-        if ("x-weave-timestamp" in response.headers) {
-          timestamp = response.headers["x-weave-timestamp"];
+        if ("x-timestamp" in response.headers) {
+          timestamp = response.headers["x-timestamp"];
         }
       }
       return timestamp;
@@ -1692,7 +1690,7 @@ WeaveSvc.prototype = {
 
     let info_type = "info/" + type;
     this._log.trace("Retrieving '" + info_type + "'...");
-    let url = this.userBaseURL + info_type;
+    let url = this.baseURL + info_type;
     return new SyncStorageRequest(url).get(function onComplete(error) {
       // Note: 'this' is the request.
       if (error) {

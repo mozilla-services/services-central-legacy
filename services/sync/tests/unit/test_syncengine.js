@@ -11,9 +11,9 @@ function test_url_attributes() {
   Svc.Prefs.set("clusterURL", "https://cluster/");
   let engine = makeSteamEngine();
   try {
-    do_check_eq(engine.storageURL, "https://cluster/1.1/foo/storage/");
-    do_check_eq(engine.engineURL, "https://cluster/1.1/foo/storage/steam");
-    do_check_eq(engine.metaURL, "https://cluster/1.1/foo/storage/meta/global");
+    do_check_eq(engine.storageURL, "https://cluster/2.0/storage/");
+    do_check_eq(engine.engineURL, "https://cluster/2.0/storage/steam");
+    do_check_eq(engine.metaURL, "https://cluster/2.0/storage/meta/global");
   } finally {
     Svc.Prefs.resetBranch("");
   }
@@ -50,15 +50,18 @@ function test_lastSync() {
     do_check_eq(Svc.Prefs.get("steam.lastSyncLocal"), undefined);
     do_check_eq(engine.lastSyncLocal, 0);
 
-    // Floats are properly stored as floats and synced with the preference
-    engine.lastSync = 123.45;
-    do_check_eq(engine.lastSync, 123.45);
-    do_check_eq(Svc.Prefs.get("steam.lastSync"), "123.45");
+    // Integer is properly stored.
+    let now = Date.now();
+    engine.lastSync = now;
+    do_check_eq(engine.lastSync, now);
+    do_check_eq(Svc.Prefs.get("steam.lastSync"), now.toString());
 
-    // Integer is properly stored
-    engine.lastSyncLocal = 67890;
-    do_check_eq(engine.lastSyncLocal, 67890);
-    do_check_eq(Svc.Prefs.get("steam.lastSyncLocal"), "67890");
+    // Integer is properly stored.
+    engine.lastSyncLocal = now - 100;
+    do_check_eq(engine.lastSyncLocal, now - 100);
+
+    let i = now - 100;
+    do_check_eq(Svc.Prefs.get("steam.lastSyncLocal"), i.toString());
 
     // resetLastSync() resets the value (and preference) to 0
     engine.resetLastSync();
@@ -139,8 +142,8 @@ function test_resetClient() {
     do_check_eq(Svc.Prefs.get("steam.lastSyncLocal"), undefined);
     do_check_eq(engine.toFetch.length, 0);
 
-    engine.lastSync = 123.45;
-    engine.lastSyncLocal = 67890;
+    engine.lastSync = Date.now() - 100000;;
+    engine.lastSyncLocal = Date.now() - 50000;
     engine.toFetch = [Utils.makeGUID(), Utils.makeGUID(), Utils.makeGUID()];
     engine.previousFailed = [Utils.makeGUID(), Utils.makeGUID(), Utils.makeGUID()];
 
@@ -164,13 +167,13 @@ function test_wipeServer() {
   const PAYLOAD = 42;
   let steamCollection = new ServerWBO("steam", PAYLOAD);
   let server = httpd_setup({
-    "/1.1/foo/storage/steam": steamCollection.handler()
+    "/2.0/storage/steam": steamCollection.handler()
   });
   do_test_pending();
 
   try {
     // Some data to reset.
-    engine.lastSync = 123.45;
+    engine.lastSync = Date.now() - 100000;
     engine.toFetch = [Utils.makeGUID(), Utils.makeGUID(), Utils.makeGUID()];
 
     _("Wipe server data and reset client.");

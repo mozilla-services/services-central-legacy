@@ -45,7 +45,7 @@ const Ci = Components.interfaces;
 const Cu = Components.utils;
 const Cr = Components.results;
 
-const HISTORY_TTL = 5184000; // 60 days
+const HISTORY_TTL = 60 * 24 * 60 * 60 * 1000; // 60 days
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://services-sync/constants.js");

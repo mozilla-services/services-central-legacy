@@ -87,7 +87,7 @@ add_test(function test_get_changed_ids() {
 
   _("Ensure tracker changes are populated.");
   let now = new Date();
-  let changeTime = now.getTime() / 1000;
+  let changeTime = now.getTime();
   let guid1 = Utils.makeGUID();
   tracker.addChangedID(guid1, changeTime);
 

@@ -44,7 +44,7 @@ WEAVE_CHANNEL:                         "@weave_channel@",
 WEAVE_VERSION:                         "@weave_version@",
 
 // Sync Server API version that the client supports.
-SYNC_API_VERSION:                      "1.1",
+SYNC_API_VERSION:                      "2.0",
 USER_API_VERSION:                      "1.0",
 MISC_API_VERSION:                      "1.0",
 

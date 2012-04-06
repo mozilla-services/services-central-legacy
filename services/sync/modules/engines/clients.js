@@ -50,8 +50,8 @@ Cu.import("resource://services-sync/resource.js");
 Cu.import("resource://services-sync/util.js");
 Cu.import("resource://services-sync/main.js");
 
-const CLIENTS_TTL = 1814400; // 21 days
-const CLIENTS_TTL_REFRESH = 604800; // 7 days
+const CLIENTS_TTL = 21 * 24 * 60 * 60 * 1000; // 21 days
+const CLIENTS_TTL_REFRESH = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 function ClientsRec(collection, id) {
   CryptoWrapper.call(this, collection, id);
@@ -85,10 +85,11 @@ ClientEngine.prototype = {
   get enabled() true,
 
   get lastRecordUpload() {
-    return Svc.Prefs.get(this.name + ".lastRecordUpload", 0);
+    return Svc.Prefs.get(this.name + ".lastRecordUpload2", 0);
   },
   set lastRecordUpload(value) {
-    Svc.Prefs.set(this.name + ".lastRecordUpload", Math.floor(value));
+    Utils.ensureMillisecondsTimestamp(value);
+    Svc.Prefs.set(this.name + ".lastRecordUpload2", value.toString());
   },
 
   // Aggregate some stats on the composition of clients on this account
@@ -148,9 +149,9 @@ ClientEngine.prototype = {
 
   _syncStartup: function _syncStartup() {
     // Reupload new client record periodically.
-    if (Date.now() / 1000 - this.lastRecordUpload > CLIENTS_TTL_REFRESH) {
+    if (Date.now() - this.lastRecordUpload > CLIENTS_TTL_REFRESH) {
       this._tracker.addChangedID(this.localID);
-      this.lastRecordUpload = Date.now() / 1000;
+      this.lastRecordUpload = Date.now();
     }
     SyncEngine.prototype._syncStartup.call(this);
   },

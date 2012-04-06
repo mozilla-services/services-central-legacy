@@ -72,12 +72,12 @@ add_test(function test_auth() {
 });
 
 /**
- *  The X-Weave-Timestamp header updates SyncStorageRequest.serverTime.
+ *  The X-Timestamp header updates SyncStorageRequest.serverTime.
  */
 add_test(function test_weave_timestamp() {
   const TIMESTAMP = 1274380461;
   function handler(request, response) {
-    response.setHeader("X-Weave-Timestamp", "" + TIMESTAMP, false);
+    response.setHeader("X-Timestamp", "" + TIMESTAMP, false);
     response.setStatusLine(request.httpVersion, 200, "OK");
   }
   let server = httpd_setup({"/resource": handler});
@@ -94,16 +94,16 @@ add_test(function test_weave_timestamp() {
 });
 
 /**
- * The X-Weave-Backoff header notifies an observer.
+ * The X-Backoff header notifies an observer.
  */
 add_test(function test_weave_backoff() {
   function handler(request, response) {
-    response.setHeader("X-Weave-Backoff", '600', false);
+    response.setHeader("X-Backoff", '600', false);
     response.setStatusLine(request.httpVersion, 200, "OK");
   }
   let server = httpd_setup({"/resource": handler});
 
-  let backoffInterval;  
+  let backoffInterval;
   Svc.Obs.add("weave:service:backoff:interval", function onBackoff(subject) {
     Svc.Obs.remove("weave:service:backoff:interval", onBackoff);
     backoffInterval = subject;
@@ -119,11 +119,11 @@ add_test(function test_weave_backoff() {
 });
 
 /**
- * X-Weave-Quota-Remaining header notifies observer on successful requests.
+ * X-Quota-Remaining header notifies observer on successful requests.
  */
 add_test(function test_weave_quota_notice() {
   function handler(request, response) {
-    response.setHeader("X-Weave-Quota-Remaining", '1048576', false);
+    response.setHeader("X-Quota-Remaining", '1048576', false);
     response.setStatusLine(request.httpVersion, 200, "OK");
   }
   let server = httpd_setup({"/resource": handler});
@@ -144,11 +144,11 @@ add_test(function test_weave_quota_notice() {
 });
 
 /**
- * X-Weave-Quota-Remaining header doesn't notify observer on failed requests.
+ * X-Quota-Remaining header doesn't notify observer on failed requests.
  */
 add_test(function test_weave_quota_error() {
   function handler(request, response) {
-    response.setHeader("X-Weave-Quota-Remaining", '1048576', false);
+    response.setHeader("X-Quota-Remaining", '1048576', false);
     response.setStatusLine(request.httpVersion, 400, "Bad Request");
   }
   let server = httpd_setup({"/resource": handler});
@@ -171,9 +171,9 @@ add_test(function test_weave_quota_error() {
 
 add_test(function test_abort() {
   function handler(request, response) {
-    response.setHeader("X-Weave-Timestamp", "" + TIMESTAMP, false);
-    response.setHeader("X-Weave-Quota-Remaining", '1048576', false);
-    response.setHeader("X-Weave-Backoff", '600', false);
+    response.setHeader("X-Timestamp", "" + TIMESTAMP, false);
+    response.setHeader("X-Quota-Remaining", '1048576', false);
+    response.setHeader("X-Backoff", '600', false);
     response.setStatusLine(request.httpVersion, 200, "OK");
   }
   let server = httpd_setup({"/resource": handler});

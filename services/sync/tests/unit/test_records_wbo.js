@@ -7,33 +7,36 @@ Cu.import("resource://services-sync/util.js");
 function test_toJSON() {
   _("Create a record, for now without a TTL.");
   let wbo = new WBORecord("coll", "a_record");
-  wbo.modified = 12345;
+  let now = Date.now();
+  wbo.modified = now;
   wbo.sortindex = 42;
   wbo.payload = {};
 
   _("Verify that the JSON representation contains the WBO properties, but not TTL.");
   let json = JSON.parse(JSON.stringify(wbo));
-  do_check_eq(json.modified, 12345);
+  do_check_eq(json.modified, now);
   do_check_eq(json.sortindex, 42);
   do_check_eq(json.payload, "{}");
   do_check_false("ttl" in json);
 
   _("Set a TTL, make sure it's present in the JSON representation.");
-  wbo.ttl = 30*60;
+  wbo.ttl = 30*60*1000;
   json = JSON.parse(JSON.stringify(wbo));
-  do_check_eq(json.ttl, 30*60);
+  do_check_eq(json.ttl, 30*60*1000);
 }
 
 
 function test_fetch() {
+  let now = Date.now();
+
   let record = {id: "asdf-1234-asdf-1234",
-                modified: 2454725.98283,
+                modified: now,
                 payload: JSON.stringify({cheese: "roquefort"})};
   let record2 = {id: "record2",
-                 modified: 2454725.98284,
+                 modified: now + 10,
                  payload: JSON.stringify({cheese: "gruyere"})};
   let coll = [{id: "record2",
-               modified: 2454725.98284,
+               modified: now + 10,
                payload: JSON.stringify({cheese: "gruyere"})}];
 
   _("Setting up server.");
@@ -50,14 +53,14 @@ function test_fetch() {
     rec.fetch("http://localhost:8080/record");
     do_check_eq(rec.id, "asdf-1234-asdf-1234"); // NOT "record"!
 
-    do_check_eq(rec.modified, 2454725.98283);
+    do_check_eq(rec.modified, now);
     do_check_eq(typeof(rec.payload), "object");
     do_check_eq(rec.payload.cheese, "roquefort");
 
     _("Fetching a WBO record using the record manager");
     let rec2 = Records.get("http://localhost:8080/record2");
     do_check_eq(rec2.id, "record2");
-    do_check_eq(rec2.modified, 2454725.98284);
+    do_check_eq(rec2.modified, now + 10);
     do_check_eq(typeof(rec2.payload), "object");
     do_check_eq(rec2.payload.cheese, "gruyere");
     do_check_eq(Records.response.status, 200);

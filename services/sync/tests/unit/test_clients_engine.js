@@ -9,8 +9,8 @@ Cu.import("resource://services-sync/engines.js");
 Cu.import("resource://services-sync/engines/clients.js");
 Cu.import("resource://services-sync/service.js");
 
-const MORE_THAN_CLIENTS_TTL_REFRESH = 691200; // 8 days
-const LESS_THAN_CLIENTS_TTL_REFRESH = 86400;  // 1 day
+const MORE_THAN_CLIENTS_TTL_REFRESH = 8 * 24 * 60 * 60 * 1000; // 8 days
+const LESS_THAN_CLIENTS_TTL_REFRESH = 24 * 60 * 60 * 1000;  // 1 day
 
 add_test(function test_bad_hmac() {
   _("Ensure that Clients engine deletes corrupt records.");
@@ -59,7 +59,7 @@ add_test(function test_bad_hmac() {
     let passphrase     = "abcdeabcdeabcdeabcdeabcdea";
     Service.serverURL  = TEST_SERVER_URL;
     Service.clusterURL = TEST_CLUSTER_URL;
-    Service.login("foo", "ilovejane", passphrase);
+    Service.login("foo", "password", passphrase);
 
     generateNewKeys();
 
@@ -157,8 +157,8 @@ add_test(function test_properties() {
     do_check_eq(Clients.lastRecordUpload, 0);
 
     let now = Date.now();
-    Clients.lastRecordUpload = now / 1000;
-    do_check_eq(Clients.lastRecordUpload, Math.floor(now / 1000));
+    Clients.lastRecordUpload = now;
+    do_check_eq(Clients.lastRecordUpload, now);
   } finally {
     Svc.Prefs.resetBranch("");
     run_next_test();

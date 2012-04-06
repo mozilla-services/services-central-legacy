@@ -39,11 +39,11 @@ function sync_httpd_setup() {
   let upd = collectionsHelper.with_updated_collection;
 
   return httpd_setup({
-    "/1.1/johndoe/storage/meta/global": upd("meta", global.handler()),
-    "/1.1/johndoe/info/collections": collectionsHelper.handler,
-    "/1.1/johndoe/storage/crypto/keys":
+    "/2.0/storage/meta/global": upd("meta", global.handler()),
+    "/2.0/info/collections": collectionsHelper.handler,
+    "/2.0/storage/crypto/keys":
       upd("crypto", (new ServerWBO("keys")).handler()),
-    "/1.1/johndoe/storage/clients": upd("clients", clientsColl.handler()),
+    "/2.0/storage/clients": upd("clients", clientsColl.handler()),
     "/user/1.0/johndoe/node/weave": httpd_handler(200, "OK", "null")
   });
 }
@@ -742,12 +742,12 @@ add_test(function test_sync_X_Weave_Backoff() {
   const BACKOFF = 7337;
 
   // Extend info/collections so that we can put it into server maintenance mode.
-  const INFO_COLLECTIONS = "/1.1/johndoe/info/collections";
+  const INFO_COLLECTIONS = "/2.0/info/collections";
   let infoColl = server._handler._overridePaths[INFO_COLLECTIONS];
   let serverBackoff = false;
   function infoCollWithBackoff(request, response) {
     if (serverBackoff) {
-      response.setHeader("X-Weave-Backoff", "" + BACKOFF);
+      response.setHeader("X-Backoff", "" + BACKOFF);
     }
     infoColl(request, response);
   }
@@ -797,7 +797,7 @@ add_test(function test_sync_503_Retry_After() {
   const BACKOFF = 7337;
 
   // Extend info/collections so that we can put it into server maintenance mode.
-  const INFO_COLLECTIONS = "/1.1/johndoe/info/collections";
+  const INFO_COLLECTIONS = "/2.0/info/collections";
   let infoColl = server._handler._overridePaths[INFO_COLLECTIONS];
   let serverMaintenance = false;
   function infoCollWithMaintenance(request, response) {
@@ -898,7 +898,7 @@ add_test(function test_loginError_fatal_clearsTriggers() {
   Status.resetSync(); // reset Status.login
 
   let server = httpd_setup({
-    "/1.1/johndoe/info/collections": httpd_handler(401, "Unauthorized")
+    "/2.0/info/collections": httpd_handler(401, "Unauthorized")
   });
 
   Svc.Obs.add("weave:service:login:error", function onLoginError() {

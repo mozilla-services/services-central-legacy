@@ -1,7 +1,11 @@
 Cu.import("resource://services-sync/engines/tabs.js");
 Cu.import("resource://services-sync/util.js");
 
-function test_lastUsed() {
+function run_test() {
+  run_next_test();
+}
+
+add_test(function test_lastUsed() {
   let store = new TabEngine()._store;
 
   _("Check extraction of last used times from tab objects.");
@@ -18,25 +22,29 @@ function test_lastUsed() {
   for each (let [ex, input] in expected) {
     do_check_eq(ex, store.tabLastUsed(input));
   }
+
+  run_next_test();
 }
 
-function test_create() {
+add_test(function test_create() {
   let store = new TabEngine()._store;
 
   _("Create a first record");
+
+  let now = Date.now();
   let rec = {id: "id1",
              clientName: "clientName1",
              cleartext: "cleartext1",
-             modified: 1000};
+             modified: now};
   store.applyIncoming(rec);
   do_check_eq(store._remoteClients["id1"], "cleartext1");
-  do_check_eq(Svc.Prefs.get("notifyTabState"), 1);
+  do_check_eq(Svc.Prefs.get("notifyTabState"), now);
 
   _("Create a second record");
   let rec = {id: "id2",
              clientName: "clientName2",
              cleartext: "cleartext2",
-             modified: 2000};
+             modified: now + 1000};
   store.applyIncoming(rec);
   do_check_eq(store._remoteClients["id2"], "cleartext2");
   do_check_eq(Svc.Prefs.get("notifyTabState"), 0);
@@ -45,14 +53,16 @@ function test_create() {
   let rec = {id: "id3",
              clientName: "clientName3",
              cleartext: "cleartext3",
-             modified: 3000};
+             modified: now + 2000};
   store.applyIncoming(rec);
   do_check_eq(store._remoteClients["id3"], "cleartext3");
   do_check_eq(Svc.Prefs.get("notifyTabState"), 0);
 
   // reset the notifyTabState
   Svc.Prefs.reset("notifyTabState");
-}
+
+  run_next_test();
+});
 
 function fakeSessionSvc(url, numtabs) {
   // first delete the getter, or the previously
@@ -87,7 +97,7 @@ function fakeSessionSvc(url, numtabs) {
   };
 };
 
-function test_getAllTabs() {
+add_test(function test_getAllTabs() {
   let store = new TabEngine()._store, tabs;
 
   _("get all tabs");
@@ -106,9 +116,11 @@ function test_getAllTabs() {
   fakeSessionSvc("about:foo");
   tabs = store.getAllTabs(true);
   do_check_eq(tabs.length, 0);
-}
 
-function test_createRecord() {
+  run_next_test();
+});
+
+add_test(function test_createRecord() {
   let store = new TabEngine()._store, record;
 
   // get some values before testing
@@ -128,11 +140,6 @@ function test_createRecord() {
   record = store.createRecord("fake-guid");
   do_check_true(record instanceof TabSetRecord);
   do_check_eq(record.tabs.length, 256);
-}
 
-function run_test() {
-  test_lastUsed();
-  test_create();
-  test_getAllTabs();
-  test_createRecord();
-}
+  run_next_test();
+});

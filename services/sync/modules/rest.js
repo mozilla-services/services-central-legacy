@@ -105,22 +105,33 @@ SyncStorageRequest.prototype = {
       return;
     }
 
-    let headers = this.response.headers;
+    this.processHeaders(this.response.success, this.response.headers);
+  },
+
+  /**
+   * Process response headers and perform side-effects.
+   *
+   * @param success
+   *        Boolean indicating whether response was successful
+   * @param headers
+   *        Object containing HTTP headers.
+   */
+  processHeaders: function processHeaders(success, headers) {
     // Save the latest server timestamp when possible.
-    if (headers["x-weave-timestamp"]) {
-      SyncStorageRequest.serverTime = parseFloat(headers["x-weave-timestamp"]);
+    if (headers["x-timestamp"]) {
+      SyncStorageRequest.serverTime = parseFloat(headers["x-timestamp"]);
     }
 
     // This is a server-side safety valve to allow slowing down
     // clients without hurting performance.
-    if (headers["x-weave-backoff"]) {
+    if (headers["x-backoff"]) {
       Svc.Obs.notify("weave:service:backoff:interval",
-                     parseInt(headers["x-weave-backoff"], 10));
+                     parseInt(headers["x-backoff"], 10));
     }
 
-    if (this.response.success && headers["x-weave-quota-remaining"]) {
+    if (success && headers["x-quota-remaining"]) {
       Svc.Obs.notify("weave:service:quota:remaining",
-                     parseInt(headers["x-weave-quota-remaining"], 10));
+                     parseInt(headers["x-quota-remaining"], 10));
     }
   }
 };

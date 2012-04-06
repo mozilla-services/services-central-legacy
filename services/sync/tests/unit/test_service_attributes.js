@@ -12,6 +12,7 @@ function test_urls() {
   try {
     do_check_true(!!Service.serverURL); // actual value may change
     do_check_eq(Service.clusterURL, "");
+    do_check_eq(Service.baseURL, undefined);
     do_check_eq(Service.userBaseURL, undefined);
     do_check_eq(Service.infoURL, undefined);
     do_check_eq(Service.storageURL, undefined);
@@ -21,8 +22,8 @@ function test_urls() {
     Identity.username = "johndoe";
 
     // Since we don't have a cluster URL yet, these will still not be defined.
+    do_check_eq(Service.baseURL, undefined);
     do_check_eq(Service.infoURL, undefined);
-    do_check_eq(Service.userBaseURL, undefined);
     do_check_eq(Service.storageURL, undefined);
     do_check_eq(Service.metaURL, undefined);
 
@@ -30,13 +31,14 @@ function test_urls() {
     Service.clusterURL = "http://weave.cluster/";
     do_check_eq(Svc.Prefs.get("clusterURL"), "http://weave.cluster/");
 
-    do_check_eq(Service.userBaseURL, "http://weave.cluster/1.1/johndoe/");
+    do_check_eq(Service.baseURL,
+                "http://weave.cluster/2.0/");
     do_check_eq(Service.infoURL,
-                "http://weave.cluster/1.1/johndoe/info/collections");
+                "http://weave.cluster/2.0/info/collections");
     do_check_eq(Service.storageURL,
-                "http://weave.cluster/1.1/johndoe/storage/");
+                "http://weave.cluster/2.0/storage/");
     do_check_eq(Service.metaURL,
-                "http://weave.cluster/1.1/johndoe/storage/meta/global");
+                "http://weave.cluster/2.0/storage/meta/global");
 
     _("The 'miscURL' and 'userURL' attributes can be relative to 'serverURL' or absolute.");
     Svc.Prefs.set("miscURL", "relative/misc/");

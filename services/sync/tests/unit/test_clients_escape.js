@@ -12,7 +12,7 @@ function run_test() {
 
   Identity.username = "john@example.com";
   Svc.Prefs.set("clusterURL", "http://fakebase/");
-  let baseUri = "http://fakebase/1.1/foo/storage/";
+  let baseUri = "http://fakebase/2.0/storage/";
   let pubUri = baseUri + "keys/pubkey";
   let privUri = baseUri + "keys/privkey";
 
@@ -32,7 +32,7 @@ function run_test() {
     _("Encrypting record...");
     record.encrypt(keyBundle);
     _("Encrypted.");
-    
+
     let serialized = JSON.stringify(record);
     let checkCount = 0;
     _("Checking for all ASCII:", serialized);

@@ -9,10 +9,10 @@ Cu.import("resource://services-sync/service.js");
 Cu.import("resource://gre/modules/PlacesUtils.jsm");
 
 Engines.register(BookmarksEngine);
-var syncTesting = new SyncTestingInfrastructure();
+new SyncTestingInfrastructure();
 
 add_test(function bad_record_allIDs() {
-  let syncTesting = new SyncTestingInfrastructure();
+  new SyncTestingInfrastructure();
 
   _("Ensure that bad Places queries don't cause an error in getAllIDs.");
   let engine = new BookmarksEngine();
@@ -43,7 +43,7 @@ add_test(function bad_record_allIDs() {
 });
 
 add_test(function test_ID_caching() {
-  let syncTesting = new SyncTestingInfrastructure();
+  new SyncTestingInfrastructure();
 
   _("Ensure that Places IDs are not cached.");
   let engine = new BookmarksEngine();
@@ -131,8 +131,8 @@ add_test(function test_processIncoming_error_orderChildren() {
     };
 
     // Make the 10 minutes old so it will only be synced in the toFetch phase.
-    bogus_record.modified = Date.now() / 1000 - 60 * 10;
-    engine.lastSync = Date.now() / 1000 - 60;
+    bogus_record.modified = Date.now() - 1000 * 60 * 10;
+    engine.lastSync = Date.now() - 1000 * 60 * 10;
     engine.toFetch = [BOGUS_GUID];
 
     let error;
@@ -386,7 +386,7 @@ add_test(function test_bookmark_guidMap_fail() {
   let itemPayload = store.createRecord(itemGUID).cleartext;
   coll.insert(itemGUID, encryptPayload(itemPayload));
 
-  engine.lastSync = 1;   // So we don't back up.
+  engine.lastSync = 1000000000000; // So we don't back up.
 
   // Make building the GUID map fail.
   store.getAllIDs = function () { throw "Nooo"; };

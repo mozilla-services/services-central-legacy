@@ -193,7 +193,7 @@ add_test(function test_collections_manager() {
     "default": [default_key64, default_hmac64],
     "collections": {"bookmarks": [bookmarks_key64, bookmarks_hmac64]},
   };
-  storage_keys.modified = Date.now()/1000;
+  storage_keys.modified = Date.now();
   storage_keys.id = "keys";
 
   log.info("Encrypting storage keys...");
@@ -265,7 +265,7 @@ add_test(function test_collections_manager() {
   do_check_true(CollectionKeys.updateNeeded(info_collections));
   info_collections["crypto"] = 5000;
   do_check_false(CollectionKeys.updateNeeded(info_collections));
-  info_collections["crypto"] = 1 + (Date.now()/1000);              // Add one in case computers are fast!
+  info_collections["crypto"] = 1000 + Date.now(); // Add one in case computers are fast!
   do_check_true(CollectionKeys.updateNeeded(info_collections));
 
   CollectionKeys.lastModified = null;

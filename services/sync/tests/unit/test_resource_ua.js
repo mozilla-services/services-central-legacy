@@ -2,7 +2,7 @@ Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/resource.js");
 Cu.import("resource://services-sync/service.js");
 
-const TEST_GET_URL = "http://localhost:8080/1.1/johndoe/storage/meta/global";
+const TEST_GET_URL = "http://localhost:8080/2.0/storage/meta/global";
 
 function test_resource_user_agent() {
   let meta_global = new ServerWBO('global');
@@ -21,8 +21,8 @@ function test_resource_user_agent() {
 
   do_test_pending();
   let server = httpd_setup({
-    "/1.1/johndoe/info/collections": uaHandler(collectionsHelper.handler),
-    "/1.1/johndoe/storage/meta/global": uaHandler(meta_global.handler()),
+    "/2.0/info/collections": uaHandler(collectionsHelper.handler),
+    "/2.0/storage/meta/global": uaHandler(meta_global.handler()),
   });
 
   setBasicCredentials("johndoe", "ilovejane");

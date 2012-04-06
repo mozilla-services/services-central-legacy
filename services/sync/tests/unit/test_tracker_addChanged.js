@@ -12,14 +12,15 @@ function run_test() {
   do_check_eq(tracker.changedIDs[id], 0);
 
   _("A newer time will replace the old 0");
-  tracker.addChangedID(id, 10);
-  do_check_eq(tracker.changedIDs[id], 10);
+  let now = Date.now() - 100;
+  tracker.addChangedID(id, now);
+  do_check_eq(tracker.changedIDs[id], now);
 
-  _("An older time will not replace the newer 10");
-  tracker.addChangedID(id, 5);
-  do_check_eq(tracker.changedIDs[id], 10);
+  _("An older time will not replace the newer one.");
+  tracker.addChangedID(id, now - 10000);
+  do_check_eq(tracker.changedIDs[id], now);
 
   _("Adding without time defaults to current time");
   tracker.addChangedID(id);
-  do_check_true(tracker.changedIDs[id] > 10);
+  do_check_true(tracker.changedIDs[id] > now);
 }

@@ -1,3 +1,5 @@
+Cu.import("resource://services-common/utils.js");
+
 function run_test() {
   Log4Moz.repository.getLogger("Sync.Test.Server").level = Log4Moz.Level.Trace;
   initTestLogging();
@@ -20,34 +22,31 @@ add_test(function test_url_parsing() {
   let server = new SyncServer();
 
   // Check that we can parse a WBO URI.
-  let parts = server.pathRE.exec("/1.1/johnsmith/storage/crypto/keys");
-  let [all, version, username, first, rest] = parts;
-  do_check_eq(all, "/1.1/johnsmith/storage/crypto/keys");
-  do_check_eq(version, "1.1");
-  do_check_eq(username, "johnsmith");
+  let parts = server.pathRE.exec("/2.0/storage/crypto/keys");
+  let [all, version, first, rest] = parts;
+  do_check_eq(all, "/2.0/storage/crypto/keys");
+  do_check_eq(version, "2.0");
   do_check_eq(first, "storage");
   do_check_eq(rest, "crypto/keys");
   do_check_eq(null, server.pathRE.exec("/nothing/else"));
 
   // Check that we can parse a collection URI.
-  parts = server.pathRE.exec("/1.1/johnsmith/storage/crypto");
-  let [all, version, username, first, rest] = parts;
-  do_check_eq(all, "/1.1/johnsmith/storage/crypto");
-  do_check_eq(version, "1.1");
-  do_check_eq(username, "johnsmith");
+  parts = server.pathRE.exec("/2.0/storage/crypto");
+  let [all, version, first, rest] = parts;
+  do_check_eq(all, "/2.0/storage/crypto");
+  do_check_eq(version, "2.0");
   do_check_eq(first, "storage");
   do_check_eq(rest, "crypto");
 
   // We don't allow trailing slash on storage URI.
-  parts = server.pathRE.exec("/1.1/johnsmith/storage/");
+  parts = server.pathRE.exec("/2.0/storage/");
   do_check_eq(parts, undefined);
 
   // storage alone is a valid request.
-  parts = server.pathRE.exec("/1.1/johnsmith/storage");
-  let [all, version, username, first, rest] = parts;
-  do_check_eq(all, "/1.1/johnsmith/storage");
-  do_check_eq(version, "1.1");
-  do_check_eq(username, "johnsmith");
+  parts = server.pathRE.exec("/2.0/storage");
+  let [all, version, first, rest] = parts;
+  do_check_eq(all, "/2.0/storage");
+  do_check_eq(version, "2.0");
   do_check_eq(first, "storage");
   do_check_eq(rest, undefined);
 
@@ -60,11 +59,16 @@ add_test(function test_url_parsing() {
 });
 
 Cu.import("resource://services-common/rest.js");
-function localRequest(path) {
+function localRequest(path, user, password) {
   _("localRequest: " + path);
   let url = "http://127.0.0.1:8080" + path;
   _("url: " + url);
-  return new RESTRequest(url);
+  let req = new RESTRequest(url);
+
+  let header = basic_auth_header(user || "john", password || "password");
+  req.setHeader("Authorization", header);
+
+  return req;
 }
 
 add_test(function test_basic_http() {
@@ -75,7 +79,7 @@ add_test(function test_basic_http() {
     _("Started on " + server.port);
     do_check_eq(server.port, 8080);
     Utils.nextTick(function () {
-      let req = localRequest("/1.1/john/storage/crypto/keys");
+      let req = localRequest("/2.0/storage/crypto/keys");
       _("req is " + req);
       req.get(function (err) {
         do_check_eq(null, err);
@@ -92,57 +96,59 @@ add_test(function test_info_collections() {
     __proto__: SyncServerCallback
   });
   function responseHasCorrectHeaders(r) {
-    do_check_eq(r.status, 200);
-    do_check_eq(r.headers["content-type"], "application/json");
-    do_check_true("x-weave-timestamp" in r.headers);
+    if (r.status == 200) {
+      do_check_eq(r.headers["content-type"], "application/json");
+    } else if (r.status == 204) {
+      do_check_true(!("content-type" in r.headers));
+    } else {
+      _("Invalid response code seen: " + r.status);
+      do_check_true(false);
+    }
+
+    do_check_true("x-timestamp" in r.headers);
   }
 
   server.registerUser("john", "password");
   server.start(8080, function () {
     do_check_eq(server.port, 8080);
-    Utils.nextTick(function () {
-      let req = localRequest("/1.1/john/info/collections");
-      req.get(function (err) {
-        // Initial info/collections fetch is empty.
+    CommonUtils.waitForNextTick();
+    let req = localRequest("/2.0/info/collections");
+    req.get(function (err) {
+      // Initial info/collections fetch is empty.
+      do_check_eq(null, err);
+      responseHasCorrectHeaders(this.response);
+
+      do_check_eq(this.response.body, "{}");
+      CommonUtils.waitForNextTick();
+      // When we PUT something to crypto/keys, "crypto" appears in the response.
+      function cb(err) {
         do_check_eq(null, err);
         responseHasCorrectHeaders(this.response);
+        let putResponseBody = this.response.body;
+        _("PUT response body: " + JSON.stringify(putResponseBody));
 
-        do_check_eq(this.response.body, "{}");
-        Utils.nextTick(function () {
-          // When we PUT something to crypto/keys, "crypto" appears in the response.
-          function cb(err) {
-            do_check_eq(null, err);
-            responseHasCorrectHeaders(this.response);
-            let putResponseBody = this.response.body;
-            _("PUT response body: " + JSON.stringify(putResponseBody));
-
-            req = localRequest("/1.1/john/info/collections");
-            req.get(function (err) {
-              do_check_eq(null, err);
-              responseHasCorrectHeaders(this.response);
-              let expectedColl = server.getCollection("john", "crypto");
-              do_check_true(!!expectedColl);
-              let modified = expectedColl.timestamp;
-              do_check_true(modified > 0);
-              do_check_eq(putResponseBody, modified);
-              do_check_eq(JSON.parse(this.response.body).crypto, modified);
-              Utils.nextTick(function () {
-                server.stop(run_next_test);
-              });
-            });
-          }
-          let payload = JSON.stringify({foo: "bar"});
-          localRequest("/1.1/john/storage/crypto/keys").put(payload, cb);
+        req = localRequest("/2.0/info/collections");
+        req.get(function (err) {
+          do_check_eq(null, err);
+          responseHasCorrectHeaders(this.response);
+          let expectedColl = server.getCollection("john", "crypto");
+          do_check_true(!!expectedColl);
+          let modified = expectedColl.timestamp;
+          do_check_true(modified > 0);
+          CommonUtils.waitForNextTick();
+          server.stop(run_next_test);
         });
-      });
+      }
+      let payload = JSON.stringify({foo: "bar"});
+      localRequest("/2.0/storage/crypto/keys").put(payload, cb);
     });
   });
 });
 
 add_test(function test_storage_request() {
-  let keysURL = "/1.1/john/storage/crypto/keys?foo=bar";
-  let foosURL = "/1.1/john/storage/crypto/foos";
-  let storageURL = "/1.1/john/storage";
+  let keysURL = "/2.0/storage/crypto/keys?foo=bar";
+  let foosURL = "/2.0/storage/crypto/foos";
+  let storageURL = "/2.0/storage";
 
   let server = new SyncServer();
   let creation = server.timestamp();
@@ -266,14 +272,14 @@ add_test(function test_x_weave_records() {
              bars: {foo: "baz"}}
   });
   server.start(8080, function () {
-    let wbo = localRequest("/1.1/john/storage/crypto/foos");
+    let wbo = localRequest("/2.0/storage/crypto/foos");
     wbo.get(function (err) {
       // WBO fetches don't have one.
-      do_check_false("x-weave-records" in this.response.headers);
-      let col = localRequest("/1.1/john/storage/crypto");
+      do_check_false("x-num-records" in this.response.headers);
+      let col = localRequest("/2.0/storage/crypto");
       col.get(function (err) {
         // Collection fetches do.
-        do_check_eq(this.response.headers["x-weave-records"], "2");
+        do_check_eq(this.response.headers["x-num-records"], "2");
         server.stop(run_next_test);
       });
     });

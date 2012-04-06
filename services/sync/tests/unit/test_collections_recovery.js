@@ -24,14 +24,14 @@ add_test(function test_missing_crypto_collection() {
   Service.clusterURL = TEST_CLUSTER_URL;
 
   let handlers = {
-    "/1.1/johndoe/info/collections": maybe_empty(johnHelper.handler),
-    "/1.1/johndoe/storage/crypto/keys": johnU("crypto", new ServerWBO("keys").handler()),
-    "/1.1/johndoe/storage/meta/global": johnU("meta",   new ServerWBO("global").handler())
+    "/2.0/info/collections": maybe_empty(johnHelper.handler),
+    "/2.0/storage/crypto/keys": johnU("crypto", new ServerWBO("keys").handler()),
+    "/2.0/storage/meta/global": johnU("meta",   new ServerWBO("global").handler())
   };
   let collections = ["clients", "bookmarks", "forms", "history",
                      "passwords", "prefs", "tabs"];
   for each (let coll in collections) {
-    handlers["/1.1/johndoe/storage/" + coll] =
+    handlers["/2.0/storage/" + coll] =
       johnU(coll, new ServerCollection({}, true).handler());
   }
   let server = httpd_setup(handlers);

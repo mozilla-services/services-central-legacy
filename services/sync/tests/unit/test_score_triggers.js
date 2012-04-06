@@ -22,22 +22,18 @@ let upd = collectionsHelper.with_updated_collection;
 function sync_httpd_setup() {
   let handlers = {};
 
-  handlers["/1.1/johndoe/storage/meta/global"] =
-    new ServerWBO("global", {}).handler();
-  handlers["/1.1/johndoe/storage/steam"] =
-    new ServerWBO("steam", {}).handler();
+  handlers["/2.0/storage/meta/global"] = new ServerWBO("global", {}).handler();
+  handlers["/2.0/storage/steam"] = new ServerWBO("steam", {}).handler();
 
-  handlers["/1.1/johndoe/info/collections"] = collectionsHelper.handler;
+  handlers["/2.0/info/collections"] = collectionsHelper.handler;
   delete collectionsHelper.collections.crypto;
   delete collectionsHelper.collections.meta;
 
   let cr = new ServerWBO("keys");
-  handlers["/1.1/johndoe/storage/crypto/keys"] =
-    upd("crypto", cr.handler());
+  handlers["/2.0/storage/crypto/keys"] = upd("crypto", cr.handler());
 
   let cl = new ServerCollection();
-  handlers["/1.1/johndoe/storage/clients"] =
-    upd("clients", cl.handler());
+  handlers["/2.0/storage/clients"] = upd("clients", cl.handler());
 
   return httpd_setup(handlers);
 }

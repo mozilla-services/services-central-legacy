@@ -98,28 +98,28 @@ const TIMESTAMP = 1274380461;
 
 function server_timestamp(metadata, response) {
   let body = "Thank you for your request";
-  response.setHeader("X-Weave-Timestamp", ''+TIMESTAMP, false);
+  response.setHeader("X-Timestamp", ''+TIMESTAMP, false);
   response.setStatusLine(metadata.httpVersion, 200, "OK");
   response.bodyOutputStream.write(body, body.length);
 }
 
 function server_backoff(metadata, response) {
   let body = "Hey, back off!";
-  response.setHeader("X-Weave-Backoff", '600', false);
+  response.setHeader("X-Backoff", '600', false);
   response.setStatusLine(metadata.httpVersion, 200, "OK");
   response.bodyOutputStream.write(body, body.length);  
 }
 
 function server_quota_notice(request, response) {
   let body = "You're approaching quota.";
-  response.setHeader("X-Weave-Quota-Remaining", '1048576', false);
+  response.setHeader("X-Quota-Remaining", '1048576', false);
   response.setStatusLine(request.httpVersion, 200, "OK");
   response.bodyOutputStream.write(body, body.length);  
 }
 
 function server_quota_error(request, response) {
   let body = "14";
-  response.setHeader("X-Weave-Quota-Remaining", '-1024', false);
+  response.setHeader("X-Quota-Remaining", '-1024', false);
   response.setStatusLine(request.httpVersion, 400, "OK");
   response.bodyOutputStream.write(body, body.length);  
 }
@@ -229,11 +229,6 @@ function run_test() {
               "Parse fail: Response body starts: \"\"This path exists\"\".");
   logger.debug = dbg;
 
-  _("Test that the BasicAuthenticator doesn't screw up header case.");
-  let res1 = new Resource("http://localhost:8080/foo");
-  res1.setHeader("Authorization", "Basic foobar");
-  do_check_eq(res1.headers["authorization"], "Basic foobar");
-
   _("GET a password protected resource (test that it'll fail w/o pass, no throw)");
   let res2 = new Resource("http://localhost:8080/protected");
   content = res2.get();
@@ -329,9 +324,9 @@ function run_test() {
   do_check_eq(content.status, 200);
   do_check_eq(JSON.stringify(content.obj), JSON.stringify(sample_data));
 
-  _("X-Weave-Timestamp header updates AsyncResource.serverTime");
+  _("X-Timestamp header updates AsyncResource.serverTime");
   // Before having received any response containing the
-  // X-Weave-Timestamp header, AsyncResource.serverTime is null.
+  // X-Timestamp header, AsyncResource.serverTime is null.
   do_check_eq(AsyncResource.serverTime, null);
   let res8 = new Resource("http://localhost:8080/timestamp");
   content = res8.get();
@@ -379,7 +374,7 @@ function run_test() {
   do_check_eq(content, JSON.stringify({"content-type": "application/foobar"}));
 
 
-  _("X-Weave-Backoff header notifies observer");
+  _("X-Backoff header notifies observer");
   let backoffInterval;
   function onBackoff(subject, data) {
     backoffInterval = subject;
@@ -391,7 +386,7 @@ function run_test() {
   do_check_eq(backoffInterval, 600);
 
 
-  _("X-Weave-Quota-Remaining header notifies observer on successful requests.");
+  _("X-Quota-Remaining header notifies observer on successful requests.");
   let quotaValue;
   function onQuota(subject, data) {
     quotaValue = subject;

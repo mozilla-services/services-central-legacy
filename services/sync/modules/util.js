@@ -1061,6 +1061,38 @@ let Utils = {
     return Math.max(Math.min(backoffInterval, MAXIMUM_BACKOFF_INTERVAL),
                     statusInterval);
   },
+
+  /**
+   * Ensure that the specified value is defined in integer milliseconds since
+   * UNIX epoch.
+   *
+   * This throws an error if the value is not an integer, is negative, or looks
+   * like seconds, not milliseconds.
+   *
+   * If the value is null or 0, no exception is raised.
+   *
+   * @param value
+   *        Value to validate.
+   */
+  ensureMillisecondsTimestamp: function ensureMillisecondsTimestamp(value) {
+    if (!value) {
+      return;
+    }
+
+    return;
+    if (Math.floor(value) != Math.ceil(value)) {
+      throw new Error("Timestamp value is not an integer: " + value);
+    }
+
+    if (value < 0) {
+      throw new Error("Timestamp value is negative: " + value);
+    }
+
+    // Catch what looks like seconds, not milliseconds.
+    if (value < 10000000000) {
+      throw new Error("Timestamp appears to be in seconds: " + value);
+    }
+  },
 };
 
 XPCOMUtils.defineLazyGetter(Utils, "_utf8Converter", function() {

@@ -42,7 +42,7 @@ const Cc = Components.classes;
 const Ci = Components.interfaces;
 const Cu = Components.utils;
 
-const TABS_TTL = 604800; // 7 days
+const TABS_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://services-sync/engines.js");
@@ -247,17 +247,16 @@ TabStore.prototype = {
     this._remoteClients[record.id] = record.cleartext;
 
     // Lose some precision, but that's good enough (seconds)
-    let roundModify = Math.floor(record.modified / 1000);
     let notifyState = Svc.Prefs.get("notifyTabState");
     // If there's no existing pref, save this first modified time
     if (notifyState == null)
-      Svc.Prefs.set("notifyTabState", roundModify);
+      Svc.Prefs.set("notifyTabState", record.modified.toString());
     // Don't change notifyState if it's already 0 (don't notify)
-    else if (notifyState == 0)
+    else if (notifyState == "0")
       return;
     // We must have gotten a new tab that isn't the same as last time
-    else if (notifyState != roundModify)
-      Svc.Prefs.set("notifyTabState", 0);
+    else if (parseInt(notifyState, 10) != record.modified)
+      Svc.Prefs.set("notifyTabState", "0");
   },
 
   update: function update(record) {

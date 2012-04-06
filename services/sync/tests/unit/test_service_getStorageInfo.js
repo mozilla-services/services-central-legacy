@@ -24,7 +24,7 @@ function run_test() {
 
 add_test(function test_success() {
   let handler = httpd_handler(200, "OK", JSON.stringify(collections));
-  let server = httpd_setup({"/1.1/johndoe/info/collections": handler});
+  let server = httpd_setup({"/2.0/info/collections": handler});
 
   let request = Service.getStorageInfo("collections", function (error, info) {
     do_check_eq(error, null);
@@ -63,7 +63,7 @@ add_test(function test_network_error() {
 
 add_test(function test_http_error() {
   let handler = httpd_handler(500, "Oh noez", "Something went wrong!");
-  let server = httpd_setup({"/1.1/johndoe/info/collections": handler});
+  let server = httpd_setup({"/2.0/info/collections": handler});
 
   let request = Service.getStorageInfo(INFO_COLLECTIONS, function (error, info) {
     do_check_eq(error.status, 500);
@@ -74,7 +74,7 @@ add_test(function test_http_error() {
 
 add_test(function test_invalid_json() {
   let handler = httpd_handler(200, "OK", "Invalid JSON");
-  let server = httpd_setup({"/1.1/johndoe/info/collections": handler});
+  let server = httpd_setup({"/2.0/info/collections": handler});
 
   let request = Service.getStorageInfo(INFO_COLLECTIONS, function (error, info) {
     do_check_eq(error.name, "SyntaxError");

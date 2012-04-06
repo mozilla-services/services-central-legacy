@@ -19,7 +19,7 @@ add_test(function test_processIncoming_abort() {
   collection.insert(id, payload);
 
   let server = sync_httpd_setup({
-      "/1.1/foo/storage/rotary": collection.handler()
+      "/2.0/storage/rotary": collection.handler()
   });
 
   _("Fake applyIncoming to abort.");
@@ -29,7 +29,7 @@ add_test(function test_processIncoming_abort() {
     _("Throwing: " + JSON.stringify(ex));
     throw ex;
   };
-  
+
   _("Trying _processIncoming. It will throw after aborting.");
   let err;
   try {

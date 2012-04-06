@@ -10,7 +10,6 @@ Cu.import("resource://services-sync/status.js");
 Svc.DefaultPrefs.set("registerEngines", "");
 Cu.import("resource://services-sync/service.js");
 
-const TEST_MAINTENANCE_URL = "http://localhost:8080/maintenance/";
 const logsdir = FileUtils.getDir("ProfD", ["weave", "logs"], true);
 const LOG_PREFIX_SUCCESS = "success-";
 const LOG_PREFIX_ERROR   = "error-";
@@ -66,6 +65,8 @@ function service_unavailable(request, response) {
   response.bodyOutputStream.write(body, body.length);
 }
 
+let unauthorized_handler = httpd_handler(401, "Unauthorized");
+
 function sync_httpd_setup() {
   let global = new ServerWBO("global", {
     syncID: Service.syncID,
@@ -81,40 +82,22 @@ function sync_httpd_setup() {
   let collectionsHelper = track_collections_helper();
   let upd = collectionsHelper.with_updated_collection;
 
-  let handler_401 = httpd_handler(401, "Unauthorized");
   return httpd_setup({
-    // Normal server behaviour.
-    "/1.1/johndoe/storage/meta/global": upd("meta", global.handler()),
-    "/1.1/johndoe/info/collections": collectionsHelper.handler,
-    "/1.1/johndoe/storage/crypto/keys":
+    "/2.0/storage/meta/global": upd("meta", global.handler()),
+    "/2.0/info/collections": collectionsHelper.handler,
+    "/2.0/storage/crypto/keys":
       upd("crypto", (new ServerWBO("keys")).handler()),
-    "/1.1/johndoe/storage/clients": upd("clients", clientsColl.handler()),
-
-    // Credentials are wrong or node reallocated.
-    "/1.1/janedoe/storage/meta/global": handler_401,
-    "/1.1/janedoe/info/collections": handler_401,
-
-    // Maintenance or overloaded (503 + Retry-After) at info/collections.
-    "/maintenance/1.1/broken.info/info/collections": service_unavailable,
-
-    // Maintenance or overloaded (503 + Retry-After) at meta/global.
-    "/maintenance/1.1/broken.meta/storage/meta/global": service_unavailable,
-    "/maintenance/1.1/broken.meta/info/collections": collectionsHelper.handler,
-
-    // Maintenance or overloaded (503 + Retry-After) at crypto/keys.
-    "/maintenance/1.1/broken.keys/storage/meta/global": upd("meta", global.handler()),
-    "/maintenance/1.1/broken.keys/info/collections": collectionsHelper.handler,
-    "/maintenance/1.1/broken.keys/storage/crypto/keys": service_unavailable,
-
-    // Maintenance or overloaded (503 + Retry-After) at wiping collection.
-    "/maintenance/1.1/broken.wipe/info/collections": collectionsHelper.handler,
-    "/maintenance/1.1/broken.wipe/storage/meta/global": upd("meta", global.handler()),
-    "/maintenance/1.1/broken.wipe/storage/crypto/keys":
-      upd("crypto", (new ServerWBO("keys")).handler()),
-    "/maintenance/1.1/broken.wipe/storage": service_unavailable,
-    "/maintenance/1.1/broken.wipe/storage/clients": upd("clients", clientsColl.handler()),
-    "/maintenance/1.1/broken.wipe/storage/catapult": service_unavailable
+    "/2.0/storage/clients": upd("clients", clientsColl.handler())
   });
+    return httpd_setup({
+      // Maintenance or overloaded (503 + Retry-After) at wiping collection.
+      "/maintenance/2.0/info/collections": collectionsHelper.handler,
+      "/maintenance/2.0/storage/meta/global": upd("meta", global.handler()),
+      "/maintenance/2.0/storage/crypto/keys":
+        upd("crypto", (new ServerWBO("keys")).handler()),
+      "/maintenance/2.0/storage": service_unavailable,
+      "/maintenance/2.0/storage/clients": upd("clients", clientsColl.handler())
+    });
 }
 
 function setUp() {
@@ -172,6 +155,9 @@ add_test(function test_401_logout() {
   // Make sync fail due to login rejected.
   setBasicCredentials("janedoe", "irrelevant", "irrelevant");
   Service._updateCachedURLs();
+
+  server.registerPathHandler("/2.0/storage/meta/global", unauthorized_handler);
+  server.registerPathHandler("/2.0/info/collections", unauthorized_handler);
 
   _("Starting first sync.");
   Service.sync();
@@ -772,12 +758,12 @@ add_test(function test_sync_server_maintenance_error() {
 add_test(function test_info_collections_login_server_maintenance_error() {
   // Test info/collections server maintenance errors are not reported.
   let server = sync_httpd_setup();
+  server.registerPathHandler("/2.0/info/collections", service_unavailable);
   setUp();
 
-  Service.username = "broken.info";
   setBasicCredentials("broken.info", "irrelevant", "irrelevant");
-  Service.serverURL = TEST_MAINTENANCE_URL;
-  Service.clusterURL = TEST_MAINTENANCE_URL;
+  Service.serverURL = TEST_SERVER_URL;
+  Service.clusterURL = TEST_CLUSTER_URL;
 
   let backoffInterval;
   Svc.Obs.add("weave:service:backoff:interval", function observe(subject, data) {
@@ -813,11 +799,12 @@ add_test(function test_info_collections_login_server_maintenance_error() {
 add_test(function test_meta_global_login_server_maintenance_error() {
   // Test meta/global server maintenance errors are not reported.
   let server = sync_httpd_setup();
+  server.registerPathHandler("/2.0/storage/meta/global", service_unavailable);
   setUp();
 
   setBasicCredentials("broken.meta", "irrelevant", "irrelevant");
-  Service.serverURL = TEST_MAINTENANCE_URL;
-  Service.clusterURL = TEST_MAINTENANCE_URL;
+  Service.serverURL = TEST_SERVER_URL;
+  Service.clusterURL = TEST_CLUSTER_URL;
 
   let backoffInterval;
   Svc.Obs.add("weave:service:backoff:interval", function observe(subject, data) {
@@ -853,12 +840,12 @@ add_test(function test_meta_global_login_server_maintenance_error() {
 add_test(function test_crypto_keys_login_server_maintenance_error() {
   // Test crypto/keys server maintenance errors are not reported.
   let server = sync_httpd_setup();
+  server.registerPathHandler("/2.0/storage/crypto/keys", service_unavailable);
   setUp();
 
   setBasicCredentials("broken.keys", "irrelevant", "irrelevant");
-  Service.serverURL = TEST_MAINTENANCE_URL;
-  Service.clusterURL = TEST_MAINTENANCE_URL;
-
+  Service.serverURL = TEST_SERVER_URL;
+  Service.clusterURL = TEST_CLUSTER_URL;
   // Force re-download of keys
   CollectionKeys.clear();
 
@@ -922,11 +909,12 @@ add_test(function test_sync_prolonged_server_maintenance_error() {
 add_test(function test_info_collections_login_prolonged_server_maintenance_error(){
   // Test info/collections prolonged server maintenance errors are reported.
   let server = sync_httpd_setup();
+  server.registerPathHandler("/2.0/info/collections", service_unavailable);
   setUp();
 
   setBasicCredentials("broken.info", "irrelevant", "irrelevant");
-  Service.serverURL = TEST_MAINTENANCE_URL;
-  Service.clusterURL = TEST_MAINTENANCE_URL;
+  Service.serverURL = TEST_SERVER_URL;
+  Service.clusterURL = TEST_CLUSTER_URL;
 
   let backoffInterval;
   Svc.Obs.add("weave:service:backoff:interval", function observe(subject, data) {
@@ -955,11 +943,12 @@ add_test(function test_info_collections_login_prolonged_server_maintenance_error
 add_test(function test_meta_global_login_prolonged_server_maintenance_error(){
   // Test meta/global prolonged server maintenance errors are reported.
   let server = sync_httpd_setup();
+  server.registerPathHandler("/2.0/storage/meta/global", service_unavailable);
   setUp();
 
   setBasicCredentials("broken.meta", "irrelevant", "irrelevant");
-  Service.serverURL = TEST_MAINTENANCE_URL;
-  Service.clusterURL = TEST_MAINTENANCE_URL;
+  Service.serverURL = TEST_SERVER_URL;
+  Service.clusterURL = TEST_CLUSTER_URL;
 
   let backoffInterval;
   Svc.Obs.add("weave:service:backoff:interval", function observe(subject, data) {
@@ -988,11 +977,12 @@ add_test(function test_meta_global_login_prolonged_server_maintenance_error(){
 add_test(function test_download_crypto_keys_login_prolonged_server_maintenance_error(){
   // Test crypto/keys prolonged server maintenance errors are reported.
   let server = sync_httpd_setup();
+  server.registerPathHandler("/2.0/storage/crypto/keys", service_unavailable);
   setUp();
 
   setBasicCredentials("broken.keys", "irrelevant", "irrelevant");
-  Service.serverURL = TEST_MAINTENANCE_URL;
-  Service.clusterURL = TEST_MAINTENANCE_URL;
+  Service.serverURL = TEST_SERVER_URL;
+  Service.clusterURL = TEST_CLUSTER_URL;
   // Force re-download of keys
   CollectionKeys.clear();
 
@@ -1023,11 +1013,12 @@ add_test(function test_download_crypto_keys_login_prolonged_server_maintenance_e
 add_test(function test_upload_crypto_keys_login_prolonged_server_maintenance_error(){
   // Test crypto/keys prolonged server maintenance errors are reported.
   let server = sync_httpd_setup();
+  server.registerPathHandler("/2.0/storage/crypto/keys", service_unavailable);
 
   // Start off with an empty account, do not upload a key.
   setBasicCredentials("broken.keys", "ilovejane", "abcdeabcdeabcdeabcdeabcdea");
-  Service.serverURL = TEST_MAINTENANCE_URL;
-  Service.clusterURL = TEST_MAINTENANCE_URL;
+  Service.serverURL = TEST_SERVER_URL;
+  Service.clusterURL = TEST_CLUSTER_URL;
 
   let backoffInterval;
   Svc.Obs.add("weave:service:backoff:interval", function observe(subject, data) {
@@ -1057,11 +1048,13 @@ add_test(function test_wipeServer_login_prolonged_server_maintenance_error(){
   // Test that we report prolonged server maintenance errors that occur whilst
   // wiping the server.
   let server = sync_httpd_setup();
+  server.registerPathHandler("/2.0/storage", service_unavailable);
+  server.registerPathHandler("/2.0/storage/catapult", service_unavailable);
 
   // Start off with an empty account, do not upload a key.
   setBasicCredentials("broken.wipe", "ilovejane", "abcdeabcdeabcdeabcdeabcdea");
-  Service.serverURL = TEST_MAINTENANCE_URL;
-  Service.clusterURL = TEST_MAINTENANCE_URL;
+  Service.serverURL = TEST_SERVER_URL;
+  Service.clusterURL = TEST_CLUSTER_URL;
 
   let backoffInterval;
   Svc.Obs.add("weave:service:backoff:interval", function observe(subject, data) {
@@ -1091,11 +1084,12 @@ add_test(function test_wipeRemote_prolonged_server_maintenance_error(){
   // Test that we report prolonged server maintenance errors that occur whilst
   // wiping all remote devices.
   let server = sync_httpd_setup();
+  server.registerPathHandler("/2.0/storage/catapult", service_unavailable);
 
   server.registerPathHandler("/1.1/broken.wipe/storage/catapult", service_unavailable);
   setBasicCredentials("broken.wipe", "ilovejane", "abcdeabcdeabcdeabcdeabcdea");
-  Service.serverURL = TEST_MAINTENANCE_URL;
-  Service.clusterURL = TEST_MAINTENANCE_URL;
+  Service.serverURL = TEST_SERVER_URL;
+  Service.clusterURL = TEST_CLUSTER_URL;
   generateAndUploadKeys();
 
   let engine = Engines.get("catapult");
@@ -1159,11 +1153,12 @@ add_test(function test_info_collections_login_syncAndReportErrors_server_mainten
   // Test info/collections server maintenance errors are reported
   // when calling syncAndReportErrors.
   let server = sync_httpd_setup();
+  server.registerPathHandler("/2.0/info/collections", service_unavailable);
   setUp();
 
   setBasicCredentials("broken.info", "irrelevant", "irrelevant");
-  Service.serverURL = TEST_MAINTENANCE_URL;
-  Service.clusterURL = TEST_MAINTENANCE_URL;
+  Service.serverURL = TEST_SERVER_URL;
+  Service.clusterURL = TEST_CLUSTER_URL;
 
   let backoffInterval;
   Svc.Obs.add("weave:service:backoff:interval", function observe(subject, data) {
@@ -1193,11 +1188,12 @@ add_test(function test_meta_global_login_syncAndReportErrors_server_maintenance_
   // Test meta/global server maintenance errors are reported
   // when calling syncAndReportErrors.
   let server = sync_httpd_setup();
+  server.registerPathHandler("/2.0/storage/meta/global", service_unavailable);
   setUp();
 
   setBasicCredentials("broken.meta", "irrelevant", "irrelevant");
-  Service.serverURL = TEST_MAINTENANCE_URL;
-  Service.clusterURL = TEST_MAINTENANCE_URL;
+  Service.serverURL = TEST_SERVER_URL;
+  Service.clusterURL = TEST_CLUSTER_URL;
 
   let backoffInterval;
   Svc.Obs.add("weave:service:backoff:interval", function observe(subject, data) {
@@ -1227,11 +1223,12 @@ add_test(function test_download_crypto_keys_login_syncAndReportErrors_server_mai
   // Test crypto/keys server maintenance errors are reported
   // when calling syncAndReportErrors.
   let server = sync_httpd_setup();
+  server.registerPathHandler("/2.0/storage/crypto/keys", service_unavailable);
   setUp();
 
   setBasicCredentials("broken.keys", "irrelevant", "irrelevant");
-  Service.serverURL = TEST_MAINTENANCE_URL;
-  Service.clusterURL = TEST_MAINTENANCE_URL;
+  Service.serverURL = TEST_SERVER_URL;
+  Service.clusterURL = TEST_CLUSTER_URL;
   // Force re-download of keys
   CollectionKeys.clear();
 
@@ -1263,11 +1260,12 @@ add_test(function test_upload_crypto_keys_login_syncAndReportErrors_server_maint
   // Test crypto/keys server maintenance errors are reported
   // when calling syncAndReportErrors.
   let server = sync_httpd_setup();
+  server.registerPathHandler("/2.0/storage/crypto/keys", service_unavailable);
 
   // Start off with an empty account, do not upload a key.
   setBasicCredentials("broken.keys", "ilovejane", "abcdeabcdeabcdeabcdeabcdea");
-  Service.serverURL = TEST_MAINTENANCE_URL;
-  Service.clusterURL = TEST_MAINTENANCE_URL;
+  Service.serverURL = TEST_SERVER_URL;
+  Service.clusterURL = TEST_CLUSTER_URL;
 
   let backoffInterval;
   Svc.Obs.add("weave:service:backoff:interval", function observe(subject, data) {
@@ -1297,11 +1295,13 @@ add_test(function test_wipeServer_login_syncAndReportErrors_server_maintenance_e
   // Test crypto/keys server maintenance errors are reported
   // when calling syncAndReportErrors.
   let server = sync_httpd_setup();
+  server.registerPathHandler("/2.0/storage", service_unavailable);
+  server.registerPathHandler("/2.0/storage/catapult", service_unavailable);
 
   // Start off with an empty account, do not upload a key.
   setBasicCredentials("broken.wipe", "ilovejane", "abcdeabcdeabcdeabcdeabcdea");
-  Service.serverURL = TEST_MAINTENANCE_URL;
-  Service.clusterURL = TEST_MAINTENANCE_URL;
+  Service.serverURL = TEST_SERVER_URL;
+  Service.clusterURL = TEST_CLUSTER_URL;
 
   let backoffInterval;
   Svc.Obs.add("weave:service:backoff:interval", function observe(subject, data) {
@@ -1331,10 +1331,12 @@ add_test(function test_wipeRemote_syncAndReportErrors_server_maintenance_error()
   // Test that we report prolonged server maintenance errors that occur whilst
   // wiping all remote devices.
   let server = sync_httpd_setup();
+  server.registerPathHandler("/2.0/storage", service_unavailable);
+  server.registerPathHandler("/2.0/storage/catapult", service_unavailable);
 
   setBasicCredentials("broken.wipe", "ilovejane", "abcdeabcdeabcdeabcdeabcdea");
-  Service.serverURL = TEST_MAINTENANCE_URL;
-  Service.clusterURL = TEST_MAINTENANCE_URL;
+  Service.serverURL = TEST_SERVER_URL;
+  Service.clusterURL = TEST_CLUSTER_URL;
   generateAndUploadKeys();
 
   let engine = Engines.get("catapult");
@@ -1398,11 +1400,12 @@ add_test(function test_info_collections_login_syncAndReportErrors_prolonged_serv
   // Test info/collections server maintenance errors are reported
   // when calling syncAndReportErrors.
   let server = sync_httpd_setup();
+  server.registerPathHandler("/2.0/info/collections", service_unavailable);
   setUp();
 
   setBasicCredentials("broken.info", "irrelevant", "irrelevant");
-  Service.serverURL = TEST_MAINTENANCE_URL;
-  Service.clusterURL = TEST_MAINTENANCE_URL;
+  Service.serverURL = TEST_SERVER_URL;
+  Service.clusterURL = TEST_CLUSTER_URL;
 
   let backoffInterval;
   Svc.Obs.add("weave:service:backoff:interval", function observe(subject, data) {
@@ -1432,11 +1435,12 @@ add_test(function test_meta_global_login_syncAndReportErrors_prolonged_server_ma
   // Test meta/global server maintenance errors are reported
   // when calling syncAndReportErrors.
   let server = sync_httpd_setup();
+  server.registerPathHandler("/2.0/storage/meta/global", service_unavailable);
   setUp();
 
   setBasicCredentials("broken.meta", "irrelevant", "irrelevant");
-  Service.serverURL = TEST_MAINTENANCE_URL;
-  Service.clusterURL = TEST_MAINTENANCE_URL;
+  Service.serverURL = TEST_SERVER_URL;
+  Service.clusterURL = TEST_CLUSTER_URL;
 
   let backoffInterval;
   Svc.Obs.add("weave:service:backoff:interval", function observe(subject, data) {
@@ -1466,11 +1470,12 @@ add_test(function test_download_crypto_keys_login_syncAndReportErrors_prolonged_
   // Test crypto/keys server maintenance errors are reported
   // when calling syncAndReportErrors.
   let server = sync_httpd_setup();
+  server.registerPathHandler("/2.0/storage/crypto/keys", service_unavailable);
   setUp();
 
   setBasicCredentials("broken.keys", "irrelevant", "irrelevant");
-  Service.serverURL = TEST_MAINTENANCE_URL;
-  Service.clusterURL = TEST_MAINTENANCE_URL;
+  Service.serverURL = TEST_SERVER_URL;
+  Service.clusterURL = TEST_CLUSTER_URL;
   // Force re-download of keys
   CollectionKeys.clear();
 
@@ -1502,11 +1507,12 @@ add_test(function test_upload_crypto_keys_login_syncAndReportErrors_prolonged_se
   // Test crypto/keys server maintenance errors are reported
   // when calling syncAndReportErrors.
   let server = sync_httpd_setup();
+  server.registerPathHandler("/2.0/storage/crypto/keys", service_unavailable);
 
   // Start off with an empty account, do not upload a key.
   setBasicCredentials("broken.keys", "ilovejane", "abcdeabcdeabcdeabcdeabcdea");
-  Service.serverURL = TEST_MAINTENANCE_URL;
-  Service.clusterURL = TEST_MAINTENANCE_URL;
+  Service.serverURL = TEST_SERVER_URL;
+  Service.clusterURL = TEST_CLUSTER_URL;
 
   let backoffInterval;
   Svc.Obs.add("weave:service:backoff:interval", function observe(subject, data) {
@@ -1536,11 +1542,13 @@ add_test(function test_wipeServer_login_syncAndReportErrors_prolonged_server_mai
   // Test crypto/keys server maintenance errors are reported
   // when calling syncAndReportErrors.
   let server = sync_httpd_setup();
+  server.registerPathHandler("/2.0/storage", service_unavailable);
+  server.registerPathHandler("/2.0/storage/catapult", service_unavailable);
 
   // Start off with an empty account, do not upload a key.
   setBasicCredentials("broken.wipe", "ilovejane", "abcdeabcdeabcdeabcdeabcdea");
-  Service.serverURL = TEST_MAINTENANCE_URL;
-  Service.clusterURL = TEST_MAINTENANCE_URL;
+  Service.serverURL = TEST_SERVER_URL;
+  Service.clusterURL = TEST_CLUSTER_URL;
 
   let backoffInterval;
   Svc.Obs.add("weave:service:backoff:interval", function observe(subject, data) {

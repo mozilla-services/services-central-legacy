@@ -64,6 +64,15 @@ function WBORecord(collection, id) {
 WBORecord.prototype = {
   _logName: "Sync.Record.WBO",
 
+  get modified() {
+    return this.data.modified;
+  },
+
+  set modified(value) {
+    Utils.ensureMillisecondsTimestamp(value);
+    this.data.modified = value;
+  },
+
   get sortindex() {
     if (this.data.sortindex)
       return this.data.sortindex;
@@ -126,7 +135,7 @@ WBORecord.prototype = {
   }
 };
 
-Utils.deferGetSet(WBORecord, "data", ["id", "modified", "sortindex", "payload"]);
+Utils.deferGetSet(WBORecord, "data", ["id", "sortindex", "payload"]);
 
 XPCOMUtils.defineLazyGetter(this, "Records", function () {
   return new RecordManager();
@@ -315,6 +324,16 @@ function CollectionKeyManager() {
 // TODO: persist this locally as an Identity. Bug 610913.
 // Note that the last modified time needs to be preserved.
 CollectionKeyManager.prototype = {
+  _lastModified: null,
+
+  get lastModified() {
+    return this._lastModified;
+  },
+
+  set lastModified(value) {
+    Utils.ensureMillisecondsTimestamp(value);
+    this._lastModified = value;
+  },
 
   // Return information about old vs new keys:
   // * same: true if two collections are equal
@@ -445,9 +464,11 @@ CollectionKeyManager.prototype = {
   // * Otherwise, return false -- we were up-to-date.
   //
   setContents: function setContents(payload, modified) {
+    if (!modified) {
+      throw new Error("No modified time provided to setContents.");
+    }
 
-    if (!modified)
-      throw "No modified time provided to setContents.";
+    Utils.ensureMillisecondsTimestamp(modified);
 
     let self = this;
 
@@ -594,6 +615,7 @@ Collection.prototype = {
   // get only items modified before some date
   get older() { return this._older; },
   set older(value) {
+    Utils.ensureMillisecondsTimestamp(value);
     this._older = value;
     this._rebuildURL();
   },
@@ -601,6 +623,7 @@ Collection.prototype = {
   // get only items modified since some date
   get newer() { return this._newer; },
   set newer(value) {
+    Utils.ensureMillisecondsTimestamp(value);
     this._newer = value;
     this._rebuildURL();
   },

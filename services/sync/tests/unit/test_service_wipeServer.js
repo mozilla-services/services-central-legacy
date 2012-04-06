@@ -19,7 +19,7 @@ FakeCollection.prototype = {
           body = timestamp;
           self.deleted = true;
       }
-      response.setHeader("X-Weave-Timestamp", timestamp);
+      response.setHeader("X-Timestamp", timestamp);
       response.setStatusLine(request.httpVersion, 200, "OK");
       response.bodyOutputStream.write(body, body.length);
     };
@@ -48,9 +48,9 @@ add_test(function test_wipeServer_list_success() {
   let diesel_coll = new FakeCollection();
 
   let server = httpd_setup({
-    "/1.1/johndoe/storage/steam": steam_coll.handler(),
-    "/1.1/johndoe/storage/diesel": diesel_coll.handler(),
-    "/1.1/johndoe/storage/petrol": httpd_handler(404, "Not Found")
+    "/2.0/storage/steam": steam_coll.handler(),
+    "/2.0/storage/diesel": diesel_coll.handler(),
+    "/2.0/storage/petrol": httpd_handler(404, "Not Found")
   });
 
   try {
@@ -82,9 +82,9 @@ add_test(function test_wipeServer_list_503() {
   let diesel_coll = new FakeCollection();
 
   let server = httpd_setup({
-    "/1.1/johndoe/storage/steam": steam_coll.handler(),
-    "/1.1/johndoe/storage/petrol": httpd_handler(503, "Service Unavailable"),
-    "/1.1/johndoe/storage/diesel": diesel_coll.handler()
+    "/2.0/storage/steam": steam_coll.handler(),
+    "/2.0/storage/petrol": httpd_handler(503, "Service Unavailable"),
+    "/2.0/storage/diesel": diesel_coll.handler()
   });
 
   try {
@@ -126,13 +126,12 @@ add_test(function test_wipeServer_all_success() {
   let serverTimestamp;
   function storageHandler(request, response) {
     do_check_eq("DELETE", request.method);
-    do_check_true(request.hasHeader("X-Confirm-Delete"));
     deleted = true;
     serverTimestamp = return_timestamp(request, response);
   }
 
   let server = httpd_setup({
-    "/1.1/johndoe/storage": storageHandler
+    "/2.0/storage": storageHandler
   });
   setUpTestFixtures();
 
@@ -156,15 +155,14 @@ add_test(function test_wipeServer_all_404() {
   let serverTimestamp;
   function storageHandler(request, response) {
     do_check_eq("DELETE", request.method);
-    do_check_true(request.hasHeader("X-Confirm-Delete"));
     deleted = true;
     serverTimestamp = new_timestamp();
-    response.setHeader("X-Weave-Timestamp", "" + serverTimestamp);
+    response.setHeader("X-Timestamp", "" + serverTimestamp);
     response.setStatusLine(request.httpVersion, 404, "Not Found");
   }
 
   let server = httpd_setup({
-    "/1.1/johndoe/storage": storageHandler
+    "/2.0/storage": storageHandler
   });
   setUpTestFixtures();
 
@@ -186,12 +184,11 @@ add_test(function test_wipeServer_all_503() {
    */
   function storageHandler(request, response) {
     do_check_eq("DELETE", request.method);
-    do_check_true(request.hasHeader("X-Confirm-Delete"));
     response.setStatusLine(request.httpVersion, 503, "Service Unavailable");
   }
 
   let server = httpd_setup({
-    "/1.1/johndoe/storage": storageHandler
+    "/2.0/storage": storageHandler
   });
   setUpTestFixtures();
 

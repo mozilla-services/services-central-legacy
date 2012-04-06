@@ -23,11 +23,14 @@ function shared_setup() {
   Service.clusterURL = TEST_CLUSTER_URL;
 
   // Make sure RotaryEngine is the only one we sync.
+  let now = Date.now();
   Engines._engines = {};
   Engines.register(RotaryEngine);
   let engine = Engines.get("rotary");
   engine.enabled = true;
-  engine.lastSync = 123; // Needs to be non-zero so that tracker is queried.
+
+  // Needs to be non-0 so tracker is queried.
+  engine.lastSync = now - 24 * 60 * 60 * 1000;
   engine._store.items = {flying: "LNER Class A3 4472",
                          scotsman: "Flying Scotsman"};
   engine._tracker.addChangedID('scotsman', 0);
@@ -69,11 +72,11 @@ add_test(function hmac_error_during_404() {
   let upd = collectionsHelper.with_updated_collection;
   let collections = collectionsHelper.collections;
   let handlers = {
-    "/1.1/foo/info/collections": collectionsHelper.handler,
-    "/1.1/foo/storage/meta/global": upd("meta", global.handler()),
-    "/1.1/foo/storage/crypto/keys": upd("crypto", keys404Handler),
-    "/1.1/foo/storage/clients": upd("clients", clientsColl.handler()),
-    "/1.1/foo/storage/rotary": upd("rotary", rotaryColl.handler())
+    "/2.0/info/collections": collectionsHelper.handler,
+    "/2.0/storage/meta/global": upd("meta", global.handler()),
+    "/2.0/storage/crypto/keys": upd("crypto", keys404Handler),
+    "/2.0/storage/clients": upd("clients", clientsColl.handler()),
+    "/2.0/storage/rotary": upd("rotary", rotaryColl.handler())
   };
 
   let server = sync_httpd_setup(handlers);
@@ -143,12 +146,12 @@ add_test(function hmac_error_during_node_reassignment() {
   }
 
   let handlers = {
-    "/user/1.0/foo/node/weave":     sameNodeHandler,
-    "/1.1/foo/info/collections":    collectionsHelper.handler,
-    "/1.1/foo/storage/meta/global": upd("meta", global.handler()),
-    "/1.1/foo/storage/crypto/keys": upd("crypto", keysWBO.handler()),
-    "/1.1/foo/storage/clients":     upd401("clients", clientsColl.handler()),
-    "/1.1/foo/storage/rotary":      upd("rotary", rotaryColl.handler())
+    "/user/1.0/foo/node/weave": sameNodeHandler,
+    "/2.0/info/collections":    collectionsHelper.handler,
+    "/2.0/storage/meta/global": upd("meta", global.handler()),
+    "/2.0/storage/crypto/keys": upd("crypto", keysWBO.handler()),
+    "/2.0/storage/clients":     upd401("clients", clientsColl.handler()),
+    "/2.0/storage/rotary":      upd("rotary", rotaryColl.handler())
   };
 
   let server = sync_httpd_setup(handlers);

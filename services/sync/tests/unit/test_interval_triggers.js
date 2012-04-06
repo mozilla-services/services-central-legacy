@@ -23,11 +23,11 @@ function sync_httpd_setup() {
   let upd = collectionsHelper.with_updated_collection;
 
   return httpd_setup({
-    "/1.1/johndoe/storage/meta/global": upd("meta", global.handler()),
-    "/1.1/johndoe/info/collections": collectionsHelper.handler,
-    "/1.1/johndoe/storage/crypto/keys":
+    "/2.0/storage/meta/global": upd("meta", global.handler()),
+    "/2.0/info/collections": collectionsHelper.handler,
+    "/2.0/storage/crypto/keys":
       upd("crypto", (new ServerWBO("keys")).handler()),
-    "/1.1/johndoe/storage/clients": upd("clients", clientsColl.handler())
+    "/2.0/storage/clients": upd("clients", clientsColl.handler())
   });
 }
 

@@ -180,7 +180,7 @@ AddonsEngine.prototype = {
       changes[id] = modified;
     }
 
-    let lastSyncDate = new Date(this.lastSync * 1000);
+    let lastSyncDate = new Date(this.lastSync);
 
     // The reconciler should have been refreshed at the beginning of a sync and
     // we assume this function is only called from within a sync.
@@ -205,7 +205,7 @@ AddonsEngine.prototype = {
 
       this._log.debug("Adding changed add-on from changes log: " + id);
       let addon = addons[id];
-      changes[addon.guid] = changeTime.getTime() / 1000;
+      changes[addon.guid] = changeTime.getTime();
     }
 
     return changes;
@@ -240,7 +240,7 @@ AddonsEngine.prototype = {
    * highly unlikely to occur. Still, we exercise defense just in case.
    */
   _syncCleanup: function _syncCleanup() {
-    let ms = 1000 * this.lastSync - PRUNE_ADDON_CHANGES_THRESHOLD;
+    let ms = this.lastSync - PRUNE_ADDON_CHANGES_THRESHOLD;
     this._reconciler.pruneChangesBeforeDate(new Date(ms));
 
     SyncEngine.prototype._syncCleanup.call(this);
@@ -417,7 +417,7 @@ AddonsStore.prototype = {
       return record;
     }
 
-    record.modified = addon.modified.getTime() / 1000;
+    record.modified = addon.modified.getTime();
 
     record.addonID = addon.id;
     record.enabled = addon.enabled;
@@ -1112,7 +1112,7 @@ AddonsTracker.prototype = {
       return;
     }
 
-    this.addChangedID(addon.guid, date.getTime() / 1000);
+    this.addChangedID(addon.guid, date.getTime());
     this.score += SCORE_INCREMENT_XLARGE;
   },
 

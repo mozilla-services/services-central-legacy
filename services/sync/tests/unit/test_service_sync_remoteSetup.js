@@ -38,7 +38,6 @@ function run_test() {
    */
   function storageHandler(request, response) {
     do_check_eq("DELETE", request.method);
-    do_check_true(request.hasHeader("X-Confirm-Delete"));
 
     _("Wiping out all collections.");
     cryptoColl.delete({});
@@ -53,13 +52,13 @@ function run_test() {
   }
 
   let server = httpd_setup({
-    "/1.1/johndoe/storage": storageHandler,
-    "/1.1/johndoe/storage/crypto/keys": upd("crypto", keysWBO.handler()),
-    "/1.1/johndoe/storage/crypto": upd("crypto", cryptoColl.handler()),
-    "/1.1/johndoe/storage/clients": upd("clients", clients.handler()),
-    "/1.1/johndoe/storage/meta/global": upd("meta", wasCalledHandler(meta_global)),
-    "/1.1/johndoe/storage/meta": upd("meta", wasCalledHandler(metaColl)),
-    "/1.1/johndoe/info/collections": collectionsHelper.handler
+    "/2.0/storage": storageHandler,
+    "/2.0/storage/crypto/keys": upd("crypto", keysWBO.handler()),
+    "/2.0/storage/crypto": upd("crypto", cryptoColl.handler()),
+    "/2.0/storage/clients": upd("clients", clients.handler()),
+    "/2.0/storage/meta/global": upd("meta", wasCalledHandler(meta_global)),
+    "/2.0/storage/meta": upd("meta", wasCalledHandler(metaColl)),
+    "/2.0/info/collections": collectionsHelper.handler
   });
 
   try {

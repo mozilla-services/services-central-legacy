@@ -48,11 +48,11 @@ const Cr = Components.results;
 const Cu = Components.utils;
 
 Cu.import("resource://services-common/async.js");
-Cu.import("resource://services-sync/constants.js");
+Cu.import("resource://services-common/log4moz.js");
 Cu.import("resource://services-common/observers.js");
 Cu.import("resource://services-common/preferences.js");
+Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/identity.js");
-Cu.import("resource://services-common/log4moz.js");
 Cu.import("resource://services-sync/util.js");
 
 /*
@@ -90,7 +90,7 @@ AsyncResource.prototype = {
 
   // ** {{{ AsyncResource.serverTime }}} **
   //
-  // Caches the latest server timestamp (X-Weave-Timestamp header).
+  // Caches the latest server timestamp (X-Timestamp header).
   serverTime: null,
 
   /**
@@ -209,8 +209,8 @@ AsyncResource.prototype = {
       if (key == 'authorization')
         this._log.trace("HTTP Header " + key + ": ***** (suppressed)");
       else
-        this._log.trace("HTTP Header " + key + ": " + headers[key]);
-      channel.setRequestHeader(key, headers[key], false);
+        this._log.trace("HTTP Header " + key + ": " + value);
+      channel.setRequestHeader(key, value, false);
     }
     return channel;
   },
@@ -313,15 +313,7 @@ AsyncResource.prototype = {
         }
       });
 
-      // This is a server-side safety valve to allow slowing down
-      // clients without hurting performance.
-      if (headers["x-weave-backoff"])
-        Observers.notify("weave:service:backoff:interval",
-                         parseInt(headers["x-weave-backoff"], 10));
-
-      if (success && headers["x-weave-quota-remaining"])
-        Observers.notify("weave:service:quota:remaining",
-                         parseInt(headers["x-weave-quota-remaining"], 10));
+      SyncStorageRequest.prototype.processHeaders(success, headers);
     } catch (ex) {
       this._log.debug("Caught exception " + Utils.exceptionStr(ex) +
                       " visiting headers in _onComplete.");
@@ -481,7 +473,8 @@ ChannelListener.prototype = {
 
     // Save the latest server timestamp when possible.
     try {
-      AsyncResource.serverTime = channel.getResponseHeader("X-Weave-Timestamp") - 0;
+      AsyncResource.serverTime = channel.getResponseHeader("X-Timestamp") - 0;
+      Utils.ensureMillisecondsTimestamp(AsyncResource.serverTime);
     }
     catch(ex) {}
 

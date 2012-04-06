@@ -79,7 +79,7 @@ function prepareServer() {
 
   do_check_eq(Service.userAPI, "http://localhost:8080/user/1.0/");
   let server = new SyncServer();
-  server.registerUser("johndoe");
+  server.registerUser("johndoe", "ilovejane");
   server.start();
   return server;
 }

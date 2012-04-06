@@ -33,22 +33,22 @@ add_test(function test_processIncoming_mobile_history_batched() {
   let visitType = Ci.nsINavHistoryService.TRANSITION_LINK;
   for (var i = 0; i < 234; i++) {
     let id = 'record-no' + ("00" + i).slice(-3);
-    let modified = Date.now()/1000 - 60*(i+10);
+    let modified = Date.now() - 60000*(i+10);
     let payload = encryptPayload({
       id: id,
       histUri: "http://foo/bar?" + id,
         title: id,
         sortindex: i,
-        visits: [{date: (modified - 5) * 1000000, type: visitType}],
+        visits: [{date: (modified / 1000 - 5) * 1000000, type: visitType}],
         deleted: false});
-    
+
     let wbo = new ServerWBO(id, payload);
     wbo.modified = modified;
     collection.insertWBO(wbo);
   }
-  
+
   let server = sync_httpd_setup({
-      "/1.1/foo/storage/history": collection.handler()
+      "/2.0/storage/history": collection.handler()
   });
 
   let engine = new HistoryEngine("history");

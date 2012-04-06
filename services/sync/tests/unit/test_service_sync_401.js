@@ -23,9 +23,9 @@ function run_test() {
 
   do_test_pending();
   let server = httpd_setup({
-    "/1.1/johndoe/storage/crypto/keys": upd("crypto", new ServerWBO("keys").handler()),
-    "/1.1/johndoe/storage/meta/global": upd("meta",   new ServerWBO("global").handler()),
-    "/1.1/johndoe/info/collections":    login_handling(collectionsHelper.handler)
+    "/2.0/storage/crypto/keys": upd("crypto", new ServerWBO("keys").handler()),
+    "/2.0/storage/meta/global": upd("meta",   new ServerWBO("global").handler()),
+    "/2.0/info/collections":    login_handling(collectionsHelper.handler)
   });
 
   const GLOBAL_SCORE = 42;
@@ -35,7 +35,7 @@ function run_test() {
     new SyncTestingInfrastructure("johndoe", "ilovejane", "foo");
     SyncScheduler.globalScore = GLOBAL_SCORE;
     // Avoid daily ping
-    Weave.Svc.Prefs.set("lastPing", Math.floor(Date.now() / 1000));
+    Weave.Svc.Prefs.set("lastPing", Date.now().toString());
 
     let threw = false;
     Weave.Svc.Obs.add("weave:service:sync:error", function (subject, data) {

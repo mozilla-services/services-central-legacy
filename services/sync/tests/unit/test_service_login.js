@@ -42,30 +42,36 @@ add_test(function test_offline() {
 function setup() {
   Service.serverURL = TEST_SERVER_URL;
   Service.clusterURL = TEST_CLUSTER_URL;
+}
 
-  let janeHelper = track_collections_helper();
-  let janeU      = janeHelper.with_updated_collection;
-  let janeColls  = janeHelper.collections;
+function getHttpdJohn() {
   let johnHelper = track_collections_helper();
   let johnU      = johnHelper.with_updated_collection;
   let johnColls  = johnHelper.collections;
+  return httpd_setup({
+    "/2.0/info/collections": login_handling(johnHelper.handler),
+
+    "/2.0/storage/crypto/keys": johnU("crypto", new ServerWBO("keys").handler()),
+    "/2.0/storage/meta/global": johnU("meta",   new ServerWBO("global").handler()),
+  });
+}
+
+function getHttpdJane() {
+  let janeHelper = track_collections_helper();
+  let janeU      = janeHelper.with_updated_collection;
+  let janeColls  = janeHelper.collections;
 
   return httpd_setup({
-    "/1.1/johndoe/info/collections": login_handling(johnHelper.handler),
-    "/1.1/janedoe/info/collections": login_handling(janeHelper.handler),
-
-    // We need these handlers because we test login, and login
-    // is where keys are generated or fetched.
+    "/2.0/info/collections": login_handling(janeHelper.handler),
     // TODO: have Jane fetch her keys, not generate them...
-    "/1.1/johndoe/storage/crypto/keys": johnU("crypto", new ServerWBO("keys").handler()),
-    "/1.1/johndoe/storage/meta/global": johnU("meta",   new ServerWBO("global").handler()),
-    "/1.1/janedoe/storage/crypto/keys": janeU("crypto", new ServerWBO("keys").handler()),
-    "/1.1/janedoe/storage/meta/global": janeU("meta",   new ServerWBO("global").handler())
+    "/2.0/storage/crypto/keys": janeU("crypto", new ServerWBO("keys").handler()),
+    "/2.0/storage/meta/global": janeU("meta",   new ServerWBO("global").handler())
   });
 }
 
 add_test(function test_login_logout() {
-  let server = setup();
+  setup();
+  let server = getHttpdJohn();
 
   try {
     _("Force the initial state.");
@@ -93,30 +99,6 @@ add_test(function test_login_logout() {
     do_check_eq(Status.login, LOGIN_SUCCEEDED);
     do_check_true(Service.isLoggedIn);
 
-    _("We can also pass username, password and passphrase to login().");
-    Service.login("janedoe", "incorrectpassword", "bar");
-    setBasicCredentials("janedoe", "incorrectpassword", "bar");
-    do_check_eq(Status.service, LOGIN_FAILED);
-    do_check_eq(Status.login, LOGIN_FAILED_LOGIN_REJECTED);
-    do_check_false(Service.isLoggedIn);
-
-    _("Try again with correct password.");
-    Service.login("janedoe", "ilovejohn");
-    do_check_eq(Status.service, STATUS_OK);
-    do_check_eq(Status.login, LOGIN_SUCCEEDED);
-    do_check_true(Service.isLoggedIn);
-
-    _("Calling login() with parameters when the client is unconfigured sends notification.");
-    let notified = false;
-    Svc.Obs.add("weave:service:setup-complete", function() {
-      notified = true;
-    });
-    setBasicCredentials(null, null, null);
-    Service.login("janedoe", "ilovejohn", "bar");
-    do_check_true(notified);
-    do_check_eq(Status.service, STATUS_OK);
-    do_check_eq(Status.login, LOGIN_SUCCEEDED);
-    do_check_true(Service.isLoggedIn);
 
     _("Logout.");
     Service.logout();
@@ -132,8 +114,62 @@ add_test(function test_login_logout() {
   }
 });
 
+add_test(function test_login_incorrect_password() {
+  setup();
+
+  let server = getHttpdJane();
+
+  try {
+    _("We can also pass username, password and passphrase to login().");
+    Service.login("janedoe", "incorrectpassword", "bar");
+    setBasicCredentials("janedoe", "incorrectpassword", "bar");
+    do_check_eq(Status.service, LOGIN_FAILED);
+    do_check_eq(Status.login, LOGIN_FAILED_LOGIN_REJECTED);
+    do_check_false(Service.isLoggedIn);
+
+    _("Try again with correct password.");
+    Service.login("janedoe", "ilovejohn");
+    do_check_eq(Status.service, STATUS_OK);
+    do_check_eq(Status.login, LOGIN_SUCCEEDED);
+    do_check_true(Service.isLoggedIn);
+
+    Service.logout();
+    do_check_false(Service.isLoggedIn);
+  } finally {
+    Svc.Prefs.resetBranch("");
+    server.stop(run_next_test);
+  }
+});
+
+add_test(function test_login_notification() {
+  _("Calling login() with parameters when the client is unconfigured sends notification.");
+  setup();
+  let server = getHttpdJane();
+
+  try {
+    let notified = false;
+    Svc.Obs.add("weave:service:setup-complete", function() {
+      notified = true;
+    });
+    setBasicCredentials(null, null, null);
+    Service.login("janedoe", "ilovejohn", "bar");
+    do_check_true(notified);
+    do_check_eq(Status.service, STATUS_OK);
+    do_check_eq(Status.login, LOGIN_SUCCEEDED);
+    do_check_true(Service.isLoggedIn);
+
+    Service.logout();
+    do_check_false(Service.isLoggedIn);
+  } finally {
+    Svc.Prefs.resetBranch("");
+    server.stop(run_next_test);
+  }
+});
+
 add_test(function test_login_on_sync() {
-  let server = setup();
+  setup();
+
+  let server = getHttpdJohn();
   setBasicCredentials("johndoe", "ilovejane", "bar");
 
   try {

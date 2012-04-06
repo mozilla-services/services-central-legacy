@@ -101,28 +101,28 @@ const TIMESTAMP = 1274380461;
 
 function server_timestamp(metadata, response) {
   let body = "Thank you for your request";
-  response.setHeader("X-Weave-Timestamp", ''+TIMESTAMP, false);
+  response.setHeader("X-Timestamp", ''+TIMESTAMP, false);
   response.setStatusLine(metadata.httpVersion, 200, "OK");
   response.bodyOutputStream.write(body, body.length);
 }
 
 function server_backoff(metadata, response) {
   let body = "Hey, back off!";
-  response.setHeader("X-Weave-Backoff", '600', false);
+  response.setHeader("X-Backoff", '600', false);
   response.setStatusLine(metadata.httpVersion, 200, "OK");
   response.bodyOutputStream.write(body, body.length);  
 }
 
 function server_quota_notice(request, response) {
   let body = "You're approaching quota.";
-  response.setHeader("X-Weave-Quota-Remaining", '1048576', false);
+  response.setHeader("X-Quota-Remaining", '1048576', false);
   response.setStatusLine(request.httpVersion, 200, "OK");
   response.bodyOutputStream.write(body, body.length);  
 }
 
 function server_quota_error(request, response) {
   let body = "14";
-  response.setHeader("X-Weave-Quota-Remaining", '-1024', false);
+  response.setHeader("X-Quota-Remaining", '-1024', false);
   response.setStatusLine(request.httpVersion, 400, "OK");
   response.bodyOutputStream.write(body, body.length);  
 }
@@ -258,16 +258,6 @@ add_test(function test_get() {
 
     run_next_test();
   });
-});
-
-add_test(function test_basicauth() {
-  _("Test that the BasicAuthenticator doesn't screw up header case.");
-  let res1 = new AsyncResource("http://localhost:8080/foo");
-  res1.setHeader("Authorization", "Basic foobar");
-  do_check_eq(res1._headers["authorization"], "Basic foobar");
-  do_check_eq(res1.headers["authorization"], "Basic foobar");
-
-  run_next_test();
 });
 
 add_test(function test_get_protected_fail() {
@@ -439,9 +429,9 @@ add_test(function test_json_body() {
 });
 
 add_test(function test_weave_timestamp() {
-  _("X-Weave-Timestamp header updates AsyncResource.serverTime");
+  _("X-Timestamp header updates AsyncResource.serverTime");
   // Before having received any response containing the
-  // X-Weave-Timestamp header, AsyncResource.serverTime is null.
+  // X-Timestamp header, AsyncResource.serverTime is null.
   do_check_eq(AsyncResource.serverTime, null);
   let res8 = new AsyncResource("http://localhost:8080/timestamp");
   res8.get(function (error, content) {
@@ -544,7 +534,7 @@ add_test(function test_post_override_content_type() {
 });
 
 add_test(function test_weave_backoff() {
-  _("X-Weave-Backoff header notifies observer");
+  _("X-Backoff header notifies observer");
   let backoffInterval;
   function onBackoff(subject, data) {
     backoffInterval = subject;
@@ -560,7 +550,7 @@ add_test(function test_weave_backoff() {
 });
 
 add_test(function test_quota_error() {
-  _("X-Weave-Quota-Remaining header notifies observer on successful requests.");
+  _("X-Quota-Remaining header notifies observer on successful requests.");
   let res10 = new AsyncResource("http://localhost:8080/quota-error");
   res10.get(function (error, content) {
     do_check_eq(error, null);

@@ -49,19 +49,19 @@ let collectionsHelper = track_collections_helper();
 let upd = collectionsHelper.with_updated_collection;
 
 function sync_httpd_setup(handlers) {
-    
-  handlers["/1.1/johndoe/info/collections"] = collectionsHelper.handler;
+
+  handlers["/2.0/info/collections"] = collectionsHelper.handler;
   delete collectionsHelper.collections.crypto;
   delete collectionsHelper.collections.meta;
-  
+
   let cr = new ServerWBO("keys");
-  handlers["/1.1/johndoe/storage/crypto/keys"] =
+  handlers["/2.0/storage/crypto/keys"] =
     upd("crypto", cr.handler());
-  
+
   let cl = new ServerCollection();
-  handlers["/1.1/johndoe/storage/clients"] =
+  handlers["/2.0/storage/clients"] =
     upd("clients", cl.handler());
-  
+
   return httpd_setup(handlers);
 }
 
@@ -91,8 +91,8 @@ add_test(function test_newAccount() {
   _("Test: New account does not disable locally enabled engines.");
   let engine = Engines.get("steam");
   let server = sync_httpd_setup({
-    "/1.1/johndoe/storage/meta/global": new ServerWBO("global", {}).handler(),
-    "/1.1/johndoe/storage/steam": new ServerWBO("steam", {}).handler()
+    "/2.0/storage/meta/global": new ServerWBO("global", {}).handler(),
+    "/2.0/storage/steam": new ServerWBO("steam", {}).handler()
   });
   setUp();
 
@@ -121,8 +121,8 @@ add_test(function test_enabledLocally() {
                                          storageVersion: STORAGE_VERSION,
                                          engines: {}});
   let server = sync_httpd_setup({
-    "/1.1/johndoe/storage/meta/global": metaWBO.handler(),
-    "/1.1/johndoe/storage/steam": new ServerWBO("steam", {}).handler()
+    "/2.0/storage/meta/global": metaWBO.handler(),
+    "/2.0/storage/steam": new ServerWBO("steam", {}).handler()
   });
   setUp();
 
@@ -157,8 +157,8 @@ add_test(function test_disabledLocally() {
   let steamCollection = new ServerWBO("steam", PAYLOAD);
 
   let server = sync_httpd_setup({
-    "/1.1/johndoe/storage/meta/global": metaWBO.handler(),
-    "/1.1/johndoe/storage/steam": steamCollection.handler()
+    "/2.0/storage/meta/global": metaWBO.handler(),
+    "/2.0/storage/steam": steamCollection.handler()
   });
   setUp();
 
@@ -206,8 +206,8 @@ add_test(function test_disabledLocally_wipe503() {
   }
 
   let server = sync_httpd_setup({
-    "/1.1/johndoe/storage/meta/global": metaWBO.handler(),
-    "/1.1/johndoe/storage/steam": service_unavailable
+    "/2.0/storage/meta/global": metaWBO.handler(),
+    "/2.0/storage/steam": service_unavailable
   });
   setUp();
 
@@ -241,10 +241,10 @@ add_test(function test_enabledRemotely() {
                       version: engine.version}}
   });
   let server = sync_httpd_setup({
-    "/1.1/johndoe/storage/meta/global":
+    "/2.0/storage/meta/global":
     upd("meta", metaWBO.handler()),
       
-    "/1.1/johndoe/storage/steam":
+    "/2.0/storage/steam":
     upd("steam", new ServerWBO("steam", {}).handler())
   });
   setUp();
@@ -255,7 +255,7 @@ add_test(function test_enabledRemotely() {
     _("Upload some keys to avoid a fresh start.");
     let wbo = CollectionKeys.generateNewKeysWBO();
     wbo.encrypt(Identity.syncKeyBundle);
-    do_check_eq(200, wbo.upload(Service.cryptoKeysURL).status);
+    do_check_eq(204, wbo.upload(Service.cryptoKeysURL).status);
 
     _("Engine is disabled.");
     do_check_false(engine.enabled);
@@ -282,10 +282,10 @@ add_test(function test_disabledRemotelyTwoClients() {
                                          storageVersion: STORAGE_VERSION,
                                          engines: {}});
   let server = sync_httpd_setup({
-    "/1.1/johndoe/storage/meta/global":
+    "/2.0/storage/meta/global":
     upd("meta", metaWBO.handler()),
-      
-    "/1.1/johndoe/storage/steam":
+
+    "/2.0/storage/steam":
     upd("steam", new ServerWBO("steam", {}).handler())
   });
   setUp();
@@ -326,8 +326,8 @@ add_test(function test_disabledRemotely() {
                                          storageVersion: STORAGE_VERSION,
                                          engines: {}});
   let server = sync_httpd_setup({
-    "/1.1/johndoe/storage/meta/global": metaWBO.handler(),
-    "/1.1/johndoe/storage/steam": new ServerWBO("steam", {}).handler()
+    "/2.0/storage/meta/global": metaWBO.handler(),
+    "/2.0/storage/steam": new ServerWBO("steam", {}).handler()
   });
   setUp();
 
@@ -358,9 +358,9 @@ add_test(function test_dependentEnginesEnabledLocally() {
                                          storageVersion: STORAGE_VERSION,
                                          engines: {}});
   let server = sync_httpd_setup({
-    "/1.1/johndoe/storage/meta/global": metaWBO.handler(),
-    "/1.1/johndoe/storage/steam": new ServerWBO("steam", {}).handler(),
-    "/1.1/johndoe/storage/stirling": new ServerWBO("stirling", {}).handler()
+    "/2.0/storage/meta/global": metaWBO.handler(),
+    "/2.0/storage/steam": new ServerWBO("steam", {}).handler(),
+    "/2.0/storage/stirling": new ServerWBO("stirling", {}).handler()
   });
   setUp();
 
@@ -402,9 +402,9 @@ add_test(function test_dependentEnginesDisabledLocally() {
   let stirlingCollection = new ServerWBO("stirling", PAYLOAD);
 
   let server = sync_httpd_setup({
-    "/1.1/johndoe/storage/meta/global":     metaWBO.handler(),
-    "/1.1/johndoe/storage/steam":           steamCollection.handler(),
-    "/1.1/johndoe/storage/stirling":        stirlingCollection.handler()
+    "/2.0/storage/meta/global":     metaWBO.handler(),
+    "/2.0/storage/steam":           steamCollection.handler(),
+    "/2.0/storage/stirling":        stirlingCollection.handler()
   });
   setUp();
 

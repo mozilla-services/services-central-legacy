@@ -86,6 +86,18 @@ let CommonUtils = {
   },
 
   /**
+   * Synchronously wait for the next tick before returning.
+   *
+   * This should ideally only be used in test code as spinning the event loop
+   * is frowned upon.
+   */
+  waitForNextTick: function waitForNextTick() {
+    let cb = Async.makeSpinningCallback();
+    this.nextTick(cb);
+    cb.wait();
+  },
+
+  /**
    * Return a timer that is scheduled to call the callback after waiting the
    * provided time or as soon as possible. The timer will be set as a property
    * of the provided object with the given timer name.

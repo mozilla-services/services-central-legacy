@@ -11,6 +11,7 @@ const modules = [
   "engines/prefs.js",
   "engines/tabs.js",
   "engines.js",
+  "global.js",
   "identity.js",
   "jpakeclient.js",
   "keys.js",
@@ -21,6 +22,7 @@ const modules = [
   "resource.js",
   "rest.js",
   "service.js",
+  "stages.js",
   "status.js",
   "util.js",
 ];

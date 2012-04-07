@@ -326,7 +326,7 @@ StorageServiceRequestError.prototype = {
  */
 function StorageServiceRequest() {
   this._log = Log4Moz.repository.getLogger("Sync.StorageService.Request");
-  this._log.level = Log4Moz.Level[Svc.Prefs.get("log.level")];
+  this._log.level = Log4Moz.Level[Prefs.get("log.level")];
 
   this._client = null;
   this._request = null;
@@ -848,7 +848,7 @@ StorageCollectionGetRequest.prototype = {
 function StorageServiceClient(baseURI) {
   this._log = Log4Moz.repository.getLogger("Sync.StorageServiceClient");
   this._log.level =
-    Log4Moz.Level[Svc.Prefs.get("log.level")];
+    Log4Moz.Level[Prefs.get("log.level")];
 
   this._baseURI = baseURI;
 
@@ -1264,8 +1264,8 @@ StorageServiceClient.prototype = {
   _getRequest: function _getRequest(uri, method, options) {
     let request = new RESTRequest(uri);
 
-    if (Svc.Prefs.get("sendVersionInfo", true)) {
-      let ua = this.userAgent + Svc.Prefs.get("client.type", "desktop");
+    if (Prefs.get("sendVersionInfo", true)) {
+      let ua = this.userAgent + Prefs.get("client.type", "desktop");
       request.setHeader("user-agent", ua);
     }
 

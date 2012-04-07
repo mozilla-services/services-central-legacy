@@ -49,12 +49,12 @@ const Cu = Components.utils;
 const CRYPTO_COLLECTION = "crypto";
 const KEYS_WBO = "keys";
 
+Cu.import("resource://services-common/storageservice.js");
 Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/identity.js");
 Cu.import("resource://services-sync/keys.js");
 Cu.import("resource://services-common/log4moz.js");
 Cu.import("resource://services-sync/resource.js");
-Cu.import("resource://services-sync/storageservice.js");
 Cu.import("resource://services-sync/util.js");
 
 function WBORecord(collection, id) {

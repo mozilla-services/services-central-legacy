@@ -11,12 +11,12 @@ const EXPORTED_SYMBOLS = [
 
 const {classes: Cc, interfaces: Ci, results: Cr, utils: Cu} = Components;
 
+Cu.import("resource://services-common/storageservice.js");
 Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/identity.js");
 Cu.import("resource://services-sync/policies.js");
 Cu.import("resource://services-sync/record.js");
 Cu.import("resource://services-sync/status.js");
-Cu.import("resource://services-sync/storageservice.js");
 Cu.import("resource://services-sync/util.js");
 
 function MetaGlobalRequestError(message, condition) {

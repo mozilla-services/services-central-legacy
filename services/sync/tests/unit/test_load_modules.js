@@ -21,6 +21,7 @@ const modules = [
                  "resource.js",
                  "rest.js",
                  "service.js",
+                 "stages.js",
                  "status.js",
                  "util.js",
 ];

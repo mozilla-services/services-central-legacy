@@ -8,6 +8,8 @@
  * client, this is where it's at.
  */
 
+"use strict";
+
 const {classes: Cc, interfaces: Ci, results: Cr, Utils: Cu} = Components;
 
 const EXPORTED_SYMBOLS = ["GlobalSession"];
@@ -39,6 +41,11 @@ function GlobalState() {
   this.syncKeyBundle = null;
 
   this._identityConnected = false;
+
+  this.remoteCollectionsLastModified = {};
+  this.remoteSyncID = null;
+  this.remoteStorageVersion = null;
+  this.remoteEngineInfo = {};
 }
 GlobalState.prototype = {
   IDENTITY_PROPERTIES: [
@@ -103,23 +110,6 @@ GlobalSession.prototype = {
   _log: Log4Moz.repository.getLogger("Sync.GlobalSession"),
 
   /**
-   * Defines the order of the functions called on the local object during a
-   * sync.
-   */
-  STATE_FLOW: [
-    "checkPreconditions",
-    "ensureClusterURL",
-    "fetchInfoCollections",
-    "ensureSpecialRecords",
-    "updateEngineTimestamps",
-    "syncClientsEngine",
-    "processFirstSyncPref",
-    "processClientCommands",
-    "updateEnabledEngines",
-    "syncEngines"
-  ],
-
-  /**
    * Holds the current index in STATE_FLOW the session is operating in.
    */
   currentStateIndex: -1,
@@ -171,181 +161,4 @@ GlobalSession.prototype = {
   finish: function finish(error) {
     this.finishedCallback(error);
   },
-
-  // --------------------------------------------------------------------------
-  // What follows are the handlers for specific states during an individual   |
-  // sync. They are defined in the order in which they are executed.          |
-  // --------------------------------------------------------------------------
-
-  checkPreconditions: function checkPreconditions(callback) {
-    Status.resetSync();
-    let status = Status.checkSetup();
-
-    if (status == CLIENT_NOT_CONFIGURED) {
-      return callback("XXX TODO client not configured");
-    }
-    if (Svc.Prefs.get("firstSync") == "notReady") {
-      return callback("XXX TODO still setting up");
-    }
-    if (Services.io.offline) {
-      return callback("XXX TODO no can haz interwebs");
-    }
-    if (Status.minimumNextSync > Date.now()) {
-      return callback("XXX TODO backoff not met");
-    }
-    if ((Status.login == MASTER_PASSWORD_LOCKED) &&
-        Utils.mpLocked()) {
-      return callback("XXX TODO master password is still locked");
-    }
-
-    return callback(null);
-  },
-
-  _fetchedClusterURL: false,
-  ensureClusterURL: function ensureClusterURL(callback) {
-    if (Service.clusterURL) {
-      callback(null);
-      return;
-    }
-
-    let url = Service.userAPI + Service.username + "/node/weave";
-    //XXX TODO we also want to pay attention to backoff on this call, but it's
-    // not as simple as using SyncStorageRequest because that does auth.
-    let request = new RESTRequest(url).get(function (error) {
-      if (error) {
-        this._log.debug("ensureClusterURL failed: " + Utils.exceptionStr(error));
-        Status.login = LOGIN_FAILED_NETWORK_ERROR;
-        return callback({exception: error});
-      }
-      let response = request.response;
-      switch (response.status) {
-        case 400:
-          this._log.debug("Server responded error code ");
-          Status.login = LOGIN_FAILED_LOGIN_REJECTED;
-          return callback("XXX TODO find cluster denied: " +
-                          ErrorHandler.errorStr(response.body));
-        case 404:
-          this._log.debug("Server doesn't support user API. " +
-                          "Using serverURL as data cluster");
-          Service.clusterURL = Service.serverURL;
-          break;
-        case 200:
-          let node = request.body;
-          if (node == "null") {
-            node = null;
-          }
-          this._log.trace("node/weave returned " + node);
-          Service.clusterURL = node;
-          break;
-        default:
-          return callback({httpResponse: response});
-          break;
-      }
-
-      this._fetchedClusterURL = true;
-      return callback(null);
-    }.bind(this));
-  },
-
-  infoCollections: null,
-
-  fetchInfoCollections: function fetchInfoCollections(callback) {
-    // Ping the server with a special info request once a day.
-    let url = Service.infoURL;
-    let now = Math.floor(Date.now() / 1000);
-    let lastPing = Svc.Prefs.get("lastPing", 0);
-    if (now - lastPing > 86400) { // 60 * 60 * 24
-      url += "?v=" + WEAVE_VERSION;
-      Svc.Prefs.set("lastPing", now);
-    }
-    let request = new SyncStorageRequest(url).get(function (error) {
-      if (error) {
-        this._log.debug("fetchInfoCollections failed: " +
-                        Utils.exceptionStr(error));
-        Status.login = LOGIN_FAILED_NETWORK_ERROR;
-        return callback({exception: error});
-      }
-      let response = request.response;
-
-      // A 401 or 404 response code can mean we're talking to wrong node or
-      // we're using the wrong credentials. Only way to find out is to refetch
-      // the node and then try again.
-      if (response.status == 401 || response.status == 404) {
-        // Did we already try fetching the clusterURL this sync? If so, it seems
-        // that we've got incorrect credentials.
-        if (this._fetchedClusterURL) {
-          Status.login = LOGIN_FAILED_LOGIN_REJECTED;
-          return callback({httpResponse: response});
-        }
-        // Could be a node-reassingment. Refetch the clusterURL, then go back to
-        // this function.
-        Svc.Prefs.reset("clusterURL");
-        return this.ensureClusterURL(function (error) {
-          if (error) {
-            return callback(error);
-          }
-          return this.fetchInfoCollections(callback);
-        });
-      }
-
-      // Any non 200 response codes: something's wrong, abort!
-      if (response.status != 200) {
-        return callback({httpResponse: response});
-      }
-
-      try {
-        this.infoCollections = JSON.parse(response.body);
-      } catch (ex) {
-        return callback({exception: ex});
-      }
-
-      return callback(null);
-    }.bind(this));
-  },
-
-  ensureSpecialRecords: function ensureSpecialRecords(callback) {
-    // - fetch keys if 'crypto' timestamp differs from local one
-    //   - if it's non-existent, goto fresh start.
-    //   - decrypt keys with Sync Key, abort if HMAC verification fails.
-    // - fetch meta/global if 'meta' timestamp differs from local one
-    //   - if it's non-existent, goto fresh start.
-    //   - check for storage version. if server data outdated, goto fresh start.
-    //     if client is outdated, abort with friendly error message.
-    //   - if syncID mismatch, reset local timestamps, refetch keys
-    // - if fresh start:
-    //   - wipe server. all of it.
-    //   - create + upload meta/global
-    //   - generate + upload new keys
-    return callback(null);
-  },
-
-  updateEngineTimestamps: function updateEngineTimestamps(callback) {
-    // - update engine last modified timestamps from info/collections record
-    return callback(null);
-  },
-
-  syncClientsEngine: function syncClientsEngine(callback) {
-    // clients engine always fetches all records
-    return callback(null);
-  },
-
-  processFirstSyncPref: function processFirstSyncPref(callback) {
-    // process reset/wipe requests in 'firstSync' preference
-    return callback(null);
-  },
-
-  processClientCommands: function processClientCommands(callback) {
-    // includes wipeClient commands, et al
-    return callback(null);
-  },
-
-  updateEnabledEngines: function updateEnabledEngines(callback) {
-    // infer enabled engines from meta/global
-    return callback(null);
-  },
-
-  syncEngines: function syncEngines(callback) {
-    // only stop if 401 seen
-    return callback(null);
-  }
 };

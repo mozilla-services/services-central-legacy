@@ -33,7 +33,7 @@ function getClient(user, password) {
   let user = user || DEFAULT_USERNAME;
   let password = password || DEFAULT_PASSWORD;
 
-  let client = new SyncClient(BASE_URI);
+  let client = new SyncClient(BASE_URI + "/" + user);
   client.addListener({
     onDispatch: function onDispatch(client, request) {
       let up = user + ":" + password;

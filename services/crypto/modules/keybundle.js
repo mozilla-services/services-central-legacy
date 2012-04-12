@@ -4,7 +4,7 @@
 
 const {classes: Cc, interfaces: Ci, results: Cr, Utils: Cu} = Components;
 
-const EXPORTED_SYMBOLS = ["KeyBundleContext"];
+const EXPORTED_SYMBOLS = ["KeyBundle"];
 
 /**
  * Holds a reference to a key bundle instance.
@@ -20,10 +20,10 @@ const EXPORTED_SYMBOLS = ["KeyBundleContext"];
  * key matter. By keeping key matter inside NSS, this code can run in FIPS
  * mode.
  */
-function KeyBundleContext() {
+function KeyBundle() {
 
 }
-KeyBundleContext.prototype = {
+KeyBundle.prototype = {
   /**
    * The metadata associated with the key bundle.
    *
@@ -45,36 +45,36 @@ KeyBundleContext.prototype = {
   /**
    * Create a new key bundle context from a random source.
    *
-   * Returns a KeyBundleContext instance.
+   * Returns a KeyBundle instance.
    *
    * This should be used as a static method. e.g.
    *
-   *   let ctx = KeyBundleContext.createFromRandom();
+   *   let ctx = KeyBundle.createFromRandom();
    */
   createFromRandom: function createFromRandom() {
 
   },
 
   /**
-   * Wraps another KeyBundleContext with this one.
+   * Wraps another KeyBundle with this one.
    *
-   * This encrypts and signs the passed KeyBundleContext using this
+   * This encrypts and signs the passed KeyBundle using this
    * key bundle and returns a string representing the Base64 encoding of the
    * produced binary message.
    */
-  wrapAndBase64EncodeContext: function wrapAndBase64EncodeContext(context) {
+  wrapAndBase64EncodeBundle: function wrapAndBase64EncodeBundle(context) {
 
   },
 
   /**
-   * Unwrap another KeyBundleContext that was wrapped with this one.
+   * Unwrap another KeyBundle that was wrapped with this one.
    *
-   * This is the opposite of wrapAndBase64EncodeContext(). It takes the Base64
-   * encoding of a wrapped KeyBundleContext and verifies and decrypts it using
-   * this key bundle. It returns a KeyBundleContext instance for the unwrapped
+   * This is the opposite of wrapAndBase64EncodeBundle(). It takes the Base64
+   * encoding of a wrapped KeyBundle and verifies and decrypts it using
+   * this key bundle. It returns a KeyBundle instance for the unwrapped
    * key bundle.
    */
-  unwrapBase64EncodedContext: function unwrapBase64EncodedContext(message) {
+  unwrapBase64EncodedBundle: function unwrapBase64EncodedBundle(message) {
 
   },
 

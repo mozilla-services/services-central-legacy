@@ -709,3 +709,53 @@ MetaGlobalRecord.prototype = {
     this.payload = JSON.stringify(this._metaglobal);
   },
 };
+
+function CryptoRecord() {
+  BasicStorageObject.call(this, null, "crypto");
+
+  this._fields = {
+    encryptingKey: null,
+    data:          null,
+  };
+}
+CryptoRecord.prototype = {
+  __proto__: BasicStorageObject.prototype,
+
+  get encryptingKey() {
+    return this._fields.encryptingKey;
+  },
+
+  set encryptingKey(value) {
+    this._fields.encryptingKey = value;
+  },
+
+  get data() {
+    return this._fields.data;
+  },
+
+  set data(value) {
+    this._fields.data = value;
+  },
+
+  deserialize: function deserialize(input) {
+    BasicStorageObject.prototype.deserialize.call(this, input);
+
+    this._fields = JSON.parse(this.payload);
+  },
+
+  toJSON: function toJSON() {
+    this._setPayload();
+
+    return BasicStorageObject.prototype.toJSON.call(this);
+  },
+
+  toString: function toString() {
+    this._setPayload();
+
+    return BasicStorageObject.prototype.toString.call(this);
+  },
+
+  _setPayload: function _setPayload() {
+    this.payload = JSON.stringify(this._fields);
+  },
+};

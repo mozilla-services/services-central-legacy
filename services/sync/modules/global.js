@@ -52,28 +52,58 @@ Cu.import("resource://services-sync/util.js");
  * sync session, it should go in GlobalSession.
  */
 function GlobalState() {
+  //---------------------
+  // Server Information |
+  //---------------------
   this.serverURL = null;
   this.clusterURL = null;
 
+  //------------------------
+  // Credentials and keys. |
+  // -----------------------
   this.username = null;
   this.basicPassword = null;
+
+  // nsIKeyBundle used to secure keys record on server.
   this.syncKeyBundle = null;
 
-  this._identityConnected = false;
+  // The ID of the record in the "crypto" collection containing collection
+  // keys.
+  this.keysRecordID = "keys";
 
+  //-----------------------
+  // Cached Remote State. |
+  //-----------------------
+
+  // Mapping of last modified times of collections on the server.
+  // This essentially holds the results of an info/collections request.
   this.remoteCollectionsLastModified = {};
-  this.remoteSyncID = null;
-  this.remoteStorageVersion = null;
-  this.remoteEngineInfo = {};
 
-  this.syncClient = null;
+  // Global Sync ID reported on the server (from meta/global).
+  this.remoteSyncID = null;
+
+  // Storage version on the server (from meta/global).
+  this.remoteStorageVersion = null;
+
+  // Metadata about repositories on the server (from meta/global).
+  //
+  // Is an object when populated. Keys are repository/collection names. Values
+  // are objects with keys "syncID" and "version".
+  this.remoteRepositoryInfo = null;
+
+  // Holds known collection keys.
+  //
+  // This is an object when there are known collection keys. Keys are
+  // collection names. Values are nsIKeyBundle instances.
+  this.collectionKeys = null;
+
+  this._identityConnected = false;
 }
 GlobalState.prototype = {
   IDENTITY_PROPERTIES: [
     "account",
     "username",
     "basicPassword",
-    "syncKey",
     "syncKeyBundle",
   ],
 
@@ -137,9 +167,6 @@ GlobalState.prototype = {
   },
 };
 
-const SYNC_STATUS_OK             = 0;
-const SYNC_STATUS_NO_CREDENTIALS = 1;
-
 /**
  * Manage a single sync session.
  *
@@ -171,6 +198,10 @@ function GlobalSession(globalState) {
   this.stages = this.STAGES.map(function createStage(fn) {
     return fn.prototype.constructor.call(this, this);
   }, this);
+
+  // Will hold the SyncClient instance. Populated by
+  // CreateStorageServiceClientStage.
+  this.syncClient = null;
 }
 GlobalSession.prototype = {
   STAGES: [

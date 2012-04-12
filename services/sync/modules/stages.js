@@ -371,7 +371,7 @@ EnsureSpecialRecordsStage.prototype = {
 function FetchCryptoRecordsStage() {
   Stage.prototype.constructor.call(this, arguments);
 }
-FetchCryptoRecordState.prototype = {
+FetchCryptoRecordsStage.prototype = {
   __proto__: Stage.prototype,
 
   begin: function begin() {

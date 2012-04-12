@@ -16,6 +16,8 @@ MODULE = services-crypto
 XPIDL_MODULE = services-crypto-component
 
 XPIDLSRCS = \
+  nsIKeyBundle.idl \
+  nsIKeyBundleFactory.idl \
   nsISyncJPAKE.idl \
   $(NULL)
 

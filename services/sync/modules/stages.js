@@ -2,6 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/**
+ * This file defines the various stages which constitute a sync.
+ *
+ * Stages are defined in the order they execute to increase readability and
+ * understanding of the sync process.
+ */
+
 "use strict";
 
 const EXPORTED_SYMBOLS = [
@@ -11,6 +18,7 @@ const EXPORTED_SYMBOLS = [
   "EnsureServiceCredentialsStage",
   "EnsureSpecialRecordsStage",
   "EnsureSyncKeyStage",
+  "FetchCryptoRecordsStage",
   "FetchInfoCollectionsStage",
   "FinishStage",
   "ProcessClientCommandsStage",
@@ -127,7 +135,7 @@ EnsureServiceCredentialsStage.prototype = {
  *
  * Postconditions:
  *
- *   this.state.syncKey set to an instance of XXX.
+ *   this.state.syncKeyBundle set to an instance of XXX.
  */
 function EnsureSyncKeyStage() {
   Stage.prototype.constructor.call(this, arguments);
@@ -169,7 +177,7 @@ EnsureClusterURLStage.prototype = {
  *
  * Postconditions:
  *
- *   this.state.syncClient is populated with a SyncClient instance.
+ *   this.session.syncClient is populated with a SyncClient instance.
  *
  * The created SyncClient instance should also have a listener registered which
  * does the appropriate HTTP authentication in the onDispatch hook. This stage
@@ -236,7 +244,7 @@ FetchInfoCollectionsStage.prototype = {
   __proto__: Stage.prototype,
 
   begin: function begin() {
-    let request = this.state.syncClient.getCollectionInfo();
+    let request = this.session.syncClient.getCollectionInfo();
     request.dispatch(this.onRequestComplete);
   },
 
@@ -347,6 +355,78 @@ function EnsureSpecialRecordsStage() {
 }
 EnsureSpecialRecordsStage.prototype = {
   __proto__: Stage.prototype,
+};
+
+/**
+ * Fetches crypto record(s) from the server.
+ *
+ * Postconditions:
+ *
+ *   this.state.collectionKeys is populated.
+ *
+ * If no keys exist on the server or if there was an error decrypting the
+ * record, this.state.collectionKeys should be set to null. If the record
+ * contains no keys, it should be set to an empty object.
+ */
+function FetchCryptoRecordsStage() {
+  Stage.prototype.constructor.call(this, arguments);
+}
+FetchCryptoRecordState.prototype = {
+  __proto__: Stage.prototype,
+
+  begin: function begin() {
+    let request = this.session.syncClient.getBSO("crypto",
+                                                 this.state.keysRecordID,
+                                                 CryptoRecord);
+    request.dispatch(this.onKeyFetch);
+  },
+
+  onKeyFetch: function onKeyFetch(error, response) {
+    if (error) {
+      this.abort(error);
+      return;
+    }
+
+    if (response.notFound) {
+      this.state.collectionKeys = null;
+      this.advance();
+      return;
+    }
+
+    let record = response.resultObj;
+
+    // The payload of crypto records is unencrypted JSON. However, there are
+    // encrypted contents within.
+    //
+    // Each record may contain an optional encrypting key, which is an
+    // encrypted key bundle used to encrypt other data in the record. If this
+    // field is present, the root key bundle is used to decode it. If not, the
+    // root key bundle can be used to directly decrypt the other data within.
+
+    let decodingBundle = this.state.syncKeyBundle;
+
+    if (record.encryptingKey) {
+      // TODO handle errors properly.
+      decodingBundle =
+        decodingBundle.unwrapBase64EncodedBundle(record.encryptingKey);
+    }
+
+    // TODO this assumes option 2 from the storage format 6 proposal.
+    // TODO handle errors.
+    let data = decodingBundle.decodeBase64Encoded(record.data);
+    let mapping = JSON.parse(data);
+
+    if (!this.state.collectionKeys) {
+      this.state.collectionKeys = {};
+    }
+
+    for (let [k, v] in Iterator(mapping)) {
+      let bundle = decodingBundle.unwrapBase64EncodedKeyBundle(v);
+      this.state.collectionKeys[k] = bundle;
+    }
+
+    this.advance();
+  },
 };
 
 function EnsureKeysStage() {

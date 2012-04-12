@@ -76,5 +76,4 @@ interface nsIKeyBundle : nsISupports
    * debugging purposes.
    */
   readonly attribute AString hmacKey;
-}
-
+};

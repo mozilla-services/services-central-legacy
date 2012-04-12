@@ -6,6 +6,8 @@ const {classes: Cc, interfaces: Ci, results: Cr, Utils: Cu} = Components;
 
 const EXPORTED_SYMBOLS = ["KeyBundle"];
 
+let fakeCryptoCounter = 0;
+
 /**
  * Holds a reference to a key bundle instance.
  *
@@ -30,7 +32,7 @@ KeyBundle.prototype = {
    * If no metadata is associated, this is null.
    */
   get metadata() {
-
+    throw new Error("Not implemented.");
   },
 
   /**
@@ -39,7 +41,7 @@ KeyBundle.prototype = {
    * If setting null, metadata will be cleared.
    */
   set metadata(value) {
-
+    throw new Error("No implemented.");
   },
 
   /**
@@ -52,7 +54,9 @@ KeyBundle.prototype = {
    *   let ctx = KeyBundle.createFromRandom();
    */
   createFromRandom: function createFromRandom() {
+    this._matter = "fake-bundle-" + fakeCryptoCounter;
 
+    fakeCryptoCounter += 1;
   },
 
   /**
@@ -62,8 +66,10 @@ KeyBundle.prototype = {
    * key bundle and returns a string representing the Base64 encoding of the
    * produced binary message.
    */
-  wrapAndBase64EncodeBundle: function wrapAndBase64EncodeBundle(context) {
+  wrapAndBase64EncodeBundle: function wrapAndBase64EncodeBundle(bundle) {
+    let pieces = ["wrapped", this._matter, bundle._matter];
 
+    return CommonUtils.safeAtoB(pieces.join(" "));
   },
 
   /**
@@ -75,7 +81,21 @@ KeyBundle.prototype = {
    * key bundle.
    */
   unwrapBase64EncodedBundle: function unwrapBase64EncodedBundle(message) {
+    let data = btoa(message);
 
+    let pieces = data.split(":", 3);
+    if (pieces.length != 3 || pieces[0] != "wrapped") {
+      throw new Error("Message does not appear to be a wrapped key.");
+    }
+
+    if (pieces[1] != this._matter) {
+      throw new Error("Bundle was not wrapped with this one.");
+    }
+
+    let bundle = new KeyBundle();
+    bundle._matter = pieces[2];
+
+    return bundle;
   },
 
   /**
@@ -84,8 +104,10 @@ KeyBundle.prototype = {
    * Returns a string representing the Base64 encoded value of the produced
    * binary message.
    */
-  encryptAndBase64Encode: function encryptAndBase64Encode(cleartext) {
+  encodeAndBase64Encode: function encodeAndBase64Encode(cleartext) {
+    let pieces = ["encoded", this._matter, cleartext];
 
+    return CommonUtils.safeAtoB(pieces.join(":"));
   },
 
   /**
@@ -99,8 +121,19 @@ KeyBundle.prototype = {
    *
    * TODO document error semantics.
    */
-  decryptBase64EncodedValue: function decryptBase64EncodedValue(message) {
+  decodeBase64Encoded: function decodeBase64Encoded(message) {
+    let data = btoa(message);
+    let pieces = data.split(":", 3);
 
+    if (pieces.length != 3 || pieces[0] != "encoded") {
+      throw new Error("Message does not appear to be encoded data.");
+    }
+
+    if (pieces[1] != this._matter) {
+      throw new Error("Message not encoded with this bundle.");
+    }
+
+    return pieces[2];
   },
 
   //--------------------------------------------------
@@ -113,13 +146,13 @@ KeyBundle.prototype = {
    * Obtain the raw encryption key.
    */
   get encryptionKey() {
-
+    throw new Error("Not implemented.");
   },
 
   /**
    * Obtain the raw HMAC key.
    */
   get hmacKey() {
-
+    throw new Error("Not implemented.");
   },
 };

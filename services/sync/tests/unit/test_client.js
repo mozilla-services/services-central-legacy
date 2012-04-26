@@ -5,7 +5,7 @@ Cu.import("resource://services-sync/client.js");
 Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/record.js");
 
-const DEFAULT_USERNAME = "johndoe";
+const DEFAULT_USERNAME = "2345235";
 const DEFAULT_PASSWORD = "IAMJOHN";
 const BASE_URI = "http://localhost:8080/2.0";
 

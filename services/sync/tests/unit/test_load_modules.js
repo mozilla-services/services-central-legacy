@@ -19,11 +19,13 @@ const modules = [
   "notifications.js",
   "policies.js",
   "record.js",
+  "repository.js",
   "resource.js",
   "rest.js",
   "service.js",
   "stages.js",
   "status.js",
+  "synchronizer.js",
   "util.js",
 ];
 

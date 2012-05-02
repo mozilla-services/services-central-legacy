@@ -22,6 +22,7 @@
 const {classes: Cc, interfaces: Ci, results: Cr, utils: Cu} = Components;
 
 const EXPORTED_SYMBOLS = [
+  "GlobalConfiguration",
   "GlobalSession",
   "GlobalState",
 ];
@@ -32,19 +33,123 @@ Cu.import("resource://services-sync/stages.js");
 Cu.import("resource://services-sync/util.js");
 
 /**
+ * Holds global configuration for Sync.
+ *
+ * Values held by this type are essentially directly under the user's control
+ * or can be directly influenced by the user.
+ */
+function GlobalConfiguration() {
+  this.authenticationMode = "basic";
+  this.keyManagementMode = "passwordManager";
+
+  this.tokenServerURL = null;
+  this.storageServerURL = null;
+
+  this.basicUsername = null;
+  this.basicPassword = null;
+
+  this.rootKeyBundle = null;
+
+  this.keyRecordID = "keys";
+}
+GlobalConfiguration.prototype = {
+  /**
+   * How root key management is performed.
+   *
+   * Valid values are:
+   *
+   *   passwordManager - Keys are stored locally in the password manager.
+   */
+  keyManagementMode: null,
+
+  /**
+   * How to authenticate with the storage server.
+   *
+   * Supports "basic" or "token" by default.
+   */
+  authenticationMode: null,
+
+  /**
+   * String URL to use to obtain an access token.
+   */
+  tokenServerURL: null,
+
+  /**
+   * URL of storage server to connect to.
+   *
+   * If using a token server, this should never be defined and the server is
+   * discovered when obtaining a token.
+   */
+  storageServerURL: null,
+
+  /**
+   * If authenticating with HTTP basic credentials, the username and password
+   * to use.
+   */
+  basicUsername: null,
+  basicPassword: null,
+
+  /**
+   * The nsIKeyBundle instance providing the root encryption key pair.
+   *
+   * If the root key is stored encrypted on the server, this should be null.
+   */
+  rootKeyBundle: null,
+
+  /**
+   * The ID of the record in the "crypto" collection where to look for
+   * encrypted keys.
+   */
+  keyRecordID: null,
+
+  /**
+   * Loads state from the environment.
+   */
+  loadExternalState: function loadExternalState() {
+    if (this.authenticationMode == "basic") {
+
+    }
+  },
+
+  /**
+   * Loads basic credentials from the password manager.
+   *
+   * Side effect is basicUsername and basicPassword are populated if
+   * credentials are available.
+   *
+   * This may throw if the password manager is locked by the master password.
+   *
+   * @return boolean
+   *         Whether credentials were found.
+   */
+  loadBasicCredentials: function loadBasicCredentials() {
+    this.basicUsername = Svc.Prefs.get("username", null);
+    this.basicPassword = null;
+
+    if (!this.basicUsername) {
+      return false;
+    }
+
+    let logins = Services.logins.findLogins({}, PWDMGR_HOST, null,
+                                            PWDMGR_PASSWORD_REALM);
+
+    for each (let login in logins) {
+      if (login.username.toLowerCase() != this.basicUsername) {
+        continue;
+      }
+
+      this.basicPassword = Utils.encodeUTF8(login.password);
+    }
+
+    return !!this.basicPassword;
+  },
+};
+Object.freeze(GlobalConfiguration.prototype);
+
+/**
  * Holds the global state of a Sync client.
  *
- * This holds server information, credentials, root keys, and other misc
- * data.
- *
- * This type is effectively a convenient container. While functions are
- * available to load and save state from and to external resources, it should
- * be possible to instantiate multiple instances of GlobalState without
- * conflicts.
- *
- * Instances can serve as proxies to other type instances which specialize in
- * managing specific state. For example, instances can be hooked up with
- * IdentityManager instances to manage identity-related credentials.
+ * This holds state that needs to persist across multiple sync sessions.
  *
  * This type should hold information that is pertinent to multiple sync
  * operations. e.g. if a piece of data needs to outlive an individual sync
@@ -52,60 +157,45 @@ Cu.import("resource://services-sync/util.js");
  * sync session, it should go in GlobalSession.
  */
 function GlobalState() {
-  //---------------------
-  // Server Information |
-  //---------------------
-  this.serverURL = null;
-  this.clusterURL = null;
-
-  //------------------------
-  // Credentials and keys. |
-  // -----------------------
-  this.username = null;
-  this.basicPassword = null;
-
-  // nsIKeyBundle used to secure keys record on server.
-  this.syncKeyBundle = null;
-
-  // The ID of the record in the "crypto" collection containing collection
-  // keys.
-  this.keysRecordID = "keys";
-
-  //-----------------------
-  // Cached Remote State. |
-  //-----------------------
-
-  // Mapping of last modified times of collections on the server.
-  // This essentially holds the results of an info/collections request.
-  this.remoteCollectionsLastModified = {};
-
-  // Global Sync ID reported on the server (from meta/global).
+  this.remoteCollectionsLastModified = null;
   this.remoteSyncID = null;
-
-  // Storage version on the server (from meta/global).
   this.remoteStorageVersion = null;
-
-  // Metadata about repositories on the server (from meta/global).
-  //
-  // Is an object when populated. Keys are repository/collection names. Values
-  // are objects with keys "syncID" and "version".
   this.remoteRepositoryInfo = null;
-
-  // Holds known collection keys.
-  //
-  // This is an object when there are known collection keys. Keys are
-  // collection names. Values are nsIKeyBundle instances.
   this.collectionKeys = null;
-
-  this._identityConnected = false;
 }
 GlobalState.prototype = {
-  IDENTITY_PROPERTIES: [
-    "account",
-    "username",
-    "basicPassword",
-    "syncKeyBundle",
-  ],
+  /**
+   * Mapping of last modified times of collections on the server.
+   *
+   * This essentially holds the results of an info/collections request.
+   */
+  remoteCollectionsLastModified: null,
+
+  /**
+   * Global Sync ID reported on the server (from meta/global).
+   */
+  remoteSyncID: null,
+
+  /**
+   * Storage version on the server (from meta/global).
+   */
+  remoteStorageVersion: null,
+
+  /**
+   * Metadata about repositories on the server (from meta/global).
+   *
+   * Is an object when populated. Keys are repository/collection names. Values
+   * are objects with keys "syncID" and "version".
+   */
+  remoteRepositoryInfo: null,
+
+  /**
+   * Holds known collection keys.
+   *
+   * This is an object when there are known collection keys. Keys are
+   * collection names. Values are nsIKeyBundle instances.
+   */
+   collectionKeys: null,
 
   /**
    * Load state from external sources.
@@ -115,7 +205,6 @@ GlobalState.prototype = {
    */
   loadExternalState: function loadExternalState() {
     this.loadPreferences();
-    this.connectWithIdentity();
   },
 
   /**
@@ -137,33 +226,6 @@ GlobalState.prototype = {
     for (let [k, v] in Iterator(PREF_MAP)) {
       this[k] = Svc.Prefs.get(v, null);
     }
-  },
-
-  /**
-   * Connect this state with an IdentityManager instance.
-   *
-   * By default, state instances are self-contained. After calling this,
-   * instances are bound to an IdentityManager instance. In other words, this
-   * hooks up the plumbing so attributes are loaded from preferences, changes
-   * are saved to the login manager, etc.
-   *
-   * @param identity
-   *        (IdentityManager) IdentityManager instance to use. If falsy, the
-   *        global instance will be used.
-   */
-  connectWithIdentity: function connectWithIdentity(identity) {
-    if (!identity) {
-      identity = Identity;
-    }
-
-    for each (let property in this.IDENTITY_PROPERTIES) {
-      Object.defineProperty(this, property, {
-        get: identity.__lookupGetter__(property),
-        set: identity.__lookupSetter__(property)
-      });
-    }
-
-    this._identityConnected = true;
   },
 };
 

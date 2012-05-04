@@ -28,9 +28,13 @@ const EXPORTED_SYMBOLS = [
 ];
 
 Cu.import("resource://services-common/log4moz.js");
+Cu.import("resource://services-common/preferences.js");
+Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/identity.js");
 Cu.import("resource://services-sync/stages.js");
 Cu.import("resource://services-sync/util.js");
+
+const PREFS = new Preferences(PREFS_BRANCH);
 
 /**
  * Holds global configuration for Sync.
@@ -39,8 +43,10 @@ Cu.import("resource://services-sync/util.js");
  * or can be directly influenced by the user.
  */
 function GlobalConfiguration() {
+  this.allowServerRootKeyStorage = true;
+  this.requireStrongKeyWrapping = false;
+
   this.authenticationMode = "basic";
-  this.keyManagementMode = "passwordManager";
 
   this.tokenServerURL = null;
   this.storageServerURL = null;
@@ -54,13 +60,18 @@ function GlobalConfiguration() {
 }
 GlobalConfiguration.prototype = {
   /**
-   * How root key management is performed.
-   *
-   * Valid values are:
-   *
-   *   passwordManager - Keys are stored locally in the password manager.
+   * Whether the root encryption key can be stored (encrypted) on the storage
+   * server.
    */
-  keyManagementMode: null,
+  allowServerRootKeyStorage: true,
+
+  /**
+   * Whether to require cryptographically secure wrapping of the root key.
+   *
+   * If set to false, Sync will allow the root key to be wrapped with keys
+   * that may be derived from less secure sources, such as passwords.
+   */
+  requireStrongKeyWrapping: false,
 
   /**
    * How to authenticate with the storage server.
@@ -106,9 +117,7 @@ GlobalConfiguration.prototype = {
    * Loads state from the environment.
    */
   loadExternalState: function loadExternalState() {
-    if (this.authenticationMode == "basic") {
-
-    }
+    this.loadBasicCredentials();
   },
 
   /**
@@ -123,7 +132,7 @@ GlobalConfiguration.prototype = {
    *         Whether credentials were found.
    */
   loadBasicCredentials: function loadBasicCredentials() {
-    this.basicUsername = Svc.Prefs.get("username", null);
+    this.basicUsername = PREFS.get("username", null);
     this.basicPassword = null;
 
     if (!this.basicUsername) {
@@ -157,6 +166,8 @@ Object.freeze(GlobalConfiguration.prototype);
  * sync session, it should go in GlobalSession.
  */
 function GlobalState() {
+  this.storageServerURL = null;
+
   this.remoteCollectionsLastModified = null;
   this.remoteSyncID = null;
   this.remoteStorageVersion = null;
@@ -164,6 +175,14 @@ function GlobalState() {
   this.collectionKeys = null;
 }
 GlobalState.prototype = {
+  /**
+   * URL prefix of our storage server.
+   *
+   * Sometimes this is copied from the GlobalConfiguration. Sometimes it is
+   * determined at sync time.
+   */
+  storageServerURL: null,
+
   /**
    * Mapping of last modified times of collections on the server.
    *

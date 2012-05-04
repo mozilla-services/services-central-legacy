@@ -33,6 +33,7 @@ const EXPORTED_SYMBOLS = [
 const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
 Cu.import("resource://gre/modules/Services.jsm");
+Cu.import("resource://services-common/tokenserverclient.js");
 Cu.import("resource://services-sync/client.js");
 
 /**
@@ -53,6 +54,7 @@ Cu.import("resource://services-sync/client.js");
  */
 function Stage(globalSession) {
   this.session = globalSession;
+  this.config = globalSession.config;
   this.state = globalSession.state;
 }
 Stage.prototype = {
@@ -82,14 +84,6 @@ CheckPreconditionsStage.prototype = {
   __proto__: Stage.prototype,
 
   begin: function begin() {
-    // TODO call Status.resetSync?
-    // TODO ensure Status.checkSetup != CLIENT_NOT_CONFIGURED ?
-    // TODO check master password?
-
-    if (Svc.Prefs.get("firstSync") == "notReady") {
-      this.abort(new Error("Client not ready."));
-    }
-
     if (Services.io.offline) {
       this.abort(new Error("Network is offline."));
     }
@@ -119,7 +113,44 @@ EnsureServiceCredentialsStage.prototype = {
   __proto__: Stage.prototype,
 
   begin: function begin() {
+    if (!this.config.tokenServerURL) {
+      this.abort(new Error("Token Server URL not present in config."));
+      return;
+    }
+
     // TODO implement.
+    this.advance();
+  },
+
+  /**
+   * Called when a BrowserID assertion is vailable for us to use.
+   */
+  onAssertion: function onAssertion(error, result) {
+    if (error) {
+      this.abort(error);
+      return;
+    }
+
+    let client = new TokenServerClient();
+    client.getTokenFromBrowserIDAssertion(this.config.tokenServerURL,
+                                          result,
+                                          this.onTokenServerResponse.bind(this));
+  },
+
+  /**
+   * Called when we have received a response from the token server.
+   */
+  onTokenServerResponse: function onTokenServerResponse(error, result) {
+    if (error) {
+      this._log.warn("Got error obtaining access token: " + error);
+      this.abort(error);
+      return;
+    }
+
+    this.state.storageServerURL = result.endpoint;
+    this.state.macID = result.id;
+    this.state.macKey = result.key;
+
     this.advance();
   },
 };

@@ -166,8 +166,6 @@ Object.freeze(GlobalConfiguration.prototype);
  * sync session, it should go in GlobalSession.
  */
 function GlobalState() {
-  this.storageServerURL = null;
-
   this.remoteCollectionsLastModified = null;
   this.remoteSyncID = null;
   this.remoteStorageVersion = null;
@@ -181,7 +179,68 @@ GlobalState.prototype = {
    * Sometimes this is copied from the GlobalConfiguration. Sometimes it is
    * determined at sync time.
    */
-  storageServerURL: null,
+  get storageServerURL() {
+    return this._storageServerURL;
+  },
+
+  set storageServerURL(value) {
+    if (value == this._storageServerURL) {
+      return;
+    }
+
+    if (!value) {
+      this._log.info("Removing storage server URL.");
+      this._storageServerURL = null;
+      return;
+    }
+
+    this._log.info("Upadting storage server URL: " + value);
+    this._storageServerURL = value;
+  },
+
+  /**
+   * Public part of MAC token for storage server access.
+   */
+  get tokenID() {
+    return this._tokenID;
+  },
+
+  set tokenID(value) {
+    if (value == this._tokenID) {
+      return;
+    }
+
+    if (!value) {
+      this._log.info("Removing token ID.");
+      this._tokenID = null;
+      return;
+    }
+
+    this._log.info("Updating token ID.");
+    this._tokenID = value;
+  },
+
+  /**
+   * Private part of MAC token for storage server access.
+   */
+  get tokenKey() {
+    return this._tokenKey;
+  },
+
+  set tokenKey(value) {
+    if (value == this._tokenKey) {
+      return;
+    }
+
+    if (!value) {
+      this._log.info("Removing token key.");
+      this._tokenKey = null;
+      return;
+    }
+
+    this._log.info("Updating token key.");
+    this._tokenKey = value;
+  },
 
   /**
    * Mapping of last modified times of collections on the server.

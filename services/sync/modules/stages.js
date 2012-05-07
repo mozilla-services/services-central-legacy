@@ -123,7 +123,7 @@ EnsureServiceCredentialsStage.prototype = {
   },
 
   /**
-   * Called when a BrowserID assertion is vailable for us to use.
+   * Called when a BrowserID assertion is available for us to use.
    */
   onAssertion: function onAssertion(error, result) {
     if (error) {
@@ -148,8 +148,8 @@ EnsureServiceCredentialsStage.prototype = {
     }
 
     this.state.storageServerURL = result.endpoint;
-    this.state.macID = result.id;
-    this.state.macKey = result.key;
+    this.state.tokenID = result.id;
+    this.state.tokenKey = result.key;
 
     this.advance();
   },

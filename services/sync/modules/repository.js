@@ -83,7 +83,8 @@ RepositorySession.prototype = {
 
   /**
    * Used for tracking changes. The timestamp can be set with an initial value,
-   * and will be reported in the finish callback.
+   * and will be reported in the finish callback. Value is epoch time in
+   * milliseconds.
    */
   timestamp: 0,
 
@@ -106,7 +107,7 @@ RepositorySession.prototype = {
    *        @param error is null for a successful operation.
    */
   guidsSince: function guidsSince(timestamp, guidsCallback) {
-    throw "RepositorySession must implement 'guidsSince'";
+    throw new Error("RepositorySession must implement 'guidsSince'");
   },
 
   /**
@@ -125,7 +126,7 @@ RepositorySession.prototype = {
    * the DONE value.
    *
    * @param timestamp
-   *        Number of seconds since the epoch (can be a decimal number).
+   *        Number of milliseconds since the epoch.
    * @param fetchCallback
    *        Callback function with the signature (error, record).
    *        fetchCallback should call session.abort() to signal that the fetch
@@ -134,7 +135,7 @@ RepositorySession.prototype = {
    *        @param record will be the DONE value on the last invocation.
    */
   fetchSince: function fetchSince(timestamp, fetchCallback) {
-    throw "RepositorySession must implement 'fetchSince'";
+    throw new Error("RepositorySession must implement 'fetchSince'");
   },
 
   /**
@@ -152,7 +153,7 @@ RepositorySession.prototype = {
    *        @param record will be the DONE value on the last invocation.
    */
   fetch: function fetch(guids, fetchCallback) {
-    throw "RepositorySession must implement 'fetch'";
+    throw new Error("RepositorySession must implement 'fetch'");
   },
 
   /**
@@ -166,7 +167,7 @@ RepositorySession.prototype = {
    *        A record to store, or the value DONE.
    */
   store: function store(record) {
-    throw "RepositorySession must implement 'store'";
+    throw new Error("RepositorySession must implement 'store'");
   },
 
   /**
@@ -177,7 +178,7 @@ RepositorySession.prototype = {
    *        @param error is null for a successful operation.
    */
   wipe: function wipe(wipeCallback) {
-    throw "RepositorySession must implement 'wipe'";
+    throw new Error("RepositorySession must implement 'wipe'");
   },
 
   /**

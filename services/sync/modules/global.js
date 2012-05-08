@@ -6,15 +6,22 @@
  * This file essentially contains the high-level logic for performing a
  * sync.
  *
- * A single sync consists of roughly two components:
+ * A Sync "client" consists of the following components:
  *
- *   - A GlobalState instance which tracks the global state of the Sync client.
- *   - A GlobalSession instance whild manages an individual sync operation.
+ *   - A GlobalConfiguration instance which holds static, typically read-only
+ *     configuration data for the client.
+ *   - A GlobalState instance which holds individual client state.
+ *   - A GlobalSession instance which represents a single sync session with the
+ *     server.
  *
- * You first instantiate a GlobalState instance and populate all available
- * state. Then, you pass this state off to a new GlobalSession instance and
- * begin a sync operation. GlobalSession examines the state of GlobalState and
- * moves through the sync process.
+ * You first instantiate a GlobalConfiguration and populate it with credentials,
+ * server information, etc. This type has functions which pull in this data
+ * from the expected locations.
+ *
+ * Next, a GlobalState is created. This holds state pertinent for the lifetime
+ * of the client, but no longer. Finally, a GlobalSession instance is created.
+ * It takes a reference to a GlobalConfiguration and GlobalState and performs a
+ * sync, updating GlobalState as necessary.
  */
 
 "use strict";
@@ -165,82 +172,34 @@ Object.freeze(GlobalConfiguration.prototype);
  * session, it should go here. If a piece of data is relavant to only a single
  * sync session, it should go in GlobalSession.
  */
-function GlobalState() {
+function InternalGlobalState() {
+  this._log = Log4Moz.repository.getLogger("Sync.GlobalState");
+  this._log.level = Svc.Prefs.get("log.logger.globalstate", "Info");
+
   this.remoteCollectionsLastModified = null;
   this.remoteSyncID = null;
   this.remoteStorageVersion = null;
   this.remoteRepositoryInfo = null;
   this.collectionKeys = null;
 }
-GlobalState.prototype = {
+InternalGlobalState.prototype = {
   /**
    * URL prefix of our storage server.
    *
    * Sometimes this is copied from the GlobalConfiguration. Sometimes it is
    * determined at sync time.
    */
-  get storageServerURL() {
-    return this._storageServerURL;
-  },
-
-  set storageServerURL(value) {
-    if (value == this._storageServerURL) {
-      return;
-    }
-
-    if (!value) {
-      this._log.info("Removing storage server URL.");
-      this._storageServerURL = null;
-      return;
-    }
-
-    this._log.info("Upadting storage server URL: " + value);
-    this._storageServerURL = value;
-  },
+  storageServerURL: null,
 
   /**
    * Public part of MAC token for storage server access.
    */
-  get tokenID() {
-    return this._tokenID;
-  },
-
-  set tokenID(value) {
-    if (value == this._tokenID) {
-      return;
-    }
-
-    if (!value) {
-      this._log.info("Removing token ID.");
-      this._tokenID = null;
-      return;
-    }
-
-    this._log.info("Updating token ID.");
-    this._tokenID = value;
-  },
+  tokenID: null,
 
   /**
    * Private part of MAC token for storage server access.
    */
-  get tokenKey() {
-    return this._tokenKey;
-  },
-
-  set tokenKey(value) {
-    if (value == this._tokenKey) {
-      return;
-    }
-
-    if (!value) {
-      this._log.info("Removing token key.");
-      this._tokenKey = null;
-      return;
-    }
-
-    this._log.info("Updating token key.");
-    this._tokenKey = value;
-  },
+  tokenKey: null,
 
   /**
    * Mapping of last modified times of collections on the server.
@@ -305,6 +264,16 @@ GlobalState.prototype = {
       this[k] = Svc.Prefs.get(v, null);
     }
   },
+};
+Object.freeze(InternalGlobalState.prototype);
+
+/**
+ * TODO turn into proxy and record changes to properties.
+ */
+function GlobalState() {
+}
+GlobalState.prototype = {
+  __proto__: InternalGlobalState.prototype,
 };
 
 /**
@@ -474,3 +443,4 @@ GlobalSession.prototype = {
     //Svc.Obs.notify("weave:service:quota:remaining", remaining);
   },
 };
+Object.freeze(GlobalSession.prototype);

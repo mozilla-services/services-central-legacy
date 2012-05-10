@@ -1,8 +1,7 @@
-// Check that everything is getting hooked together properly.
 function run_test() {
-  _("When imported, Service.onStartup is called.");
+  _("Check that a Notification Service is created during import.");
   Cu.import("resource://services-notifications/service.js");
 
-  do_check_eq(Service.serverURL, "http://push.jbalogh.me/");
-  do_check_eq(Service.ready, true);
+  Service.prefs.set("serverURL", "http://foo.bar.com/");
+  do_check_eq(Service.serverURL, "http://foo.bar.com");
 }

@@ -56,6 +56,26 @@ SecurityManager.prototype = {
     }
   },
 
+  /**
+   * Callback invoked whenever the credentials for the storage server failed.
+   *
+   * If this happens, a sync is in the process of aborting because communication
+   * with the server could not be established. This function should make
+   * whatever state changes are necessary (typically wiping out cached
+   * credentials or prompting the user for new credentials) to put the client
+   * in a position such that the next sync should work properly.
+   *
+   * TODO does this need a callback?
+   */
+  onStorageServerCredentialsFailed: onStorageServerCredentialsFailed() {
+    if (this.httpAuthMode == "token") {
+      this.storageToken = null;
+    } else if (this.httpAuthMode == "basic") {
+      this.basicUsername = null;
+      this.basicPassword = null;
+    }
+  },
+
   // END OF CORE INTERFACE CALLBACKS.
 
   /**

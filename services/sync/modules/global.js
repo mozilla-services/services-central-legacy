@@ -9,7 +9,8 @@
  * A Sync "client" consists of the following components:
  *
  *   - A GlobalConfiguration instance which holds static, typically read-only
- *     configuration data for the client.
+ *     configuration data for the client. This instance contains everything
+ *     needed to perform a sync operation.
  *   - A GlobalState instance which holds individual client state.
  *   - A GlobalSession instance which represents a single sync session with the
  *     server.
@@ -45,52 +46,18 @@ const PREFS = new Preferences(PREFS_BRANCH);
 
 /**
  * Holds global configuration for Sync.
- *
- * Values held by this type are essentially directly under the user's control
- * or can be directly influenced by the user.
  */
 function GlobalConfiguration() {
-  this.allowServerRootKeyStorage = true;
-  this.requireStrongKeyWrapping = false;
-
-  this.authenticationMode = "basic";
-
-  this.tokenServerURL = null;
   this.storageServerURL = null;
-
-  this.basicUsername = null;
-  this.basicPassword = null;
-
   this.rootKeyBundle = null;
-
   this.keyRecordID = "keys";
 }
 GlobalConfiguration.prototype = {
   /**
-   * Whether the root encryption key can be stored (encrypted) on the storage
-   * server.
+   * Instance of the SecurityManager that holds all of our security-related
+   * settings.
    */
-  allowServerRootKeyStorage: true,
-
-  /**
-   * Whether to require cryptographically secure wrapping of the root key.
-   *
-   * If set to false, Sync will allow the root key to be wrapped with keys
-   * that may be derived from less secure sources, such as passwords.
-   */
-  requireStrongKeyWrapping: false,
-
-  /**
-   * How to authenticate with the storage server.
-   *
-   * Supports "basic" or "token" by default.
-   */
-  authenticationMode: null,
-
-  /**
-   * String URL to use to obtain an access token.
-   */
-  tokenServerURL: null,
+  securityManager: null,
 
   /**
    * URL of storage server to connect to.
@@ -99,13 +66,6 @@ GlobalConfiguration.prototype = {
    * discovered when obtaining a token.
    */
   storageServerURL: null,
-
-  /**
-   * If authenticating with HTTP basic credentials, the username and password
-   * to use.
-   */
-  basicUsername: null,
-  basicPassword: null,
 
   /**
    * The nsIKeyBundle instance providing the root encryption key pair.
@@ -119,46 +79,6 @@ GlobalConfiguration.prototype = {
    * encrypted keys.
    */
   keyRecordID: null,
-
-  /**
-   * Loads state from the environment.
-   */
-  loadExternalState: function loadExternalState() {
-    this.loadBasicCredentials();
-  },
-
-  /**
-   * Loads basic credentials from the password manager.
-   *
-   * Side effect is basicUsername and basicPassword are populated if
-   * credentials are available.
-   *
-   * This may throw if the password manager is locked by the master password.
-   *
-   * @return boolean
-   *         Whether credentials were found.
-   */
-  loadBasicCredentials: function loadBasicCredentials() {
-    this.basicUsername = PREFS.get("username", null);
-    this.basicPassword = null;
-
-    if (!this.basicUsername) {
-      return false;
-    }
-
-    let logins = Services.logins.findLogins({}, PWDMGR_HOST, null,
-                                            PWDMGR_PASSWORD_REALM);
-
-    for each (let login in logins) {
-      if (login.username.toLowerCase() != this.basicUsername) {
-        continue;
-      }
-
-      this.basicPassword = Utils.encodeUTF8(login.password);
-    }
-
-    return !!this.basicPassword;
-  },
 };
 Object.freeze(GlobalConfiguration.prototype);
 
@@ -190,16 +110,6 @@ InternalGlobalState.prototype = {
    * determined at sync time.
    */
   storageServerURL: null,
-
-  /**
-   * Public part of MAC token for storage server access.
-   */
-  tokenID: null,
-
-  /**
-   * Private part of MAC token for storage server access.
-   */
-  tokenKey: null,
 
   /**
    * Mapping of last modified times of collections on the server.
@@ -315,7 +225,6 @@ function GlobalSession(globalState) {
 GlobalSession.prototype = {
   STAGES: [
     CheckPreconditionsStage,
-    EnsureServiceCredentialsStage,
     EnsureSyncKeyStage,
     EnsureClusterURLStage,
     CreateStorageServiceClientStage,

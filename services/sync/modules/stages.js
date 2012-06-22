@@ -15,7 +15,6 @@ const EXPORTED_SYMBOLS = [
   "CheckPreconditionsStage",
   "CreateStorageServiceClientStage",
   "EnsureClusterURLStage",
-  "EnsureServiceCredentialsStage",
   "EnsureSpecialRecordsStage",
   "EnsureSyncKeyStage",
   "FetchCryptoRecordsStage",
@@ -91,65 +90,6 @@ CheckPreconditionsStage.prototype = {
     if (Status.minimumNextSync > Date.now()) {
       this.abort(new Error("Backoff not met."));
     }
-
-    this.advance();
-  },
-};
-
-/**
- * Obtain credentials used to talk to the storage service.
- *
- * By default, we obtain a BrowserID assertion and exchange this for an access
- * token with the token server. If we get lucky, we have an access token
- * cached locally.
- *
- * If you wish to obtain service credentials from a custom source, simply
- * monkeypatch begin() to do what you want.
- */
-function EnsureServiceCredentialsStage() {
-  Stage.prototype.constructor.call(this, arguments);
-}
-EnsureServiceCredentialsStage.prototype = {
-  __proto__: Stage.prototype,
-
-  begin: function begin() {
-    if (!this.config.tokenServerURL) {
-      this.abort(new Error("Token Server URL not present in config."));
-      return;
-    }
-
-    // TODO implement.
-    this.advance();
-  },
-
-  /**
-   * Called when a BrowserID assertion is available for us to use.
-   */
-  onAssertion: function onAssertion(error, result) {
-    if (error) {
-      this.abort(error);
-      return;
-    }
-
-    let client = new TokenServerClient();
-    client.getTokenFromBrowserIDAssertion(this.config.tokenServerURL,
-                                          result,
-                                          this.onTokenServerResponse.bind(this));
-  },
-
-  /**
-   * Called when we have received a response from the token server.
-   */
-  onTokenServerResponse: function onTokenServerResponse(error, result) {
-    if (error) {
-      this._log.warn("Got error obtaining access token: " + error);
-      this.abort(error);
-      return;
-    }
-
-    this.state.storageServerURL = result.endpoint;
-    this.state.tokenID = result.id;
-    this.state.tokenKey = result.key;
 
     this.advance();
   },

@@ -57,6 +57,21 @@ SecurityManager.prototype = {
   },
 
   /**
+   * Called by the GlobalSession to obtain a root key bundle.
+   *
+   * The callback receives the following arguments:
+   *
+   *   (Error) Error that occurred when obtaining the key. null if no error
+   *     occurred.
+   *   (KeyBundle) The root key bundle the client should use. This must be
+   *     defined if no error was encountered. If this is not defined, the
+   *     client will error.
+   */
+  onObtainRootKey: function onObtainRootKey(sync, cb) {
+
+  },
+
+  /**
    * Callback invoked whenever the credentials for the storage server failed.
    *
    * If this happens, a sync is in the process of aborting because communication

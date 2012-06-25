@@ -142,7 +142,7 @@ InternalGlobalState.prototype = {
    * This is an object when there are known collection keys. Keys are
    * collection names. Values are nsIKeyBundle instances.
    */
-   collectionKeys: null,
+  collectionKeys: null,
 
   /**
    * Load state from external sources.
@@ -204,9 +204,10 @@ GlobalState.prototype = {
  * @param globalState
  *        (GlobalState) State instance we are bound to.
  */
-function GlobalSession(config, state) {
+function GlobalSession(config, state, intent) {
   this.config = config;
   this.state = state;
+  this.intent = intent;
 
   this._log = Log4Moz.repository.getLogger("Services.Sync.GlobalSession");
   this._log.level = Log4Moz.Level[Svc.Prefs.get("log.logger.globalsession")];
@@ -224,6 +225,7 @@ GlobalSession.prototype = {
     CheckPreconditionsStage,
     SecurityManagerSetupStage,
     CreateStorageServiceClientStage,
+    EnsureClientReadyStage,
     FetchInfoCollectionsStage,
     ProcessInfoCollectionsStage,
     EnsureSpecialRecordsStage,
@@ -256,15 +258,23 @@ GlobalSession.prototype = {
       return;
     }
 
-    this.currentStatgIndex += 1;
+    this.currentStageIndex += 1;
     let stage = this.stages[this.currentStateIndex];
+
+    try {
+      stage.validatePreconditions();
+    } catch (ex) {
+      this._log.error("Preconditions not satisfied in stage!");
+      this._log.error(CommonUtils.exceptionStr(ex));
+      this.finish(ex);
+    }
 
     try {
       stage.begin();
     } catch (ex) {
       this._log.warn("Uncaught exception when processing stage: " +
                      CommonUtils.exceptionStr(ex));
-      this.advance(ex);
+      this.finish(ex);
     }
   },
 

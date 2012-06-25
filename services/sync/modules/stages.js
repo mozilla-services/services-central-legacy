@@ -14,6 +14,7 @@
 const EXPORTED_SYMBOLS = [
   "CheckPreconditionsStage",
   "CreateStorageServiceClientStage",
+  "EnsureClientReadyStage",
   "EnsureSpecialRecordsStage",
   "FetchCryptoRecordsStage",
   "FetchInfoCollectionsStage",
@@ -40,24 +41,26 @@ Cu.import("resource://services-sync/client.js");
  * This is an abstract base type.
  *
  * Stages are instantiated and used by a GlobalSession. Stages share the same
- * constructor and the functions {begin, advance, abort}.
+ * constructor and the functions {begin, advance, abort, finish}.
  *
  * The role of a stage is perform some specific, well-defined task. When it is
  * time for a stage to run, begin() is called. The stage then does what it
  * knows how to do.
  *
  * When a stage is finished executing, it calls advance() on success or abort()
- * if errors were encountered. The stage MUST call one of these or the session
- * will hang.
+ * if errors were encountered. If a stage() wishes to terminal the session
+ * early but with a successful status, finish() can be called. The stage MUST
+ * call one of these or the session will hang.
  */
-function Stage(globalSession) {
-  this.session = globalSession;
-  this.config = globalSession.config;
-  this.state = globalSession.state;
+function Stage(session) {
+  this.session = session;
+  this.config = session.config;
+  this.state = session.state;
+  this.intent = session.intent;
 }
 Stage.prototype = {
   begin: function begin() {
-    throw new Error("begin() must be defined.");
+    throw new Error("begin() must be implemented in stage.");
   },
 
   advance: function advance() {
@@ -67,6 +70,25 @@ Stage.prototype = {
   abort: function abort(error) {
     this.session.advance(error);
   },
+
+  /**
+   * Finishes a sync session.
+   *
+   * This can be called as an alternative to abort() and advance() if the
+   * current session has no more work left to do. This typically happens if
+   * there are no outgoing changes and no new server data is detected.
+   */
+  finish: function finish() {
+    this.session.finish();
+  },
+
+  /**
+   * A hook for stages to validate preconditions.
+   *
+   * This is called automatically before begin(). If preconditions aren't met,
+   * this function should throw an Error.
+   */
+  validatePreconditions: function validatePreconditions() {},
 };
 
 /**
@@ -152,6 +174,35 @@ CreateStorageServiceClientStage.prototype = {
   },
 };
 
+function EnsureClientReadyStage() {
+  Stage.prototype.constructor.call(this, arguments);
+}
+EnsureClientReadyStage.prototype = {
+  __proto__: Stage.prototype,
+
+  REQUIRED_CONFIGURATION_PROPERTIES: ["rootKeyBundle", "keyRecordID"],
+  REQUIRED_STATE_PROPERTIES: ["storageServerURL"],
+
+  begin: function begin() {
+    for (let k of this.REQUIRED_CONFIGURATION_PROPERTIES) {
+      if (!this.config[k]) {
+        this.abort(new Error("Required property on GlobalConfiguration not " +
+                             "set: " + k));
+        return;
+      }
+    }
+
+    for (let k of this.REQUIRED_STATE_PROPERTIES) {
+      if (!this.state[k]) {
+        this.abort(new Error("Required property of GlobalState not set: " + k));
+        return;
+      }
+    }
+
+    this.advance();
+  },
+};
+
 /**
  * Fetch info/collections from the server.
  *
@@ -181,6 +232,13 @@ FetchInfoCollectionsStage.prototype = {
       return;
     }
 
+    // Conditional request resulted in no new data. The next stage will
+    // finish the sync if it needs to.
+    if (request.notModified) {
+      this.advance();
+      return;
+    }
+
     this.state.remoteCollectionsLastModified = request.resultObj;
     this.advance();
   },
@@ -198,6 +256,18 @@ function ProcessInfoCollectionsStage() {
 }
 ProcessInfoCollectionsStage.prototype = {
   __proto__: Stage.prototype,
+
+  validatePreconditions: function validatePreconditions() {
+    if (!this.state.remoteCollectionsLastModified) {
+      throw new Error("GlobalState.remoteCollectionsLastModified not set.");
+    }
+  },
+
+  begin: function begin() {
+    // If the server doesn't have any new data and we have no outgoing data,
+    // the session can be finished since there is nothing to do.
+
+  },
 };
 
 /**

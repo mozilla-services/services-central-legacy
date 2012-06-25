@@ -276,12 +276,20 @@ ProcessInfoCollectionsStage.prototype = {
     for (let [k, v] in Iterator(this.remoteCollectionsLastModified)) {
       if (!(k in this.localCollectionsLastModified)) {
         haveIncomingData = true;
-        break;
+        continue;
       }
 
       if (v > this.localCollectionsLastModified) {
         haveIncomingData = true;
-        break;
+
+        // If "meta" changed remotely, blow away locally cached values.
+        if (k == "meta") {
+          this.state.remoteSyncID = null;
+          this.state.remoteStorageVersion = null;
+          this.state.remoteRepositoryInfo = null;
+        }
+
+        continue;
       }
     }
 

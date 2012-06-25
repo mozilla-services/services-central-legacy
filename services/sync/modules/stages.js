@@ -261,12 +261,37 @@ ProcessInfoCollectionsStage.prototype = {
     if (!this.state.remoteCollectionsLastModified) {
       throw new Error("GlobalState.remoteCollectionsLastModified not set.");
     }
+
+    if (!this.state.localCollectionsLastModified) {
+      throw new Error("GlobalState.localCollectionsLastModified not set.");
+    }
   },
 
   begin: function begin() {
     // If the server doesn't have any new data and we have no outgoing data,
     // the session can be finished since there is nothing to do.
+    let haveIncomingData = false;
+    let haveOutgoingData = this.intent.outgoingRepositories.size() > 0;
 
+    for (let [k, v] in Iterator(this.remoteCollectionsLastModified)) {
+      if (!(k in this.localCollectionsLastModified)) {
+        haveIncomingData = true;
+        break;
+      }
+
+      if (v > this.localCollectionsLastModified) {
+        haveIncomingData = true;
+        break;
+      }
+    }
+
+    if (!haveIncomingData && !haveOutgoingData) {
+      this._log.info("No local or remote changes. Sync not necessary.");
+      this.finish();
+      return;
+    }
+
+    this.advance();
   },
 };
 

@@ -96,6 +96,7 @@ function InternalGlobalState() {
   this._log = Log4Moz.repository.getLogger("Sync.GlobalState");
   this._log.level = Svc.Prefs.get("log.logger.globalstate", "Info");
 
+  this.localRepositoriesLastModified = {};
   this.remoteCollectionsLastModified = null;
   this.remoteSyncID = null;
   this.remoteStorageVersion = null;
@@ -117,6 +118,11 @@ InternalGlobalState.prototype = {
    * This essentially holds the results of an info/collections request.
    */
   remoteCollectionsLastModified: null,
+
+  /**
+   * Mapping of last modified times of local repositories.
+   */
+  localRepositoriesLastModified: null,
 
   /**
    * Global Sync ID reported on the server (from meta/global).

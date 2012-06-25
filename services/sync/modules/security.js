@@ -12,6 +12,7 @@ const EXPORTED_SYMBOLS = [
 
 Cu.import("resource://services-common/log4moz.js");
 Cu.import("resource://services-common/tokenserverclient.js");
+Cu.import("resource://services-crypto/utils.js");
 Cu.import("resource://services-aitc/browserid.js");
 
 /**
@@ -69,6 +70,30 @@ SecurityManager.prototype = {
    */
   onObtainRootKey: function onObtainRootKey(sync, cb) {
 
+  },
+
+  /**
+   * Called when a new SyncClient is created.
+   *
+   * The security manager uses this callback to configure the client to perform
+   * HTTP authentication, etc if necessary.
+   *
+   * Our default implementation installs an `onDispatch` which will insert
+   * appropriate HTTP credentials on the outgoing request.
+   *
+   * @param session
+   *        (GlobalSession) Sync session client is associated with.
+   * @param client
+   *        (SyncClient) being configured.
+   * @param cb
+   *        (function) Callback to be invoked when we have finished.
+   *        The function receives a single argument to indicate whether an
+   *        error has occurred. If the argument evaluates to true, an error
+   *        has occurred.
+   */
+  onCreateSyncClient: function onCreateSyncClient(session, client, cb) {
+    client.addListener(this);
+    cb(null);
   },
 
   /**
@@ -134,6 +159,26 @@ SecurityManager.prototype = {
    */
   basicUsername: null,
   basicPassword: null,
+
+  /**
+   * SyncClient callback invoked when a request is dispatched.
+   */
+  onDispatch: function onDispatch(client, request) {
+    if (this.httpAuthMode == "token" && this.storageToken) {
+      let signature = CryptoUtils.computeHTTPMACSHA1(this.storageToken.id,
+                                                     this.storageToken.key,
+                                                     request.method,
+                                                     request.uri);
+      request.setHeader("Authorization", signature.getHeader());
+      return;
+    } else if (this.httpAuthMode == "basic") {
+      let value = "Basic " + btoa(this.basicUsername) + ":" +
+                  btoa(this.basicPassword);
+
+      request.SetHeader("Authorization", value);
+      return;
+    }
+  },
 
   _onSyncStartBasic: function _onSyncStartBasic(sync, cb) {
     if (!this.basicUsername || !this.basicPassword) {

@@ -14,15 +14,14 @@
 const EXPORTED_SYMBOLS = [
   "CheckPreconditionsStage",
   "CreateStorageServiceClientStage",
-  "EnsureClusterURLStage",
   "EnsureSpecialRecordsStage",
-  "EnsureSyncKeyStage",
   "FetchCryptoRecordsStage",
   "FetchInfoCollectionsStage",
   "FinishStage",
   "ProcessClientCommandsStage",
   "ProcessFirstSyncPrefStage",
   "ProcessInfoCollectionsStage",
+  "SecurityManagerSetupStage",
   "Stage",
   "SyncClientsRepositoryStage",
   "SyncRepositoriesStage",
@@ -95,51 +94,24 @@ CheckPreconditionsStage.prototype = {
   },
 };
 
-/**
- * Obtain the master key used for data encryption.
- *
- * By default, the Sync Key comes from Persona key wrapping.
- *
- * It is possible to change where the Sync Key comes from by monkeypatching
- * begin(). Just replace begin() with your function that grabs the Sync Key
- * from wherever you have it.
- *
- * Postconditions:
- *
- *   this.state.syncKeyBundle set to an instance of XXX.
- */
-function EnsureSyncKeyStage() {
+function SecurityManagerSetupStage() {
   Stage.prototype.constructor.call(this, arguments);
 }
-EnsureSyncKeyStage.prototype = {
+SecurityManagerSetupStage.prototype = {
   __proto__: Stage.prototype,
 
   begin: function begin() {
-    this.advance();
+    this.state.securityManager.onSyncStart(this, this.onSyncStartFinish);
   },
-};
 
-/**
- * Ensures that a cluserURL is set.
- *
- * Postconditions:
- *
- *   GlobalState.cluserURL is set
- */
-function EnsureClusterURLStage() {
-  Stage.prototype.constructor.call(this, arguments);
-}
-EnsureClusterURLStage.prototype = {
-  __proto__: Stage.prototype,
-
-  begin: function begin() {
-    if (this.state.clusterURL) {
-      this.advance();
+  onSyncStartFinish: function onSyncStartFinish(error) {
+    if (error) {
+      this.abort(error);
       return;
     }
 
-    // TODO implement cluster search logic.
-    this.abort(new Error("No cluster URL defined."));
+    // TODO reserved for more checking.
+    this.advance();
   },
 };
 
@@ -172,27 +144,11 @@ CreateStorageServiceClientStage.prototype = {
   __proto__: Stage.prototype,
 
   begin: function begin() {
-    this.state.client = new SyncClient(this.state.clusterURL);
-    this.state.client.addListener(this);
+    this.state.client = new SyncClient(this.state.storageServerURL);
     this.state.client.addListener(this.session);
 
-    this.advance();
-  },
-
-  /**
-   * StorageServiceClient callback that gets invoked at request time.
-   *
-   * This hooks up HTTP authentication to outgoing requests.
-   */
-  onDispatch: function onDispatch(client, request) {
-    if (this.state.username && this.state.basicPassword) {
-      this._log.debug("Adding HTTP Basic auth to request.");
-      let up = this.state.username + ":" + this.state.basicPassword;
-      request.setHeader("authorization", "Basic " + btoa(up));
-      return;
-    }
-
-    this._log.info("No HTTP authentication credentials available.");
+    this.config.securityManager.onCreateSyncClient(this, this.state.client,
+                                                   this.advance);
   },
 };
 

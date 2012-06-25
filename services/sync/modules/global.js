@@ -70,7 +70,7 @@ GlobalConfiguration.prototype = {
   /**
    * The nsIKeyBundle instance providing the root encryption key pair.
    *
-   * If the root key is stored encrypted on the server, this should be null.
+   * This is populated by the SecurityManager instance.
    */
   rootKeyBundle: null,
 
@@ -161,10 +161,6 @@ InternalGlobalState.prototype = {
     // These prefs mostly copied from service.js. Some may not be relevant
     // any more.
     const PREF_MAP = {
-      serverURL:         "serverURL",
-      clusterURL:        "clusterURL",
-      miscURL:           "miscURL",
-      userURL:           "userURL",
       localSyncID:       "client.syncID",
       lastClusterUpdate: "lastClusterUpdate",
       lastPing:          "lastPing",
@@ -208,8 +204,9 @@ GlobalState.prototype = {
  * @param globalState
  *        (GlobalState) State instance we are bound to.
  */
-function GlobalSession(globalState) {
-  this.state = globalState;
+function GlobalSession(config, state) {
+  this.config = config;
+  this.state = state;
 
   this._log = Log4Moz.repository.getLogger("Services.Sync.GlobalSession");
   this._log.level = Log4Moz.Level[Svc.Prefs.get("log.logger.globalsession")];
@@ -225,8 +222,7 @@ function GlobalSession(globalState) {
 GlobalSession.prototype = {
   STAGES: [
     CheckPreconditionsStage,
-    EnsureSyncKeyStage,
-    EnsureClusterURLStage,
+    SecurityManagerSetupStage,
     CreateStorageServiceClientStage,
     FetchInfoCollectionsStage,
     ProcessInfoCollectionsStage,

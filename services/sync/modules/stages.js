@@ -324,33 +324,60 @@ FetchMetaGlobalStage.prototype = {
   __proto__: Stage.prototype,
 
   begin: function begin() {
-    // TODO make conditional if we already have values.
+    // The previous stage will blow away values if the remote collection
+    // changed. So, if 1 is set, we can trust that cached value.
+    if (this.state.remoteSyncID) {
+      this._log.info("Skipping meta/global fetch because local copy is current.");
+      this.advance();
+      return;
+    }
 
-    this.session.syncClient.fetchMetaGlobal(this.onFetch);
+    let request = this.session.syncClient.getMetaGlobal();
+    request.dispatch(this.onFetchResponse);
   },
 
   /**
    * Callback invoked upon completion of meta global fetch.
    */
-  onFetch: function onFetch(error, record) {
-    if (error instanceof MetaGlobalRequestError &&
-        error.condition == MetaGlobalRequestError.NOT_FOUND) {
-        this.clearStateAndAdvance();
+  onFetchResponse: function onFetchResponse(error, request) {
+    if (error) {
+      if (error.notFound) {
+        this._log.info("Meta global record not present on remote server.");
+
+        // Nuke the site from orbit - just to be sure.
+        this.state.remoteSyncID = null;
+        this.state.remoteStorageVersion = null;
+        this.state.remoteRepositoryInfo = null;
+
+        this.advance();
         return;
-    } else if (error) {
-      this.abort(error);
+      }
+
+      // TODO make part of StorageServiceRequestError API.
+      const properties = ["network", "authentication", "client", "server"];
+      for (let k of properties) {
+        if (error[k]) {
+          this.abort(error[k]);
+          return;
+        }
+      }
+
+      this.abort(new Error("Unhandled StorageServiceRequestError!"));
       return;
     }
 
     // No error means we have a record. However, we still need to ensure its
-    // content is sane.
+    // content is sane. If it doesn't look valid, we wipe the local data which
+    // will force a new record to be uploaded.
+    let record = request.resultObj;
     if (!record.syncID || !record.storageVersion ||
         (!record.repositories || !record.repositories.length)) {
+      this._log.warn("Remote meta global record look invalid. Will reupload.");
       this.clearStateAndAdvance();
       return;
     }
 
-    this.state.remoteSyncID = record.syncID;
+    this.state.remoteSyncID         = record.syncID;
     this.state.remoteStorageVersion = record.storageVersion;
     this.state.remoteRepositoryInfo = record.repositories;
 
@@ -358,7 +385,7 @@ FetchMetaGlobalStage.prototype = {
   },
 
   clearStateAndAdvance: function clearStateAndAdvance() {
-    this.state.remoteSyncID = null;
+    this.state.remoteSyncID         = null;
     this.state.remoteStorageVersion = null;
     this.state.remoteRepositoryInfo = null;
 

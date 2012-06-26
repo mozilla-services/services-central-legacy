@@ -4,10 +4,7 @@
 
 "use strict";
 
-const EXPORTED_SYMBOLS = [
-  "MetaGlobalRequestError",
-  "SyncClient",
-];
+const EXPORTED_SYMBOLS = ["SyncClient"];
 
 const {classes: Cc, interfaces: Ci, results: Cr, utils: Cu} = Components;
 
@@ -18,19 +15,6 @@ Cu.import("resource://services-sync/policies.js");
 Cu.import("resource://services-sync/record.js");
 Cu.import("resource://services-sync/status.js");
 Cu.import("resource://services-sync/util.js");
-
-function MetaGlobalRequestError(message, condition) {
-  this.message   = message;
-  this.condition = condition;
-
-}
-MetaGlobalRequestError.prototype = {
-  __proto__: Error.prototype,
-
-  NETWORK:   1,
-  NOT_FOUND: 2,
-  SERVER:    3,
-};
 
 /**
  * This is a Sync-specific client for the storage service.
@@ -136,48 +120,12 @@ SyncClient.prototype = {
   },
 
   /**
-   * Fetch the global metadata record.
+   * Get a request to fetch the meta global record.
    *
-   * Upon completion, the specified callback will be invoked. The callback
-   * receives the arguments:
-   *
-   *   (MetaGlobalRequestError) Instance explaining error that occurred or null
-   *     if there was no error.
-   *
-   *   (MetaGlobalRecord) The fetched record or null if the record could not be
-   *     obtained.
-   *
-   * @param cb
-   *        (function) Callback to be invoked with result of operation.
+   * This is just a proxy for getBSO().
    */
-  fetchMetaGlobal: function fetchMetaGlobal(cb) {
-    let request = this.getBSO("meta", "global", MetaGlobalRecord);
-    request.dispatch(function(error, response) {
-      let mgError;
-
-      if (error) {
-        if (error.network) {
-          mgError = new MetaGlobalRequestError(error.network.message,
-                                               MetaGlobalRequestError.NETWORK);
-        } else if (error.client) {
-          mgError = new MetaGlobalRequestError(error.client.message,
-                                               MetaGlobalRequestError.SERVER);
-        } else {
-          // TODO
-          throw new Error("TODO");
-        }
-      } else if (response.notFound) {
-        mgError = new MetaGlobalRequestError("404 received",
-                                             MetaGlobalRequestError.NOT_FOUND);
-      }
-
-      if (mgError) {
-        cb(mgError, null);
-        return;
-      }
-
-      cb(null, response.resultObj);
-    });
+  getMetaGlobal: function fetchMetaGlobal() {
+    return this.getBSO("meta", "global", MetaGlobalRecord);
   },
 
   /**

@@ -344,8 +344,8 @@ FetchMetaGlobalStage.prototype = {
       if (error.notFound) {
         this._log.info("Meta global record not present on remote server.");
 
-        // Nuke the site from orbit - just to be sure.
-        this.state.remoteSyncID = null;
+        // Just in case.
+        this.state.remoteSyncID         = null;
         this.state.remoteStorageVersion = null;
         this.state.remoteRepositoryInfo = null;
 
@@ -392,7 +392,10 @@ FetchMetaGlobalStage.prototype = {
     this.advance();
   },
 };
+
 /**
+ * This stage ensures all the special records are in a happy place.
+ *
  *
  * - fetch keys if 'crypto' timestamp differs from local one
  * - if it's non-existent, goto fresh start.
@@ -412,6 +415,79 @@ function EnsureSpecialRecordsStage() {
 }
 EnsureSpecialRecordsStage.prototype = {
   __proto__: Stage.prototype,
+
+  begin: function begin() {
+    // No remote data means server incorrectly configured. We nuke the site
+    // from orbit, just to be sure.
+    if (!this.state.remoteSyncID) {
+      let request = this.client.deleteCollections();
+      request.dispatch(this.onServerWipeFinish);
+      return;
+    }
+
+    this.ensureMetaGlobal();
+  },
+
+  onServerWipeFinish: function onServerWipeFinish(error, request) {
+    if (error) {
+      this._log.error("Error wiping server data: " +
+                      CommonUtils.exceptionStr(error));
+      this.abort(error);
+      return;
+    }
+
+    this._log.info("Server wipe completed.");
+    this.ensureMetaGlobal();
+  },
+
+  ensureMetaGlobal: function ensureMetaGlobal() {
+    // TODO handle storage format mismatch.
+
+    if (!this.state.localSyncID && this.state.remoteSyncID) {
+      this._log.info("Setting local global Sync ID to remote: " +
+                     this.state.remoteSyncID);
+      this.state.localSyncID = this.state.remoteSyncID;
+    }
+
+    if (!this.state.localSyncID) {
+      this.state.localSyncID = Utils.makeGUID();
+    }
+
+    // Upload new meta/global if we need to.
+    if (!this.state.remoteSyncID) {
+      let record = new MetaGlobalRecord();
+      record.syncID = this.state.localSyncID;
+      record.storageVersion = 5;
+
+      // TODO add engines.
+
+      let request = this.client.setBSO(record);
+      request.dispatch(this.onUploadMetaGlobalFinish);
+      return;
+    }
+
+    this.onFinishMetaGlobal();
+  },
+
+  onUploadMetaGlobalFinish: function onUploadMetaGlobalFinish(error, request) {
+    if (error) {
+      this._log.warn("Error uploading meta/global: " +
+                     CommonUtils.exceptionStr(error));
+      this.abort(error);
+      return;
+    }
+
+    this.onFinishMetaGlobal();
+  },
+
+  onFinishMetaGlobal: function onFinishMetaGlobal() {
+    // We are guaranteed to have a meta/global on the server and for local
+    // and remote to be in sync. It's time to move on to crypto keys.
+
+    this.abort(new Error("Not yet implemented."));
+  },
+
+
 };
 
 /**

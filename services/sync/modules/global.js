@@ -143,6 +143,11 @@ InternalGlobalState.prototype = {
   remoteRepositoryInfo: null,
 
   /**
+   * Locally cached global Sync ID (from meta/global).
+   */
+  localSyncID: null,
+
+  /**
    * Holds known collection keys.
    *
    * This is an object when there are known collection keys. Keys are

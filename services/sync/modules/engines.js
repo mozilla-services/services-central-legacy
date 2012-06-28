@@ -523,18 +523,26 @@ SyncEngine.prototype = {
   __proto__: Engine.prototype,
   _recordObj: CryptoWrapper,
   version: 1,
-  
+
   // How many records to pull in a single sync. This is primarily to avoid very
   // long first syncs against profiles with many history records.
   downloadLimit: null,
-  
+
   // How many records to pull at one time when specifying IDs. This is to avoid
   // URI length limitations.
   guidFetchBatchSize: DEFAULT_GUID_FETCH_BATCH_SIZE,
   mobileGUIDFetchBatchSize: DEFAULT_MOBILE_GUID_FETCH_BATCH_SIZE,
-  
+
   // How many records to process in a single batch.
   applyIncomingBatchSize: DEFAULT_STORE_BATCH_SIZE,
+
+  /**
+   * Holds the SyncClient being used to communicate with the server.
+   *
+   * This is defined at sync startup time by whatever triggers the sync. This
+   * is just a hack until engines are converted to repositories.
+   */
+  client: null,
 
   get storageURL() Svc.Prefs.get("clusterURL") + SYNC_API_VERSION +
     "/" + Identity.username + "/storage/",
@@ -1267,8 +1275,12 @@ SyncEngine.prototype = {
   },
 
   _syncCleanup: function _syncCleanup() {
-    if (!this._modified)
+    // Must be set for each sync.
+    this.client = null;
+
+    if (!this._modified) {
       return;
+    }
 
     // Mark failed WBOs as changed again so they are reuploaded next time.
     for (let [id, when] in Iterator(this._modified)) {
@@ -1277,7 +1289,11 @@ SyncEngine.prototype = {
     this._modified = {};
   },
 
-  _sync: function SyncEngine__sync() {
+  _sync: function _sync() {
+    if (!this.client) {
+      throw new Error("client property not defined on engine instance.");
+    }
+
     try {
       this._syncStartup();
       Observers.notify("weave:engine:sync:status", "process-incoming");
@@ -1323,10 +1339,25 @@ SyncEngine.prototype = {
   },
 
   wipeServer: function wipeServer() {
-    let response = new Resource(this.engineURL).delete();
-    if (response.status != 200 && response.status != 404) {
-      throw response;
-    }
+    let request = this.client.deleteCollection(this.name);
+    let cb = Async.makeSpinningCallback();
+
+    request.dispatch(function onComplete(error, request) {
+      if (error) {
+        if (error.notFound) {
+          cb(null);
+          return;
+        }
+
+        cb(error);
+        return;
+      }
+
+      cb(null);
+    });
+
+    cb.wait();
+
     this._resetClient();
   },
 

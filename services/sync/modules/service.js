@@ -35,6 +35,7 @@ Cu.import("resource://services-sync/status.js");
 Cu.import("resource://services-sync/policies.js");
 Cu.import("resource://services-sync/util.js");
 Cu.import("resource://services-sync/main.js");
+Cu.import("resource://services-sync/client.js");
 
 const STORAGE_INFO_TYPES = [INFO_COLLECTIONS,
                             INFO_COLLECTION_USAGE,
@@ -1286,8 +1287,12 @@ WeaveSvc.prototype = {
       throw ex;
     }
 
+    let client = new SyncClient(this.userBaseURL);
+
     try {
       for each (let engine in Engines.getEnabled()) {
+        engine.client = client;
+
         // If there's any problems with syncing the engine, report the failure
         if (!(this._syncEngine(engine)) || Status.enforceBackoff) {
           this._log.info("Aborting sync");
